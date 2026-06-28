@@ -14,6 +14,8 @@ BEGIN
         Status nvarchar(max) NOT NULL,
         SenderName nvarchar(120) NOT NULL,
         ReceiverName nvarchar(120) NOT NULL,
+        BeneficiaryAccountNumber nvarchar(24) NOT NULL,
+        Scenario nvarchar(max) NOT NULL,
         Imad nvarchar(35) NULL,
         Omad nvarchar(35) NULL,
         CreatedDate datetimeoffset NOT NULL,

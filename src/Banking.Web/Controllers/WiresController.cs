@@ -10,7 +10,8 @@ using System.Xml.Linq;
 namespace Banking.Web.Controllers;
 
 [Authorize]
-public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus) : Controller
+public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus,
+    IIsoMessageService iso) : Controller
 {
     public async Task<IActionResult> Index(WireDirection? direction, CancellationToken token)
     {
@@ -44,15 +45,18 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             ModelState.AddModelError(nameof(model.ReceiverBankId), "Select a different receiving bank.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
+        var beneficiaryAccount = model.BeneficiaryAccountNumber.Trim();
         var receiverAccount = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
-            x.Customer.BankId == model.ReceiverBankId && x.Customer.Name == model.ReceiverName, token);
+            x.Customer.BankId == model.ReceiverBankId && x.AccountNumber == beneficiaryAccount, token);
         var wire = new WireTransfer
         {
             BankId = bankId, SenderBankId = bankId, ReceiverBankId = model.ReceiverBankId,
             FromAccountId = account!.Id, ToAccountId = receiverAccount?.Id,
             Direction = WireDirection.Outgoing, Status = WireStatus.Created, Amount = model.Amount,
             SenderName = account.Customer.Name, ReceiverName = model.ReceiverName.Trim(),
-            Events = [new WireEvent { EventType = "Created", Description = "Outgoing wire created by operator." }]
+            BeneficiaryAccountNumber = beneficiaryAccount, Scenario = model.Scenario,
+            Events = [new WireEvent { EventType = "Created",
+                Description = $"Outgoing wire created by operator using the {model.Scenario} lab scenario." }]
         };
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
@@ -78,7 +82,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return model is null ? NotFound() : PartialView("_WireDetails", model);
     }
 
-    private static async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
+    private async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
         BankingDbContext db, CancellationToken token)
     {
         var wire = await db.WireTransfers.Include(x => x.Bank).Include(x => x.Events)
@@ -93,7 +97,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             item,
             ServiceFor(item.EventType),
             index == 0 ? null : item.CreatedDate - events[index - 1].CreatedDate)).ToList();
-        var messages = wire.IsoMessages.OrderBy(x => x.CreatedDate).Select(BuildMessage).ToList();
+        var messages = wire.IsoMessages.OrderBy(x => x.CreatedDate).Select(x => BuildMessage(x)).ToList();
+        var ledgerEntries = await db.LedgerEntries.Where(x => x.WireTransferId == id)
+            .OrderBy(x => x.CreatedDate).ThenBy(x => x.AccountCode).AsNoTracking().ToListAsync(token);
         var failure = deliveries.LastOrDefault(x => !string.IsNullOrWhiteSpace(x.LastError))?.LastError
             ?? events.LastOrDefault(x => x.EventType.Contains("Reject", StringComparison.OrdinalIgnoreCase))?.Description;
         var lastActivity = new[]
@@ -102,29 +108,20 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             wire.IsoMessages.OrderBy(x => x.CreatedDate).LastOrDefault()?.CreatedDate ?? wire.CreatedDate,
             deliveries.LastOrDefault()?.UpdatedDate ?? wire.CreatedDate
         }.Max();
-        return new WireDetailsViewModel(wire, deliveries, stages, messages, failure,
+        return new WireDetailsViewModel(wire, deliveries, stages, messages, ledgerEntries, failure,
             lastActivity - wire.CreatedDate);
     }
 
-    private static IsoMessageViewModel BuildMessage(IsoMessage message)
+    private IsoMessageViewModel BuildMessage(IsoMessage message)
     {
         try
         {
             var document = XDocument.Parse(message.XmlPayload);
-            var expectedNamespace = message.MessageType switch
-            {
-                "pacs.008" => "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10",
-                "pacs.002" => "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.10",
-                _ => null
-            };
-            var actualNamespace = document.Root?.Name.NamespaceName;
-            var recognized = expectedNamespace is not null && actualNamespace == expectedNamespace;
-            var validation = recognized
-                ? "Well-formed XML · expected ISO 20022 namespace"
-                : expectedNamespace is null
-                    ? "Well-formed XML · message namespace is not configured"
-                    : $"Well-formed XML · unexpected namespace: {actualNamespace ?? "none"}";
-            return new IsoMessageViewModel(message, document.ToString(), true, recognized, validation);
+            var result = iso.Validate(message.XmlPayload);
+            var validation = result.IsValid
+                ? $"Valid {result.MessageType} lab profile · business header, UETR, and required fields present"
+                : string.Join(" ", result.Errors);
+            return new IsoMessageViewModel(message, document.ToString(), true, result.IsValid, validation);
         }
         catch (Exception ex) when (ex is System.Xml.XmlException or InvalidOperationException)
         {
@@ -137,7 +134,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         "Created" => "Banking.Web",
         "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
-        "AcceptedByFed" or "RejectedByFed" => "FedwireSimulator → MessageManager",
+        "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "FedwireSimulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "Completed"
             => "Banking.MessageManager",
         _ => "Unknown"
@@ -147,7 +144,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         BankingDbContext db, CancellationToken token)
     {
         model.Accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
-            .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber} · {x.Balance:C}", x.Id.ToString()))
+            .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber} · available {(x.Balance - x.HeldBalance):C}", x.Id.ToString()))
             .ToListAsync(token);
         model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))

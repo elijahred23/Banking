@@ -26,7 +26,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         {
             await bus.PublishAsync(Queues.FedOutbound,
                 new FedEnvelope(FedMessageKind.Payment, wire.Id, wire.CorrelationId,
-                    wire.SenderBankId, wire.ReceiverBankId, wire.Amount, message.Pacs008Xml), token);
+                    wire.SenderBankId, wire.ReceiverBankId, wire.Amount, message.Pacs008Xml,
+                    Scenario: message.Scenario), token);
             delivery.Status = DeliveryStatus.Sent;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(token);
@@ -53,16 +54,41 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var wire = await db.WireTransfers.Include(x => x.IsoMessages).Include(x => x.Events)
             .AsSplitQuery().SingleOrDefaultAsync(x => x.Id == message.WireId, token);
-        if (wire is null || wire.IsoMessages.Any(x => x.MessageType == "pacs.002")) return;
+        if (wire is null || wire.IsoMessages.Any(x => x.MessageType == "pacs.002"
+            && x.XmlPayload == message.XmlPayload)) return;
+        if (wire.Status is WireStatus.Settled or WireStatus.Rejected) return;
         wire.Imad = message.Imad;
         wire.Omad = message.Omad;
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.002",
             Direction = MessageDirection.Inbound, XmlPayload = message.XmlPayload });
-        if (message.StatusCode == "ACCP")
+        var delivery = await db.MessageDeliveries
+            .OrderByDescending(x => x.UpdatedDate)
+            .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id && x.Destination == Queues.FedOutbound, token);
+        if (delivery is not null)
+        {
+            delivery.Status = DeliveryStatus.Delivered;
+            delivery.UpdatedDate = DateTimeOffset.UtcNow;
+        }
+        if (message.StatusCode == "PDNG")
+        {
+            wire.Status = WireStatus.PendingAtFed;
+            db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
+                "Fed reported PDNG. The customer funds remain held while processing continues."));
+        }
+        else if (message.StatusCode == "ACSC")
         {
             wire.Status = WireStatus.Settled;
-            db.WireEvents.Add(Event(wire.Id, "AcceptedByFed", $"Fed accepted and settled the payment. IMAD {message.Imad}."));
+            db.WireEvents.Add(Event(wire.Id, "AcceptedByFed", $"Fed returned ACSC and settled the payment. IMAD {message.Imad}."));
             db.WireEvents.Add(Event(wire.Id, "Settled", "Sender master account debited and receiver master account credited."));
+            if (wire.FromAccountId is Guid accountId)
+            {
+                var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
+                account.HeldBalance = Math.Max(0, account.HeldBalance - wire.Amount);
+                account.Balance -= wire.Amount;
+                AddOutgoingJournal(db, wire, account);
+                db.WireEvents.Add(Event(wire.Id, "Posted",
+                    $"Customer debit posted; {wire.Amount:C} hold removed."));
+            }
         }
         else
         {
@@ -71,7 +97,9 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             if (wire.FromAccountId is Guid accountId)
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
-                account.Balance += wire.Amount;
+                account.HeldBalance = Math.Max(0, account.HeldBalance - wire.Amount);
+                db.WireEvents.Add(Event(wire.Id, "HoldReleased",
+                    $"Fed rejection released the {wire.Amount:C} customer funds hold; no debit posted."));
             }
         }
         await db.SaveChangesAsync(token);
@@ -90,17 +118,20 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             SenderBankId = message.SenderBankId, ReceiverBankId = message.ReceiverBankId,
             Direction = WireDirection.Incoming, Amount = message.Amount, Status = WireStatus.Received,
             SenderName = outgoing.SenderName, ReceiverName = outgoing.ReceiverName,
+            BeneficiaryAccountNumber = outgoing.BeneficiaryAccountNumber, Scenario = outgoing.Scenario,
             ToAccountId = outgoing.ToAccountId, Imad = message.Imad, Omad = message.Omad,
             IsoMessages = [new IsoMessage { MessageType = "pacs.008", Direction = MessageDirection.Inbound,
                 XmlPayload = message.XmlPayload }],
             Events = [Event(Guid.Empty, "ReceivedFromFed", $"Original pacs.008 received from Fed. IMAD {message.Imad}.")]
         };
         var account = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
-            x.Customer.BankId == message.ReceiverBankId && x.Customer.Name == outgoing.ReceiverName, token);
+            x.Customer.BankId == message.ReceiverBankId
+            && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
         if (account is not null)
         {
             incoming.ToAccountId = account.Id;
             account.Balance += incoming.Amount;
+            AddIncomingJournal(db, incoming, account);
             incoming.Status = WireStatus.Completed;
             incoming.Events.Add(Event(Guid.Empty, "Posted", $"Funds posted to account ending {account.AccountNumber[^4..]}."));
             incoming.Events.Add(Event(Guid.Empty, "Completed", "Incoming wire processing completed."));
@@ -116,4 +147,31 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private static WireEvent Event(Guid wireId, string type, string description) =>
         new() { WireTransferId = wireId, EventType = type, Description = description };
+
+    private static void AddOutgoingJournal(BankingDbContext db, WireTransfer wire, Account account)
+    {
+        var journal = Guid.NewGuid();
+        db.LedgerEntries.AddRange(
+            Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
+                wire.Amount, 0, "Debit customer deposit liability"),
+            Entry(journal, wire.Id, $"FEDMASTER:{wire.SenderBankId:N}", "Fed master account",
+                0, wire.Amount, "Credit settlement cash for outgoing payment"));
+    }
+
+    private static void AddIncomingJournal(BankingDbContext db, WireTransfer wire, Account account)
+    {
+        var journal = Guid.NewGuid();
+        db.LedgerEntries.AddRange(
+            Entry(journal, wire.Id, $"FEDMASTER:{wire.ReceiverBankId:N}", "Fed master account",
+                wire.Amount, 0, "Debit settlement cash for incoming payment"),
+            Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
+                0, wire.Amount, "Credit beneficiary deposit liability"));
+    }
+
+    private static LedgerEntry Entry(Guid journal, Guid wireId, string code, string name,
+        decimal debit, decimal credit, string description) => new()
+    {
+        JournalId = journal, WireTransferId = wireId, AccountCode = code, AccountName = name,
+        Debit = debit, Credit = credit, Description = description
+    };
 }

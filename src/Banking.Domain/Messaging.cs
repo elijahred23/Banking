@@ -15,11 +15,12 @@ public static class Queues
 
 public sealed record WireCreated(Guid WireId);
 public sealed record WireReadyForFed(Guid WireId, Guid CorrelationId, Guid SenderBankId,
-    Guid ReceiverBankId, decimal Amount, string Pacs008Xml);
+    Guid ReceiverBankId, decimal Amount, string Pacs008Xml, ProcessingScenario Scenario);
 public enum FedMessageKind { Payment, Status }
 public sealed record FedEnvelope(FedMessageKind Kind, Guid WireId, Guid CorrelationId,
     Guid SenderBankId, Guid ReceiverBankId, decimal Amount, string XmlPayload,
-    string? Imad = null, string? Omad = null, string? StatusCode = null);
+    string? Imad = null, string? Omad = null, string? StatusCode = null,
+    ProcessingScenario Scenario = ProcessingScenario.Standard);
 
 public interface IMessageBus
 {

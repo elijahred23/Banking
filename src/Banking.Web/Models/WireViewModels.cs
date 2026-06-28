@@ -9,7 +9,9 @@ public sealed class CreateWireViewModel
     [Required] public Guid FromAccountId { get; set; }
     [Required] public Guid ReceiverBankId { get; set; }
     [Required, StringLength(120)] public string ReceiverName { get; set; } = "";
+    [Required, StringLength(24, MinimumLength = 4)] public string BeneficiaryAccountNumber { get; set; } = "";
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
+    public ProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
     public List<SelectListItem> Banks { get; set; } = [];
 }
@@ -25,6 +27,7 @@ public sealed record WireDetailsViewModel(
     IReadOnlyList<MessageDelivery> Deliveries,
     IReadOnlyList<ProcessingStageViewModel> Stages,
     IReadOnlyList<IsoMessageViewModel> Messages,
+    IReadOnlyList<LedgerEntry> LedgerEntries,
     string? FailureReason,
     TimeSpan ProcessingDuration);
 

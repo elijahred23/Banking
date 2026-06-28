@@ -6,5 +6,6 @@
     <Project Path="src/Banking.MessageManager/Banking.MessageManager.csproj" />
     <Project Path="src/Banking.Web/Banking.Web.csproj" />
     <Project Path="src/Banking.WireService/Banking.WireService.csproj" />
+    <Project Path="tests/Banking.Domain.Tests/Banking.Domain.Tests.csproj" />
   </Folder>
 </Solution>

@@ -30,7 +30,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 var imad = $"{DateTime.UtcNow:yyyyMMdd}{sender.FedParticipantId[..Math.Min(6, sender.FedParticipantId.Length)]}{sequence}";
                 var omad = $"{DateTime.UtcNow:yyyyMMdd}FED{Random.Shared.Next(100000, 999999)}";
                 var validXml = iso.IsWellFormed(payment.XmlPayload, out _);
-                var accepted = validXml && payment.Amount > 0 && sender.MasterAccountBalance >= payment.Amount;
+                var accepted = validXml && payment.Amount > 0 && sender.MasterAccountBalance >= payment.Amount
+                    && payment.Scenario != ProcessingScenario.FedRejects;
                 if (accepted)
                 {
                     sender.MasterAccountBalance -= payment.Amount;
@@ -39,13 +40,19 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 settlement = new FedSettlement
                 {
                     CorrelationId = payment.CorrelationId, Imad = imad, Omad = omad,
-                    StatusCode = accepted ? "ACCP" : "RJCT"
+                    StatusCode = accepted ? "ACSC" : "RJCT"
                 };
                 db.FedSettlements.Add(settlement);
                 await db.SaveChangesAsync(token);
             }
             await transaction.CommitAsync(token);
         });
+        if (payment.Scenario == ProcessingScenario.PendingThenAccepted
+            && settlement!.StatusCode == "ACSC")
+        {
+            await PublishStatusAsync(payment, settlement, "PDNG", "Payment is pending Fed processing", token);
+            await Task.Delay(TimeSpan.FromSeconds(2), token);
+        }
         await PublishResultsAsync(payment, settlement!, token);
         logger.LogInformation("Fed processed {CorrelationId} with {Status}; IMAD {Imad}",
             payment.CorrelationId, settlement!.StatusCode, settlement.Imad);
@@ -53,15 +60,9 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private async Task PublishResultsAsync(FedEnvelope payment, FedSettlement settlement, CancellationToken token)
     {
-        var accepted = settlement.StatusCode == "ACCP";
-        var statusXml = iso.CreatePacs002(payment.CorrelationId, settlement.StatusCode,
-            accepted ? "AcceptedSettlementCompleted" : "Fed validation or liquidity rejection",
-            settlement.Imad);
-        await bus.PublishAsync(Queues.FedInbound, payment with
-        {
-            Kind = FedMessageKind.Status, XmlPayload = statusXml, Imad = settlement.Imad,
-            Omad = settlement.Omad, StatusCode = settlement.StatusCode
-        }, token);
+        var accepted = settlement.StatusCode == "ACSC";
+        await PublishStatusAsync(payment, settlement, settlement.StatusCode,
+            accepted ? "AcceptedSettlementCompleted" : "Fed validation, scenario, or liquidity rejection", token);
         if (accepted)
         {
             await bus.PublishAsync(Queues.FedInbound, payment with
@@ -70,5 +71,16 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 StatusCode = settlement.StatusCode
             }, token);
         }
+    }
+
+    private async Task PublishStatusAsync(FedEnvelope payment, FedSettlement settlement,
+        string statusCode, string reason, CancellationToken token)
+    {
+        var statusXml = iso.CreatePacs002(payment.CorrelationId, statusCode, reason, settlement.Imad);
+        await bus.PublishAsync(Queues.FedInbound, payment with
+        {
+            Kind = FedMessageKind.Status, XmlPayload = statusXml, Imad = settlement.Imad,
+            Omad = settlement.Omad, StatusCode = statusCode
+        }, token);
     }
 }

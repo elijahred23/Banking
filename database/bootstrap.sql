@@ -11,5 +11,6 @@ SET XACT_ABORT ON;
 :r database/tables/006_WireEvents.sql
 :r database/tables/007_MessageDeliveries.sql
 :r database/tables/008_FedSettlements.sql
+:r database/tables/009_LedgerEntries.sql
 
 PRINT 'BankingDb baseline schema is ready.';

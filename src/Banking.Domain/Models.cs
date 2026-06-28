@@ -3,9 +3,10 @@ using System.ComponentModel.DataAnnotations;
 namespace Banking.Domain;
 
 public enum WireDirection { Outgoing, Incoming }
-public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, Settled, Received, Completed, Rejected }
+public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected }
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
+public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
 
 public sealed class Bank
 {
@@ -33,6 +34,8 @@ public sealed class Account
     public Customer Customer { get; set; } = null!;
     [MaxLength(24)] public required string AccountNumber { get; set; }
     public decimal Balance { get; set; }
+    public decimal HeldBalance { get; set; }
+    public decimal AvailableBalance => Balance - HeldBalance;
 }
 
 public sealed class WireTransfer
@@ -50,11 +53,27 @@ public sealed class WireTransfer
     public WireStatus Status { get; set; }
     [MaxLength(120)] public required string SenderName { get; set; }
     [MaxLength(120)] public required string ReceiverName { get; set; }
+    [MaxLength(24)] public required string BeneficiaryAccountNumber { get; set; }
+    public ProcessingScenario Scenario { get; set; }
     [MaxLength(35)] public string? Imad { get; set; }
     [MaxLength(35)] public string? Omad { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
     public List<IsoMessage> IsoMessages { get; set; } = [];
     public List<WireEvent> Events { get; set; } = [];
+}
+
+public sealed class LedgerEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid JournalId { get; set; }
+    public Guid WireTransferId { get; set; }
+    public WireTransfer WireTransfer { get; set; } = null!;
+    [MaxLength(80)] public required string AccountCode { get; set; }
+    [MaxLength(120)] public required string AccountName { get; set; }
+    public decimal Debit { get; set; }
+    public decimal Credit { get; set; }
+    [MaxLength(240)] public required string Description { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class IsoMessage

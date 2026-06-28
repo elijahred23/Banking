@@ -26,7 +26,7 @@ public sealed class Worker(
         var rejection = blocked ? "OFAC simulation matched a blocked name."
             : wire.Amount <= 0 ? "Amount must be positive."
             : account is null ? "Originating account was not found."
-            : account.Balance < wire.Amount ? "Insufficient customer funds."
+            : account.AvailableBalance < wire.Amount ? "Insufficient available customer funds."
             : null;
         if (rejection is not null)
         {
@@ -37,29 +37,43 @@ public sealed class Worker(
             return;
         }
 
-        account!.Balance -= wire.Amount;
+        account!.HeldBalance += wire.Amount;
         wire.Status = WireStatus.Validated;
-        db.WireEvents.Add(Event(wire.Id, "Validated", "Funds, sanctions, and OFAC simulations passed."));
+        db.WireEvents.Add(Event(wire.Id, "Validated",
+            $"Validation passed; {wire.Amount:C} placed on hold. Ledger balance is unchanged."));
         await db.SaveChangesAsync(cancellationToken);
         await bus.PublishAsync(Queues.WireValidated, new { wire.Id, wire.CorrelationId }, cancellationToken);
 
         var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
         var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
         var receiverAccount = await db.Accounts.Include(x => x.Customer)
-            .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id && x.Customer.Name == wire.ReceiverName,
+            .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id
+                && x.AccountNumber == wire.BeneficiaryAccountNumber,
                 cancellationToken);
         var xml = iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
-            receiverAccount?.AccountNumber ?? "NOTPROVIDED");
-        if (!iso.IsWellFormed(xml, out var error)) throw new InvalidOperationException(error);
+            wire.BeneficiaryAccountNumber);
+        if (wire.Scenario == ProcessingScenario.MalformedIso) xml = xml[..^12];
+        var validation = iso.Validate(xml);
+        if (!validation.IsValid)
+        {
+            account.HeldBalance -= wire.Amount;
+            wire.Status = WireStatus.Rejected;
+            db.WireEvents.Add(Event(wire.Id, "Rejected",
+                $"ISO profile validation failed; funds hold released. {string.Join(" ", validation.Errors)}"));
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
 
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
             Direction = MessageDirection.Outbound, XmlPayload = xml });
         wire.Status = WireStatus.ReadyForFed;
-        db.WireEvents.Add(Event(wire.Id, "IsoGenerated", "pacs.008 payment instruction generated and validated."));
+        db.WireEvents.Add(Event(wire.Id, "IsoGenerated",
+            "pacs.008 generated with head.001 business header and UETR; lab profile validation passed."));
         await db.SaveChangesAsync(cancellationToken);
         await bus.PublishAsync(Queues.WireIsoGenerated, new { wire.Id, MessageType = "pacs.008" }, cancellationToken);
         await bus.PublishAsync(Queues.WireReadyForFed,
-            new WireReadyForFed(wire.Id, wire.CorrelationId, sender.Id, receiver.Id, wire.Amount, xml),
+            new WireReadyForFed(wire.Id, wire.CorrelationId, sender.Id, receiver.Id, wire.Amount, xml,
+                wire.Scenario),
             cancellationToken);
         logger.LogInformation("Wire {WireId} is ready for Fed", wire.Id);
     }
