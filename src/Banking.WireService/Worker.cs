@@ -58,6 +58,8 @@ public sealed class Worker(
         {
             account.HeldBalance -= wire.Amount;
             wire.Status = WireStatus.Rejected;
+            db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
+                Direction = MessageDirection.Outbound, XmlPayload = xml });
             db.WireEvents.Add(Event(wire.Id, "Rejected",
                 $"ISO profile validation failed; funds hold released. {string.Join(" ", validation.Errors)}"));
             await db.SaveChangesAsync(cancellationToken);

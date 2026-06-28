@@ -29,7 +29,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 var sequence = Random.Shared.Next(100000, 999999);
                 var imad = $"{DateTime.UtcNow:yyyyMMdd}{sender.FedParticipantId[..Math.Min(6, sender.FedParticipantId.Length)]}{sequence}";
                 var omad = $"{DateTime.UtcNow:yyyyMMdd}FED{Random.Shared.Next(100000, 999999)}";
-                var validXml = iso.IsWellFormed(payment.XmlPayload, out _);
+                var validXml = iso.Validate(payment.XmlPayload).IsValid;
                 var accepted = validXml && payment.Amount > 0 && sender.MasterAccountBalance >= payment.Amount
                     && payment.Scenario != ProcessingScenario.FedRejects;
                 if (accepted)

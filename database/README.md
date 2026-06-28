@@ -35,3 +35,7 @@ The seed script is idempotent: rerunning it does not duplicate the four banks, c
 5. Keep the EF model in `BankingDbContext` synchronized with these scripts.
 
 The application currently uses EF Core `EnsureCreated` for local first-run setup. These scripts provide a reviewable baseline and a controlled location for subsequent schema changes.
+
+For existing lab databases, `202606280000_payment_learning.sql` adds held balances,
+explicit beneficiary data, processing scenarios, and the balanced journal table. Web
+startup runs the same upgrade idempotently for the default local workflow.

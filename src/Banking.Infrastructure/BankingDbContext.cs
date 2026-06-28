@@ -20,6 +20,8 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<Bank>().Property(x => x.MasterAccountBalance).HasPrecision(19, 4);
         modelBuilder.Entity<Account>().Property(x => x.Balance).HasPrecision(19, 4);
         modelBuilder.Entity<Account>().Property(x => x.HeldBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.Balance).IsConcurrencyToken();
+        modelBuilder.Entity<Account>().Property(x => x.HeldBalance).IsConcurrencyToken();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Amount).HasPrecision(19, 4);
         modelBuilder.Entity<Bank>().HasIndex(x => x.RoutingNumber).IsUnique();
         modelBuilder.Entity<Account>().HasIndex(x => x.AccountNumber).IsUnique();

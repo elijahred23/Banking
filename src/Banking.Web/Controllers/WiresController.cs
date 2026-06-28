@@ -135,7 +135,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         "Created" => "Banking.Web",
         "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
         "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "FedwireSimulator → MessageManager",
-        "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "Completed"
+        "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",
         _ => "Unknown"
     };
