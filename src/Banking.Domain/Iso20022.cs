@@ -72,11 +72,11 @@ public sealed class IsoMessageService : IIsoMessageService
                     new XElement(Pacs008 + "IntrBkSttlmDt", DateTime.UtcNow.ToString("yyyy-MM-dd")),
                     new XElement(Pacs008 + "ChrgBr", "SHAR"),
                     PartyWithAddress(Pacs008, "Dbtr", wire.SenderName, senderBank),
-                    Account(Pacs008, "DbtrAcct", debtorAccount),
+                    CrossBorderAccount(Pacs008, "DbtrAcct", debtorAccount),
                     BicAgent(Pacs008, "DbtrAgt", senderBank.Bic),
                     BicAgent(Pacs008, "CdtrAgt", receiverBank.Bic),
                     PartyWithAddress(Pacs008, "Cdtr", wire.ReceiverName, receiverBank),
-                    Account(Pacs008, "CdtrAcct", creditorAccount))));
+                    CrossBorderAccount(Pacs008, "CdtrAcct", creditorAccount))));
         return EnvelopeMessage(BicHeader(senderBank.Bic, receiverBank.Bic, messageId,
             CbprPlusProfile.MessageDefinitionId, CbprPlusProfile.BusinessService), document);
     }
@@ -260,8 +260,8 @@ public sealed class IsoMessageService : IIsoMessageService
             && (bics.Count != 2 || bics.Any(x => !CbprPlusProfile.IsValidBic(x))))
             errors.Add("Debtor and creditor agents require either nine-digit routing numbers or valid BICFIs.");
         var accounts = new[] { "DbtrAcct", "CdtrAcct" }
-            .Select(name => tx.Element(Pacs008 + name)?.Descendants(Pacs008 + "Othr")
-                .SingleOrDefault()?.Element(Pacs008 + "Id")?.Value)
+            .Select(name => tx.Element(Pacs008 + name)?.Descendants(Pacs008 + "Id")
+                .Select(x => x.Value).FirstOrDefault())
             .ToList();
         if (accounts.Count != 2 || accounts.Any(string.IsNullOrWhiteSpace))
             errors.Add("Debtor and creditor account identifiers are required.");
@@ -320,6 +320,14 @@ public sealed class IsoMessageService : IIsoMessageService
 
     private static XElement Account(XNamespace ns, string name, string id) => new(ns + name,
             new XElement(ns + "Id", new XElement(ns + "Othr", new XElement(ns + "Id", id))));
+
+    private static XElement CrossBorderAccount(XNamespace ns, string name, string id)
+    {
+        var normalized = new string(id.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        return CbprPlusProfile.IsValidIban(normalized)
+            ? new XElement(ns + name, new XElement(ns + "Id", new XElement(ns + "IBAN", normalized)))
+            : Account(ns, name, id);
+    }
 
     private static XElement Qualify(XElement element, XNamespace ns)
     {

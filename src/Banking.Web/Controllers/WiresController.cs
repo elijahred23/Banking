@@ -39,6 +39,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
         var account = await db.Accounts.Include(x => x.Customer)
             .SingleOrDefaultAsync(x => x.Id == model.FromAccountId && x.Customer.BankId == bankId, token);
+        var senderBank = await db.Banks.SingleAsync(x => x.Id == bankId, token);
         var receiverBank = await db.Banks.SingleOrDefaultAsync(x => x.Id == model.ReceiverBankId, token);
         if (account is null) ModelState.AddModelError(nameof(model.FromAccountId), "Select an account owned by the active bank.");
         if (receiverBank is null || receiverBank.Id == bankId)
@@ -54,9 +55,25 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             && !receiverBank.SwiftEnabled)
             ModelState.AddModelError(nameof(model.ReceiverBankId),
                 "The receiving institution is not enabled for the SWIFT CBPR+ lab.");
+        if (model.Rail == PaymentRail.SwiftCbprPlus && !senderBank.SwiftEnabled)
+            ModelState.AddModelError(nameof(model.Rail),
+                "The sending institution is not enabled for the SWIFT CBPR+ lab.");
+        if (receiverBank is not null && receiverBank.CountryCode != senderBank.CountryCode
+            && model.Rail != PaymentRail.SwiftCbprPlus)
+            ModelState.AddModelError(nameof(model.Rail),
+                "Cross-border payments must use the SWIFT international wire rail.");
+        if (receiverBank is not null && receiverBank.CountryCode != "US"
+            && model.Rail == PaymentRail.SwiftCbprPlus
+            && !CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber))
+            ModelState.AddModelError(nameof(model.BeneficiaryAccountNumber),
+                "Enter a valid IBAN for this international beneficiary.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
-        var beneficiaryAccount = model.BeneficiaryAccountNumber.Trim();
+        var beneficiaryAccount = model.Rail == PaymentRail.SwiftCbprPlus
+            && CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber)
+                ? new string(model.BeneficiaryAccountNumber.Where(char.IsLetterOrDigit).ToArray())
+                    .ToUpperInvariant()
+                : model.BeneficiaryAccountNumber.Trim();
         var receiverAccount = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
             x.Customer.BankId == model.ReceiverBankId && x.AccountNumber == beneficiaryAccount, token);
         var wire = new WireTransfer
@@ -68,7 +85,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             BeneficiaryAccountNumber = beneficiaryAccount, Scenario = model.Scenario,
             Rail = model.Rail,
             Events = [new WireEvent { EventType = "Created",
-                Description = $"Outgoing {model.Rail} payment created using the {model.Scenario} lab scenario." }]
+                Description = receiverBank!.CountryCode == senderBank.CountryCode
+                    ? $"Outgoing {model.Rail} payment created using the {model.Scenario} lab scenario."
+                    : $"Outgoing international USD wire to {receiverBank.CountryCode} created over SWIFT CBPR+ using the {model.Scenario} lab scenario." }]
         };
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
@@ -164,7 +183,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber} · available {(x.Balance - x.HeldBalance):C}", x.Id.ToString()))
             .ToListAsync(token);
         model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
-            .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
+            .Select(x => new SelectListItem($"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString()))
             .ToListAsync(token);
         return model;
     }

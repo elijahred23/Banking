@@ -19,6 +19,27 @@ public static class CbprPlusProfile
         && value[..6].All(IsUpperAsciiLetter)
         && value[6..].All(x => IsUpperAsciiLetter(x) || x is >= '0' and <= '9');
 
+    public static bool IsValidIban(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var iban = new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        if (iban.Length is < 15 or > 34 || !iban[..2].All(IsUpperAsciiLetter)
+            || !iban[2..4].All(char.IsDigit)
+            || iban.Any(x => !IsUpperAsciiLetter(x) && !char.IsDigit(x))) return false;
+
+        var remainder = 0;
+        foreach (var character in iban[4..].Concat(iban[..4]))
+        {
+            if (char.IsDigit(character)) remainder = (remainder * 10 + character - '0') % 97;
+            else
+            {
+                var numericValue = character - 'A' + 10;
+                remainder = (remainder * 100 + numericValue) % 97;
+            }
+        }
+        return remainder == 1;
+    }
+
     private static bool IsUpperAsciiLetter(char value) => value is >= 'A' and <= 'Z';
 }
 

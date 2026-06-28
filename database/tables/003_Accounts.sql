@@ -4,7 +4,7 @@ BEGIN
     (
         Id uniqueidentifier NOT NULL,
         CustomerId uniqueidentifier NOT NULL,
-        AccountNumber nvarchar(24) NOT NULL,
+        AccountNumber nvarchar(34) NOT NULL,
         Balance decimal(19, 4) NOT NULL,
         HeldBalance decimal(19, 4) NOT NULL CONSTRAINT DF_Accounts_HeldBalance DEFAULT (0),
         CONSTRAINT PK_Accounts PRIMARY KEY (Id),

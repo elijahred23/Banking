@@ -42,6 +42,7 @@ public static class ServiceRegistration
             db.Banks.AddRange(bankers, first, community, redRiver);
             await db.SaveChangesAsync(cancellationToken);
         }
+        if (seed) await EnsureInternationalBanksAsync(db, cancellationToken);
     }
 
     private static Task<int> UpgradeLabSchemaAsync(BankingDbContext db, CancellationToken token) =>
@@ -58,6 +59,20 @@ public static class ServiceRegistration
             IF COL_LENGTH(N'dbo.WireTransfers', N'Rail') IS NULL
                 ALTER TABLE dbo.WireTransfers ADD Rail nvarchar(max) NOT NULL
                     CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire');
+            IF EXISTS (SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Accounts') AND name = N'AccountNumber'
+                    AND max_length < 68)
+            BEGIN
+                IF EXISTS (SELECT 1 FROM sys.indexes
+                    WHERE object_id = OBJECT_ID(N'dbo.Accounts') AND name = N'IX_Accounts_AccountNumber')
+                    DROP INDEX IX_Accounts_AccountNumber ON dbo.Accounts;
+                ALTER TABLE dbo.Accounts ALTER COLUMN AccountNumber nvarchar(34) NOT NULL;
+                CREATE UNIQUE INDEX IX_Accounts_AccountNumber ON dbo.Accounts (AccountNumber);
+            END;
+            IF EXISTS (SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.WireTransfers') AND name = N'BeneficiaryAccountNumber'
+                    AND max_length < 68)
+                ALTER TABLE dbo.WireTransfers ALTER COLUMN BeneficiaryAccountNumber nvarchar(34) NOT NULL;
             IF COL_LENGTH(N'dbo.Banks', N'FedNowEnabled') IS NULL
             BEGIN
                 ALTER TABLE dbo.Banks ADD
@@ -110,6 +125,35 @@ public static class ServiceRegistration
                 CREATE INDEX IX_LedgerEntries_JournalId ON dbo.LedgerEntries (JournalId);
             END;
             """, token);
+
+    private static async Task EnsureInternationalBanksAsync(BankingDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var existingBics = await db.Banks.Select(x => x.Bic).ToListAsync(cancellationToken);
+        var banks = new List<Bank>();
+        if (!existingBics.Contains("EUDMDEFFXXX"))
+            banks.Add(InternationalBank("Euro Demo Bank", "000000001", "EURODEMO",
+                "EUDMDEFFXXX", "Frankfurt", "DE", "Anna Müller",
+                "DE89370400440532013000", 75_000m));
+        if (!existingBics.Contains("BRDMGB2LXXX"))
+            banks.Add(InternationalBank("Britannia Demo Bank", "000000002", "BRITDEMO",
+                "BRDMGB2LXXX", "London", "GB", "James Wilson",
+                "GB82WEST12345698765432", 60_000m));
+        if (banks.Count == 0) return;
+        db.Banks.AddRange(banks);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static Bank InternationalBank(string name, string routing, string participant,
+        string bic, string town, string country, string customerName, string iban, decimal balance) => new()
+    {
+        Name = name, RoutingNumber = routing, FedParticipantId = participant, Bic = bic,
+        TownName = town, CountryCode = country, MasterAccountBalance = 0,
+        FedNowEnabled = false, FedNowSendEnabled = false, FedNowReceiveEnabled = false,
+        FedNowRequestForPaymentEnabled = false, FedNowOnline = false, SwiftEnabled = true,
+        Customers = [new Customer { Name = customerName,
+            Accounts = [new Account { AccountNumber = iban, Balance = balance }] }]
+    };
 
     private static Bank Bank(string name, string routing, string participant, decimal balance,
         (string Name, string Account, decimal Balance) customer) => new()

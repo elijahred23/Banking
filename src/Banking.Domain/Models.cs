@@ -11,7 +11,7 @@ public enum PaymentRail
 {
     Fedwire,
     FedNow,
-    [Display(Name = "SWIFT CBPR+")] SwiftCbprPlus
+    [Display(Name = "SWIFT international wire (CBPR+)")] SwiftCbprPlus
 }
 
 public sealed class Bank
@@ -47,7 +47,7 @@ public sealed class Account
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CustomerId { get; set; }
     public Customer Customer { get; set; } = null!;
-    [MaxLength(24)] public required string AccountNumber { get; set; }
+    [MaxLength(34)] public required string AccountNumber { get; set; }
     public decimal Balance { get; set; }
     public decimal HeldBalance { get; set; }
     public decimal AvailableBalance => Balance - HeldBalance;
@@ -68,7 +68,7 @@ public sealed class WireTransfer
     public WireStatus Status { get; set; }
     [MaxLength(120)] public required string SenderName { get; set; }
     [MaxLength(120)] public required string ReceiverName { get; set; }
-    [MaxLength(24)] public required string BeneficiaryAccountNumber { get; set; }
+    [MaxLength(34)] public required string BeneficiaryAccountNumber { get; set; }
     public ProcessingScenario Scenario { get; set; }
     public PaymentRail Rail { get; set; }
     [MaxLength(35)] public string? Imad { get; set; }

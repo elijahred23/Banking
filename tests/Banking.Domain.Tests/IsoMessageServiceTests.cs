@@ -158,6 +158,34 @@ public sealed class IsoMessageServiceTests
         Assert.Contains("<TwnNm>Tulsa</TwnNm>", xml);
     }
 
+    [Fact]
+    public void CbprPlus_international_payment_emits_valid_iban_and_country()
+    {
+        var wire = Wire();
+        wire.Rail = PaymentRail.SwiftCbprPlus;
+        wire.BeneficiaryAccountNumber = "DE89370400440532013000";
+        var receiver = Bank("000000001", "EUDMDEFFXXX");
+        receiver.TownName = "Frankfurt";
+        receiver.CountryCode = "DE";
+
+        var xml = _service.CreateCbprPlusPacs008(wire,
+            Bank("101000019", "BAKRUS44XXX"), receiver, "123456",
+            wire.BeneficiaryAccountNumber);
+        var result = new CbprPlusMessageService(_service).ValidateCustomerCreditTransfer(xml);
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Errors));
+        Assert.Contains("<IBAN>DE89370400440532013000</IBAN>", xml);
+        Assert.Contains("<Ctry>DE</Ctry>", xml);
+    }
+
+    [Theory]
+    [InlineData("DE89370400440532013000", true)]
+    [InlineData("GB82 WEST 1234 5698 7654 32", true)]
+    [InlineData("DE89370400440532013001", false)]
+    [InlineData("654321", false)]
+    public void Iban_validation_checks_format_and_mod97(string value, bool expected) =>
+        Assert.Equal(expected, CbprPlusProfile.IsValidIban(value));
+
     [Theory]
     [InlineData("SttlmMtd", "CLRG", "serial method")]
     [InlineData("ChrgBr", "SLEV", "charge bearer")]

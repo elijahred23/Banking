@@ -9,7 +9,7 @@ public sealed class CreateWireViewModel
     [Required] public Guid FromAccountId { get; set; }
     [Required] public Guid ReceiverBankId { get; set; }
     [Required, StringLength(120)] public string ReceiverName { get; set; } = "";
-    [Required, StringLength(24, MinimumLength = 4)] public string BeneficiaryAccountNumber { get; set; } = "";
+    [Required, StringLength(34, MinimumLength = 4)] public string BeneficiaryAccountNumber { get; set; } = "";
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     public PaymentRail Rail { get; set; }
     public ProcessingScenario Scenario { get; set; }

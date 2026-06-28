@@ -14,7 +14,7 @@ BEGIN
         Status nvarchar(max) NOT NULL,
         SenderName nvarchar(120) NOT NULL,
         ReceiverName nvarchar(120) NOT NULL,
-        BeneficiaryAccountNumber nvarchar(24) NOT NULL,
+        BeneficiaryAccountNumber nvarchar(34) NOT NULL,
         Scenario nvarchar(max) NOT NULL,
         Rail nvarchar(max) NOT NULL CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire'),
         Imad nvarchar(35) NULL,
