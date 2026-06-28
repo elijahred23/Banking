@@ -16,6 +16,7 @@ BEGIN
         ReceiverName nvarchar(120) NOT NULL,
         BeneficiaryAccountNumber nvarchar(24) NOT NULL,
         Scenario nvarchar(max) NOT NULL,
+        Rail nvarchar(max) NOT NULL CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire'),
         Imad nvarchar(35) NULL,
         Omad nvarchar(35) NULL,
         CreatedDate datetimeoffset NOT NULL,

@@ -13,7 +13,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private async Task SettleAsync(FedEnvelope payment, CancellationToken token)
     {
-        if (payment.Kind != FedMessageKind.Payment) return;
+        if (payment.Kind != FedMessageKind.Payment || payment.Rail != PaymentRail.Fedwire) return;
         await using var db = await dbFactory.CreateDbContextAsync(token);
         FedSettlement? settlement = null;
         var strategy = db.Database.CreateExecutionStrategy();

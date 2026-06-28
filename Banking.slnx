@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Banking.Domain/Banking.Domain.csproj" />
     <Project Path="src/Banking.FedwireSimulator/Banking.FedwireSimulator.csproj" />
+    <Project Path="src/Banking.FedNowSimulator/Banking.FedNowSimulator.csproj" />
     <Project Path="src/Banking.Infrastructure/Banking.Infrastructure.csproj" />
     <Project Path="src/Banking.MessageManager/Banking.MessageManager.csproj" />
     <Project Path="src/Banking.Web/Banking.Web.csproj" />

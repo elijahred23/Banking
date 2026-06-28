@@ -7,6 +7,7 @@ public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFe
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
 public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
+public enum PaymentRail { Fedwire, FedNow }
 
 public sealed class Bank
 {
@@ -15,6 +16,11 @@ public sealed class Bank
     [MaxLength(9)] public required string RoutingNumber { get; set; }
     [MaxLength(12)] public required string FedParticipantId { get; set; }
     public decimal MasterAccountBalance { get; set; }
+    public bool FedNowEnabled { get; set; } = true;
+    public bool FedNowSendEnabled { get; set; } = true;
+    public bool FedNowReceiveEnabled { get; set; } = true;
+    public bool FedNowRequestForPaymentEnabled { get; set; } = true;
+    public bool FedNowOnline { get; set; } = true;
     public List<Customer> Customers { get; set; } = [];
 }
 
@@ -55,6 +61,7 @@ public sealed class WireTransfer
     [MaxLength(120)] public required string ReceiverName { get; set; }
     [MaxLength(24)] public required string BeneficiaryAccountNumber { get; set; }
     public ProcessingScenario Scenario { get; set; }
+    public PaymentRail Rail { get; set; }
     [MaxLength(35)] public string? Imad { get; set; }
     [MaxLength(35)] public string? Omad { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;

@@ -9,7 +9,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
         bus.ConsumeAsync<WireReadyForFed>(Queues.WireReadyForFed, SendToFedAsync, stoppingToken),
-        bus.ConsumeAsync<FedEnvelope>(Queues.FedInbound, ReceiveFromFedAsync, stoppingToken));
+        bus.ConsumeAsync<FedEnvelope>(Queues.FedInbound, ReceiveFromFedAsync, stoppingToken),
+        bus.ConsumeAsync<FedEnvelope>(Queues.FedNowInbound, ReceiveFromFedAsync, stoppingToken));
 
     private async Task SendToFedAsync(WireReadyForFed message, CancellationToken token)
     {
@@ -17,17 +18,19 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == message.WireId, token);
         if (wire is null || wire.Status != WireStatus.ReadyForFed) return;
         wire.Status = WireStatus.SentToFed;
-        db.WireEvents.Add(Event(wire.Id, "SentToFed", "Message Manager delivered pacs.008 to FED.OUTBOUND."));
-        var delivery = new MessageDelivery { WireTransferId = wire.Id, Destination = Queues.FedOutbound,
+        var destination = wire.Rail == PaymentRail.FedNow ? Queues.FedNowOutbound : Queues.FedOutbound;
+        db.WireEvents.Add(Event(wire.Id, "SentToFed",
+            $"Message Manager delivered pacs.008 to {destination}."));
+        var delivery = new MessageDelivery { WireTransferId = wire.Id, Destination = destination,
             Status = DeliveryStatus.Pending, Attempts = 1 };
         db.MessageDeliveries.Add(delivery);
         await db.SaveChangesAsync(token);
         try
         {
-            await bus.PublishAsync(Queues.FedOutbound,
+            await bus.PublishAsync(destination,
                 new FedEnvelope(FedMessageKind.Payment, wire.Id, wire.CorrelationId,
                     wire.SenderBankId, wire.ReceiverBankId, wire.Amount, message.Pacs008Xml,
-                    Scenario: message.Scenario), token);
+                    Scenario: message.Scenario, Rail: wire.Rail), token);
             delivery.Status = DeliveryStatus.Sent;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(token);
@@ -61,24 +64,29 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         wire.Omad = message.Omad;
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.002",
             Direction = MessageDirection.Inbound, XmlPayload = message.XmlPayload });
+        var destination = wire.Rail == PaymentRail.FedNow ? Queues.FedNowOutbound : Queues.FedOutbound;
         var delivery = await db.MessageDeliveries
             .OrderByDescending(x => x.UpdatedDate)
-            .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id && x.Destination == Queues.FedOutbound, token);
+            .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id && x.Destination == destination, token);
         if (delivery is not null)
         {
             delivery.Status = DeliveryStatus.Delivered;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
         }
-        if (message.StatusCode == "PDNG")
+        if (message.StatusCode is "PDNG" or "ACCP" or "ACWP")
         {
             wire.Status = WireStatus.PendingAtFed;
             db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
-                "Fed reported PDNG. The customer funds remain held while processing continues."));
+                $"{wire.Rail} reported {message.StatusCode}. Customer funds remain held while processing continues."));
         }
         else if (message.StatusCode == "ACSC")
         {
             wire.Status = WireStatus.Settled;
-            db.WireEvents.Add(Event(wire.Id, "AcceptedByFed", $"Fed returned ACSC and settled the payment. IMAD {message.Imad}."));
+            var reference = wire.Rail == PaymentRail.FedNow
+                ? $"network reference {message.Imad}"
+                : $"IMAD {message.Imad}";
+            db.WireEvents.Add(Event(wire.Id, "AcceptedByFed",
+                $"{wire.Rail} returned ACSC and settled the payment; {reference}."));
             db.WireEvents.Add(Event(wire.Id, "Settled", "Sender master account debited and receiver master account credited."));
             if (wire.FromAccountId is Guid accountId)
             {
@@ -93,7 +101,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         else
         {
             wire.Status = WireStatus.Rejected;
-            db.WireEvents.Add(Event(wire.Id, "RejectedByFed", "Fed rejected the payment instruction."));
+            db.WireEvents.Add(Event(wire.Id, "RejectedByFed", $"{wire.Rail} rejected the payment instruction."));
             if (wire.FromAccountId is Guid accountId)
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
@@ -119,10 +127,12 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             Direction = WireDirection.Incoming, Amount = message.Amount, Status = WireStatus.Received,
             SenderName = outgoing.SenderName, ReceiverName = outgoing.ReceiverName,
             BeneficiaryAccountNumber = outgoing.BeneficiaryAccountNumber, Scenario = outgoing.Scenario,
+            Rail = outgoing.Rail,
             ToAccountId = outgoing.ToAccountId, Imad = message.Imad, Omad = message.Omad,
             IsoMessages = [new IsoMessage { MessageType = "pacs.008", Direction = MessageDirection.Inbound,
                 XmlPayload = message.XmlPayload }],
-            Events = [Event(Guid.Empty, "ReceivedFromFed", $"Original pacs.008 received from Fed. IMAD {message.Imad}.")]
+            Events = [Event(Guid.Empty, "ReceivedFromFed",
+                $"Original pacs.008 received from {outgoing.Rail}; reference {message.Imad}.")]
         };
         var account = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
             x.Customer.BankId == message.ReceiverBankId
@@ -138,7 +148,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         }
         db.WireTransfers.Add(incoming);
         outgoing = await db.WireTransfers.SingleAsync(x => x.Id == message.WireId, token);
-        db.WireEvents.Add(Event(outgoing.Id, "Delivered", "Original pacs.008 delivered to the receiving bank."));
+        db.WireEvents.Add(Event(outgoing.Id, "Delivered",
+            $"Original pacs.008 delivered to the receiving bank through {outgoing.Rail}."));
         await db.SaveChangesAsync(token);
         await bus.PublishAsync(Queues.WireIncomingReceived, new { incoming.Id, incoming.CorrelationId }, token);
         logger.LogInformation("Created incoming wire {WireId} for correlation {CorrelationId}", incoming.Id,

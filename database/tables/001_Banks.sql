@@ -7,6 +7,11 @@ BEGIN
         RoutingNumber nvarchar(9) NOT NULL,
         FedParticipantId nvarchar(12) NOT NULL,
         MasterAccountBalance decimal(19, 4) NOT NULL,
+        FedNowEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowEnabled DEFAULT (1),
+        FedNowSendEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowSendEnabled DEFAULT (1),
+        FedNowReceiveEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowReceiveEnabled DEFAULT (1),
+        FedNowRequestForPaymentEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowRfpEnabled DEFAULT (1),
+        FedNowOnline bit NOT NULL CONSTRAINT DF_Banks_FedNowOnline DEFAULT (1),
         CONSTRAINT PK_Banks PRIMARY KEY (Id)
     );
 END;

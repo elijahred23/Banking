@@ -51,7 +51,7 @@ public sealed class IsoMessageServiceTests
     {
         string[] expected =
         [
-            "head.001", "admi.002", "admi.004", "admi.006", "admi.007", "admi.011",
+            "head.001", "admi.002", "admi.004", "admi.006", "admi.007", "admi.011", "admi.998",
             "pacs.002", "pacs.003", "pacs.004", "pacs.007", "pacs.008", "pacs.009",
             "pacs.010", "pacs.028", "pain.001", "pain.002", "pain.007", "pain.008",
             "pain.013", "pain.014", "camt.026", "camt.027", "camt.028", "camt.029",
@@ -97,6 +97,75 @@ public sealed class IsoMessageServiceTests
         Assert.True(_service.IsWellFormed(xml, out var error), error);
         Assert.Contains("head.001.001.02", xml);
         Assert.Contains("camt.056.001.08", xml);
+    }
+
+    [Fact]
+    public void FedNow_profile_contains_every_message_in_the_readiness_guide()
+    {
+        string[] expected =
+        [
+            "pacs.008", "pacs.002", "pacs.028", "pacs.009", "pacs.004",
+            "camt.056", "camt.029", "pain.013", "pain.014", "camt.055",
+            "camt.026", "camt.028", "camt.060", "camt.052", "camt.054",
+            "admi.002", "admi.007", "admi.004", "admi.011", "admi.006", "admi.998"
+        ];
+
+        Assert.Equal(expected.Order(), FedNowProfile.Messages.Select(x => x.MessageType).Order());
+        Assert.All(FedNowProfile.Messages, rule =>
+            Assert.True(IsoMessageCatalog.TryResolve(rule.MessageType, out _, out _), rule.MessageType));
+    }
+
+    [Fact]
+    public void FedNow_customer_credit_transfer_uses_profile_header_and_current_limit()
+    {
+        var wire = Wire();
+        wire.Rail = PaymentRail.FedNow;
+        var xml = _service.CreateFedNowPacs008(wire, Bank("101000019"), Bank("103000648"),
+            "123456", "654321");
+        var service = new FedNowMessageService(_service);
+
+        Assert.True(service.Validate(xml, FedNowProfile.CustomerCreditTransferLimit).IsValid);
+        Assert.Contains("<BizSvc>fednow</BizSvc>", xml);
+        Assert.False(service.Validate(xml, FedNowProfile.CustomerCreditTransferLimit + 0.01m).IsValid);
+    }
+
+    [Theory]
+    [InlineData("ACCP")]
+    [InlineData("ACWP")]
+    public void FedNow_accepts_receiver_processing_statuses(string status)
+    {
+        var xml = _service.CreateFedNowPacs002(Guid.NewGuid(), status, "receiver status",
+            "FN202606280000001", "FEDNOW", "PARTICIPANT");
+
+        Assert.True(_service.Validate(xml).IsValid);
+        Assert.Contains("<BizSvc>fednow</BizSvc>", xml);
+    }
+
+    [Fact]
+    public void FedNow_nonvalue_rules_define_acknowledgements_and_responses()
+    {
+        var service = new FedNowMessageService(_service);
+
+        Assert.True(service.RequiresReceiptAcknowledgement("camt.056.001.08"));
+        Assert.Contains("camt.029", service.GetResponseMessageTypes("camt.056"));
+        Assert.Contains("pain.014", service.GetResponseMessageTypes("pacs.028"));
+        Assert.False(service.RequiresReceiptAcknowledgement("pacs.008"));
+    }
+
+    [Fact]
+    public void FedNow_payment_decision_requires_participation_availability_account_and_liquidity()
+    {
+        var valid = new FedNowValidationResult(true, "pacs.008", []);
+        var accepted = new FedNowPaymentContext(valid, true, true, true, true, 100m, 100m,
+            ProcessingScenario.Standard);
+
+        Assert.Null(FedNowPaymentDecision.RejectionReason(accepted));
+        Assert.Contains("signed off", FedNowPaymentDecision.RejectionReason(
+            accepted with { ReceiverOnline = false }));
+        Assert.Contains("beneficiary account", FedNowPaymentDecision.RejectionReason(
+            accepted with { BeneficiaryAccountExists = false }));
+        Assert.Contains("liquidity", FedNowPaymentDecision.RejectionReason(
+            accepted with { SenderLiquidity = 99m }));
     }
 
     private static WireTransfer Wire() => new()

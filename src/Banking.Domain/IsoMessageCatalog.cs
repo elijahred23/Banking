@@ -24,6 +24,7 @@ public static partial class IsoMessageCatalog
             new("admi.006", "admi.006.001.01", "Retrieval request"),
             new("admi.007", "admi.007.001.01", "Positive or negative acknowledgement"),
             new("admi.011", "admi.011.001.01", "Connection check response"),
+            new("admi.998", "admi.998.001.02", "FedNow participant file"),
             new("pacs.002", "pacs.002.001.10", "FI-to-FI payment status report"),
             new("pacs.003", "pacs.003.001.08", "FI customer direct debit"),
             new("pacs.004", "pacs.004.001.09", "Payment return"),

@@ -50,8 +50,11 @@ public sealed class Worker(
             .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id
                 && x.AccountNumber == wire.BeneficiaryAccountNumber,
                 cancellationToken);
-        var xml = iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
-            wire.BeneficiaryAccountNumber);
+        var xml = wire.Rail == PaymentRail.FedNow
+            ? iso.CreateFedNowPacs008(wire, sender, receiver, account.AccountNumber,
+                wire.BeneficiaryAccountNumber)
+            : iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
+                wire.BeneficiaryAccountNumber);
         if (wire.Scenario == ProcessingScenario.MalformedIso) xml = xml[..^12];
         var validation = iso.Validate(xml);
         if (!validation.IsValid)
@@ -70,7 +73,7 @@ public sealed class Worker(
             Direction = MessageDirection.Outbound, XmlPayload = xml });
         wire.Status = WireStatus.ReadyForFed;
         db.WireEvents.Add(Event(wire.Id, "IsoGenerated",
-            "pacs.008 generated with head.001 business header and UETR; lab profile validation passed."));
+            $"pacs.008 generated with head.001 business header and UETR; {wire.Rail} lab profile validation passed."));
         await db.SaveChangesAsync(cancellationToken);
         await bus.PublishAsync(Queues.WireIsoGenerated, new { wire.Id, MessageType = "pacs.008" }, cancellationToken);
         await bus.PublishAsync(Queues.WireReadyForFed,

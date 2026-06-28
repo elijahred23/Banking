@@ -11,6 +11,8 @@ public static class Queues
     public const string WireIncomingReceived = "wire.incoming.received";
     public const string FedOutbound = "FED.OUTBOUND";
     public const string FedInbound = "FED.INBOUND";
+    public const string FedNowOutbound = "FEDNOW.OUTBOUND";
+    public const string FedNowInbound = "FEDNOW.INBOUND";
 }
 
 public sealed record WireCreated(Guid WireId);
@@ -20,7 +22,8 @@ public enum FedMessageKind { Payment, Status }
 public sealed record FedEnvelope(FedMessageKind Kind, Guid WireId, Guid CorrelationId,
     Guid SenderBankId, Guid ReceiverBankId, decimal Amount, string XmlPayload,
     string? Imad = null, string? Omad = null, string? StatusCode = null,
-    ProcessingScenario Scenario = ProcessingScenario.Standard);
+    ProcessingScenario Scenario = ProcessingScenario.Standard,
+    PaymentRail Rail = PaymentRail.Fedwire);
 
 public interface IMessageBus
 {

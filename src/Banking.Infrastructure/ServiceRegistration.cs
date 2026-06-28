@@ -16,6 +16,7 @@ public static class ServiceRegistration
             options.UseSqlServer(sql, sqlOptions => sqlOptions.EnableRetryOnFailure()));
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
+        services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         return services;
     }
 
@@ -53,6 +54,18 @@ public static class ServiceRegistration
             IF COL_LENGTH(N'dbo.WireTransfers', N'Scenario') IS NULL
                 ALTER TABLE dbo.WireTransfers ADD Scenario nvarchar(max) NOT NULL
                     CONSTRAINT DF_WireTransfers_Scenario DEFAULT (N'Standard');
+            IF COL_LENGTH(N'dbo.WireTransfers', N'Rail') IS NULL
+                ALTER TABLE dbo.WireTransfers ADD Rail nvarchar(max) NOT NULL
+                    CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire');
+            IF COL_LENGTH(N'dbo.Banks', N'FedNowEnabled') IS NULL
+            BEGIN
+                ALTER TABLE dbo.Banks ADD
+                    FedNowEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowEnabled DEFAULT (1),
+                    FedNowSendEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowSendEnabled DEFAULT (1),
+                    FedNowReceiveEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowReceiveEnabled DEFAULT (1),
+                    FedNowRequestForPaymentEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowRfpEnabled DEFAULT (1),
+                    FedNowOnline bit NOT NULL CONSTRAINT DF_Banks_FedNowOnline DEFAULT (1);
+            END;
             IF OBJECT_ID(N'dbo.LedgerEntries', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.LedgerEntries (

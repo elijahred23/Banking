@@ -14,14 +14,14 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] · Fedwire Lab</title>
+    <title>@ViewData["Title"] · Fed Payments Lab</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
 <header class="topbar">
     <nav class="navbar navbar-expand-lg navbar-dark container py-3">
-        <a class="navbar-brand fw-semibold" asp-controller="Home" asp-action="Index"><span class="brand-mark">F</span> Fedwire Lab</a>
+        <a class="navbar-brand fw-semibold" asp-controller="Home" asp-action="Index"><span class="brand-mark">F</span> Fed Payments Lab</a>
         @if (User.Identity?.IsAuthenticated == true)
         {
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
@@ -50,7 +50,7 @@
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
     @RenderBody()
 </main>
-<footer class="container py-4 text-secondary small border-top">Fedwire learning environment · All balances and messages are simulated.</footer>
+<footer class="container py-4 text-secondary small border-top">Fedwire and FedNow learning environment · All balances and messages are simulated.</footer>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

@@ -4,7 +4,7 @@
 }
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <div class="eyebrow">@wire.Direction WIRE</div>
+        <div class="eyebrow">@wire.Direction @wire.Rail</div>
         <h1>@wire.Amount.ToString("C")</h1>
         <div class="text-secondary">@wire.SenderName → @wire.ReceiverName</div>
     </div>
@@ -78,8 +78,14 @@
                 <dt>Correlation</dt><dd><code>@wire.CorrelationId</code></dd>
                 <dt>Beneficiary account</dt><dd><code>@wire.BeneficiaryAccountNumber</code></dd>
                 <dt>Scenario</dt><dd>@wire.Scenario</dd>
-                <dt>IMAD</dt><dd>@(wire.Imad ?? "Pending")</dd>
-                <dt>OMAD</dt><dd>@(wire.Omad ?? "Pending")</dd>
+                <dt>Payment rail</dt><dd>@wire.Rail</dd>
+                @if (wire.Rail == PaymentRail.FedNow)
+                { <dt>Network reference</dt><dd>@(wire.Imad ?? "Pending")</dd> }
+                else
+                {
+                    <dt>IMAD</dt><dd>@(wire.Imad ?? "Pending")</dd>
+                    <dt>OMAD</dt><dd>@(wire.Omad ?? "Pending")</dd>
+                }
             </dl>
         </section>
     </div>

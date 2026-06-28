@@ -11,7 +11,11 @@ public interface IIsoMessageService
 {
     string CreatePacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
         string debtorAccount, string creditorAccount);
+    string CreateFedNowPacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
+        string debtorAccount, string creditorAccount);
     string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad);
+    string CreateFedNowPacs002(Guid correlationId, string statusCode, string reason,
+        string networkReference, string from, string to);
     string CreateMessage(string messageType, string from, string to, XElement businessMessage,
         string? businessMessageId = null, string businessService = "iso20022");
     string CreateBusinessApplicationHeader(string from, string to, string messageDefinitionId,
@@ -35,6 +39,16 @@ public sealed class IsoMessageService : IIsoMessageService
 
     public string CreatePacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
         string debtorAccount, string creditorAccount)
+        => CreatePacs008(wire, senderBank, receiverBank, debtorAccount, creditorAccount,
+            "fedwire-lab");
+
+    public string CreateFedNowPacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
+        string debtorAccount, string creditorAccount)
+        => CreatePacs008(wire, senderBank, receiverBank, debtorAccount, creditorAccount,
+            FedNowProfile.BusinessService);
+
+    private static string CreatePacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
+        string debtorAccount, string creditorAccount, string businessService)
     {
         var messageId = wire.CorrelationId.ToString("N");
         var document = new XElement(Pacs008 + "Document",
@@ -60,10 +74,20 @@ public sealed class IsoMessageService : IIsoMessageService
                     new XElement(Pacs008 + "Cdtr", new XElement(Pacs008 + "Nm", wire.ReceiverName)),
                     Account(Pacs008, "CdtrAcct", creditorAccount))));
         return EnvelopeMessage(Header(senderBank.RoutingNumber, receiverBank.RoutingNumber,
-            messageId, "pacs.008.001.08"), document);
+            messageId, "pacs.008.001.08", businessService), document);
     }
 
     public string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad)
+        => CreatePacs002(correlationId, statusCode, reason, $"IMAD {imad}",
+            "FEDWIRE", "PARTICIPANT", "fedwire-lab");
+
+    public string CreateFedNowPacs002(Guid correlationId, string statusCode, string reason,
+        string networkReference, string from, string to)
+        => CreatePacs002(correlationId, statusCode, reason, networkReference, from, to,
+            FedNowProfile.BusinessService);
+
+    private static string CreatePacs002(Guid correlationId, string statusCode, string reason,
+        string networkReference, string from, string to, string businessService)
     {
         var messageId = Guid.NewGuid().ToString("N");
         var document = new XElement(Pacs002 + "Document",
@@ -80,8 +104,8 @@ public sealed class IsoMessageService : IIsoMessageService
                     new XElement(Pacs002 + "TxSts", statusCode),
                     new XElement(Pacs002 + "StsRsnInf",
                         new XElement(Pacs002 + "Rsn", new XElement(Pacs002 + "Prtry", reason)),
-                        new XElement(Pacs002 + "AddtlInf", $"IMAD {imad}")))));
-        return EnvelopeMessage(Header("FEDWIRE", "PARTICIPANT", messageId, "pacs.002.001.10"), document);
+                        new XElement(Pacs002 + "AddtlInf", networkReference)))));
+        return EnvelopeMessage(Header(from, to, messageId, "pacs.002.001.10", businessService), document);
     }
 
     public string CreateMessage(string messageType, string from, string to, XElement businessMessage,
@@ -188,8 +212,8 @@ public sealed class IsoMessageService : IIsoMessageService
     private static void ValidatePacs002(XElement document, List<string> errors)
     {
         var status = document.Descendants(Pacs002 + "TxSts").SingleOrDefault()?.Value;
-        if (status is not ("PDNG" or "ACSC" or "RJCT"))
-            errors.Add("Payment status must be PDNG, ACSC, or RJCT.");
+        if (status is not ("PDNG" or "ACCP" or "ACWP" or "ACSC" or "RJCT"))
+            errors.Add("Payment status must be PDNG, ACCP, ACWP, ACSC, or RJCT.");
         if (!Guid.TryParse(document.Descendants(Pacs002 + "OrgnlUETR").SingleOrDefault()?.Value, out _))
             errors.Add("Original UETR is required.");
     }

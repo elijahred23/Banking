@@ -43,6 +43,13 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         if (account is null) ModelState.AddModelError(nameof(model.FromAccountId), "Select an account owned by the active bank.");
         if (receiverBank is null || receiverBank.Id == bankId)
             ModelState.AddModelError(nameof(model.ReceiverBankId), "Select a different receiving bank.");
+        if (model.Rail == PaymentRail.FedNow && model.Amount > FedNowProfile.CustomerCreditTransferLimit)
+            ModelState.AddModelError(nameof(model.Amount),
+                $"FedNow customer credit transfers cannot exceed {FedNowProfile.CustomerCreditTransferLimit:C0}.");
+        if (model.Rail == PaymentRail.FedNow && receiverBank is not null
+            && (!receiverBank.FedNowEnabled || !receiverBank.FedNowReceiveEnabled || !receiverBank.FedNowOnline))
+            ModelState.AddModelError(nameof(model.ReceiverBankId),
+                "The receiving bank is not currently enabled and online to receive FedNow payments.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
         var beneficiaryAccount = model.BeneficiaryAccountNumber.Trim();
@@ -55,8 +62,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             Direction = WireDirection.Outgoing, Status = WireStatus.Created, Amount = model.Amount,
             SenderName = account.Customer.Name, ReceiverName = model.ReceiverName.Trim(),
             BeneficiaryAccountNumber = beneficiaryAccount, Scenario = model.Scenario,
+            Rail = model.Rail,
             Events = [new WireEvent { EventType = "Created",
-                Description = $"Outgoing wire created by operator using the {model.Scenario} lab scenario." }]
+                Description = $"Outgoing {model.Rail} payment created using the {model.Scenario} lab scenario." }]
         };
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
@@ -134,7 +142,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         "Created" => "Banking.Web",
         "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
-        "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "FedwireSimulator → MessageManager",
+        "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Fed rail simulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",
         _ => "Unknown"

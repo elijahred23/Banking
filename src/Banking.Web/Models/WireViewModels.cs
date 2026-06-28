@@ -11,6 +11,7 @@ public sealed class CreateWireViewModel
     [Required, StringLength(120)] public string ReceiverName { get; set; } = "";
     [Required, StringLength(24, MinimumLength = 4)] public string BeneficiaryAccountNumber { get; set; } = "";
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
+    public PaymentRail Rail { get; set; }
     public ProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
     public List<SelectListItem> Banks { get; set; } = [];
