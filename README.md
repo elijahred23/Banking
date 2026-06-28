@@ -6,7 +6,8 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 
 - explicit beneficiary account and routing information;
 - `head.001` business headers, UETRs, and semantic ISO profile validation;
-- `pacs.008` instructions and `pacs.002` `PDNG`, `ACSC`, and `RJCT` statuses;
+- a version-aware catalog and generic header/envelope construction for the supported `admi`, `pacs`, `pain`, and `camt` wire-message families;
+- concrete `pacs.008` instructions and `pacs.002` `PDNG`, `ACSC`, and `RJCT` statuses;
 - customer funds holds that become posted debits only after final settlement;
 - balanced debit/credit journals for outgoing and incoming posting; and
 - selectable pending, Fed-rejection, and malformed-message learning scenarios.
@@ -47,4 +48,4 @@ The web application applies the included idempotent lab schema upgrade at startu
 dotnet test Banking.slnx
 ```
 
-The domain tests verify generated headers and UETRs, supported Fed statuses, semantic profile validation, and malformed XML handling.
+The domain tests verify generated headers and UETRs, catalog coverage, generic construction of every supported wire-message type, supported Fed statuses, semantic profile validation, and malformed XML handling. Generic construction validates the ISO envelope, message identity, and header consistency; scheme-specific business-rule or XSD validation must be added with each concrete workflow.

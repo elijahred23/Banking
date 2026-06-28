@@ -12,12 +12,17 @@ public interface IIsoMessageService
     string CreatePacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
         string debtorAccount, string creditorAccount);
     string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad);
+    string CreateMessage(string messageType, string from, string to, XElement businessMessage,
+        string? businessMessageId = null, string businessService = "iso20022");
+    string CreateBusinessApplicationHeader(string from, string to, string messageDefinitionId,
+        string? businessMessageId = null, string businessService = "iso20022");
     IsoValidationResult Validate(string xml);
     bool IsWellFormed(string xml, out string? error);
 }
 
 public sealed class IsoMessageService : IIsoMessageService
 {
+    private const string IsoNamespacePrefix = "urn:iso:std:iso:20022:tech:xsd:";
     public const string Pacs008Namespace = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08";
     public const string Pacs002Namespace = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.10";
     public const string HeaderNamespace = "urn:iso:std:iso:20022:tech:xsd:head.001.001.02";
@@ -79,6 +84,43 @@ public sealed class IsoMessageService : IIsoMessageService
         return EnvelopeMessage(Header("FEDWIRE", "PARTICIPANT", messageId, "pacs.002.001.10"), document);
     }
 
+    public string CreateMessage(string messageType, string from, string to, XElement businessMessage,
+        string? businessMessageId = null, string businessService = "iso20022")
+    {
+        if (!IsoMessageCatalog.TryResolve(messageType, out var definition, out var definitionId)
+            || definition.IsBusinessApplicationHeader)
+            throw new ArgumentException($"Unsupported ISO 20022 business message type '{messageType}'.",
+                nameof(messageType));
+        ArgumentException.ThrowIfNullOrWhiteSpace(from);
+        ArgumentException.ThrowIfNullOrWhiteSpace(to);
+        ArgumentNullException.ThrowIfNull(businessMessage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(businessService);
+
+        var messageId = string.IsNullOrWhiteSpace(businessMessageId)
+            ? Guid.NewGuid().ToString("N")
+            : businessMessageId;
+        var ns = (XNamespace)(IsoNamespacePrefix + definitionId);
+        var payload = Qualify(businessMessage, ns);
+        var document = new XElement(ns + "Document", payload);
+        return EnvelopeMessage(Header(from, to, messageId, definitionId, businessService), document);
+    }
+
+    public string CreateBusinessApplicationHeader(string from, string to, string messageDefinitionId,
+        string? businessMessageId = null, string businessService = "iso20022")
+    {
+        if (!IsoMessageCatalog.TryResolve(messageDefinitionId, out var definition, out var definitionId)
+            || definition.IsBusinessApplicationHeader)
+            throw new ArgumentException($"Unsupported ISO 20022 business message type '{messageDefinitionId}'.",
+                nameof(messageDefinitionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(from);
+        ArgumentException.ThrowIfNullOrWhiteSpace(to);
+        ArgumentException.ThrowIfNullOrWhiteSpace(businessService);
+
+        return new XDocument(Header(from, to,
+            string.IsNullOrWhiteSpace(businessMessageId) ? Guid.NewGuid().ToString("N") : businessMessageId,
+            definitionId, businessService)).ToString();
+    }
+
     public IsoValidationResult Validate(string xml)
     {
         XDocument parsed;
@@ -87,20 +129,23 @@ public sealed class IsoMessageService : IIsoMessageService
         { return new(false, "unknown", [$"XML is not well formed: {ex.Message}"]); }
 
         var errors = new List<string>();
-        var header = parsed.Descendants(Head + "AppHdr").SingleOrDefault();
+        var header = parsed.Descendants().SingleOrDefault(x => x.Name.LocalName == "AppHdr"
+            && x.Name.NamespaceName.StartsWith(IsoNamespacePrefix + "head.001.", StringComparison.Ordinal));
         var document = parsed.Descendants().FirstOrDefault(x => x.Name.LocalName == "Document");
         if (header is null) errors.Add("Business Application Header head.001.001.02 is required.");
         if (document is null) return new(false, "unknown", [.. errors, "ISO Document element is required."]);
 
-        var messageType = document.Name.NamespaceName switch
-        {
-            Pacs008Namespace => "pacs.008",
-            Pacs002Namespace => "pacs.002",
-            _ => "unknown"
-        };
+        var definitionId = document.Name.NamespaceName.StartsWith(IsoNamespacePrefix, StringComparison.Ordinal)
+            ? document.Name.NamespaceName[IsoNamespacePrefix.Length..]
+            : string.Empty;
+        var supported = IsoMessageCatalog.TryResolve(definitionId, out var definition, out _)
+            && !definition.IsBusinessApplicationHeader;
+        var messageType = supported ? definition.MessageType : "unknown";
         if (messageType == "unknown") errors.Add($"Unsupported ISO namespace '{document.Name.NamespaceName}'.");
-        var headerType = header?.Descendants(Head + "MsgDefIdr").SingleOrDefault()?.Value;
-        if (messageType != "unknown" && !string.Equals(headerType, document.Name.NamespaceName.Split(':').Last(),
+        if (supported && document.Elements().Count() != 1)
+            errors.Add("ISO Document must contain exactly one business message root element.");
+        var headerType = header?.Descendants().SingleOrDefault(x => x.Name.LocalName == "MsgDefIdr")?.Value;
+        if (messageType != "unknown" && !string.Equals(headerType, definitionId,
                 StringComparison.Ordinal))
             errors.Add("Business header message definition does not match the document namespace.");
 
@@ -149,12 +194,13 @@ public sealed class IsoMessageService : IIsoMessageService
             errors.Add("Original UETR is required.");
     }
 
-    private static XElement Header(string from, string to, string messageId, string definition) =>
+    private static XElement Header(string from, string to, string messageId, string definition,
+        string businessService = "fedwire-lab") =>
         new(Head + "AppHdr",
             Party("Fr", from), Party("To", to),
             new XElement(Head + "BizMsgIdr", messageId),
             new XElement(Head + "MsgDefIdr", definition),
-            new XElement(Head + "BizSvc", "fedwire-lab"),
+            new XElement(Head + "BizSvc", businessService),
             new XElement(Head + "CreDt", DateTime.UtcNow.ToString("O")));
 
     private static XElement Party(string name, string memberId) => new(Head + name,
@@ -166,7 +212,19 @@ public sealed class IsoMessageService : IIsoMessageService
             new XElement(ns + "MmbId", routing))));
 
     private static XElement Account(XNamespace ns, string name, string id) => new(ns + name,
-        new XElement(ns + "Id", new XElement(ns + "Othr", new XElement(ns + "Id", id))));
+            new XElement(ns + "Id", new XElement(ns + "Othr", new XElement(ns + "Id", id))));
+
+    private static XElement Qualify(XElement element, XNamespace ns)
+    {
+        if (!string.IsNullOrEmpty(element.Name.NamespaceName)
+            && element.Name.NamespaceName != ns.NamespaceName)
+            throw new ArgumentException("Business message elements must be unqualified or use the selected message namespace.",
+                nameof(element));
+
+        return new XElement(ns + element.Name.LocalName,
+            element.Attributes().Where(x => !x.IsNamespaceDeclaration),
+            element.Nodes().Select(node => node is XElement child ? Qualify(child, ns) : node));
+    }
 
     private static string EnvelopeMessage(XElement header, XElement document) =>
         new XDocument(new XElement(Envelope + "Message", header, document)).ToString();
