@@ -65,7 +65,9 @@ logic, or legal substitute-check warranty workflows.
 
 To exercise the standard flow, use Bankers Bank, its `123456` depositing account,
 MICR line `t103000648t 654321o 1001`, and small front/back TIFF files. Switch to
-First Oklahoma Bank afterward to inspect the paying-bank view.
+First Oklahoma Bank afterward to inspect the paying-bank view. In the application,
+open **How to create → Checks** for the complete walkthrough; the Checks page also
+includes a generator for downloadable synthetic front/back TIFF fixtures.
 
 `FED.OUTBOUND`/`FED.INBOUND`, `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND`, and `SWIFT.OUTBOUND`/`SWIFT.INBOUND` are transport-abstraction queues carried by RabbitMQ in the default laptop profile. An optional IBM MQ container is included (`docker compose --profile ibmmq up -d`), but the application does not claim to use IBM MQ until an IBM XMS transport implementation is supplied. The `IMessageBus` boundary is the replacement point.
 

@@ -2,7 +2,7 @@
 @{ ViewData["Title"] = "Capture check"; }
 
 <h1>Capture check deposit</h1>
-<p class="text-secondary">Upload one front and one back TIFF image, each no larger than 2 MB.</p>
+<p class="text-secondary">Upload one front and one back TIFF image, each no larger than 2 MB. Need fixtures? <a asp-action="Generator">Generate test TIFF images</a> or read the <a asp-action="Instructions">step-by-step guide</a>.</p>
 <form asp-action="Create" method="post" enctype="multipart/form-data" class="row g-3">
     <div asp-validation-summary="All" class="text-danger"></div>
     <div class="col-12"><label asp-for="DepositingAccountId" class="form-label"></label><select asp-for="DepositingAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select></div>

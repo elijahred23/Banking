@@ -6,6 +6,25 @@ namespace Banking.Web.Models;
 
 public sealed record CheckIndexViewModel(Bank Bank, IReadOnlyList<CheckDeposit> Deposits);
 public sealed record CheckDetailsViewModel(Bank Bank, CheckDeposit Deposit);
+public sealed record CheckInstructionsViewModel(Bank Bank,
+    IReadOnlyList<CheckInstructionAccountViewModel> DepositingAccounts,
+    IReadOnlyList<CheckInstructionDestinationViewModel> PayingAccounts);
+public sealed record CheckInstructionAccountViewModel(string CustomerName,
+    string AccountNumber, decimal AvailableBalance);
+public sealed record CheckInstructionDestinationViewModel(string BankName,
+    string CustomerName, string RoutingNumber, string AccountNumber);
+
+public sealed class CheckTiffGeneratorViewModel
+{
+    [Required, RegularExpression(@"^\d{9}$"), Display(Name = "Paying routing number")]
+    public string RoutingNumber { get; set; } = "103000648";
+    [Required, StringLength(34), Display(Name = "Paying account number")]
+    public string AccountNumber { get; set; } = "654321";
+    [Required, StringLength(15), Display(Name = "Check number")]
+    public string CheckNumber { get; set; } = "1001";
+    [Range(typeof(decimal), "0.01", "9999999")]
+    public decimal Amount { get; set; } = 125.50m;
+}
 
 public sealed class CreateCheckDepositViewModel
 {

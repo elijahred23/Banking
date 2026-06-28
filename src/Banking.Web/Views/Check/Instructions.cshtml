@@ -1,0 +1,77 @@
+@model CheckInstructionsViewModel
+@{
+    ViewData["Title"] = "Check instructions";
+    var source = Model.DepositingAccounts.FirstOrDefault();
+    var paying = Model.PayingAccounts.FirstOrDefault();
+}
+
+<div class="instructions-hero mb-4">
+    <div>
+        <div class="eyebrow">CHECK PROCESSING GUIDE</div>
+        <h1 class="mb-2">How to create a check deposit</h1>
+        <p class="text-secondary mb-0">Generate test images, capture the item, and follow its image cash letter lifecycle for <strong>@Model.Bank.Name</strong>.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Create">Capture check deposit</a>
+</div>
+
+<nav class="instruction-jump surface mb-4" aria-label="Check instructions">
+    <span>Jump to</span><a href="#generate">Generate TIFFs</a><a href="#capture">Capture</a><a href="#observe">Observe processing</a><a href="#scenarios">Scenarios</a>
+</nav>
+
+<section class="surface instruction-source mb-4" aria-labelledby="check-source-heading">
+    <div><div class="eyebrow">STEP ZERO</div><h2 id="check-source-heading" class="h4 mb-1">Choose the active bank and depositing account</h2><p class="section-help mb-0">The depositing account must belong to the active bank persona.</p></div>
+    <div class="account-list">
+    @foreach (var account in Model.DepositingAccounts)
+    {
+        <div class="account-option"><span>@account.CustomerName</span><code>@account.AccountNumber</code><strong>@account.AvailableBalance.ToString("C") available</strong></div>
+    }
+    @if (Model.DepositingAccounts.Count == 0) { <div class="instruction-empty">No depositing accounts are available.</div> }
+    </div>
+</section>
+
+<div class="instruction-stack">
+    <section id="generate" class="surface instruction-card">
+        <div class="instruction-heading"><div><div class="eyebrow">IMAGE PREPARATION</div><h2 class="h3 mb-1">Generate front and back TIFF files</h2><p class="text-secondary mb-0">The built-in generator creates synthetic baseline grayscale TIFF images under the 2 MB limit.</p></div><div class="instruction-meta"><span class="rail-rule">TIFF · 900 × 400</span></div></div>
+        <ol class="instruction-steps">
+            <li><div><strong>Open the TIFF generator.</strong><span>It is a lab utility; the files are synthetic and are not images of legal checks.</span></div></li>
+            <li><div><strong>Enter the paying routing, account, check number, and amount.</strong><span>@(paying is null ? "Use any valid seeded paying-bank data." : $"Example: {paying.BankName} · routing {paying.RoutingNumber} · account {paying.AccountNumber} · check 1001 · $125.50.")</span></div></li>
+            <li><div><strong>Download both files.</strong><span>Use “Download front TIFF,” then “Download back TIFF.” Keep both files for the capture form.</span></div></li>
+        </ol>
+        <a class="btn btn-outline-primary" asp-action="Generator">Open TIFF generator</a>
+    </section>
+
+    <section id="capture" class="surface instruction-card">
+        <div class="instruction-heading"><div><div class="eyebrow">CAPTURE</div><h2 class="h3 mb-1">Enter the check deposit</h2><p class="text-secondary mb-0">The MICR values must identify the same paying account used in the generated image metadata.</p></div></div>
+        <ol class="instruction-steps">
+            <li><div><strong>Open Capture check deposit and select a depositing account.</strong><span>@(source is null ? "A depositing account must first be added." : $"For example: {source.CustomerName} · {source.AccountNumber}.")</span></div></li>
+            <li><div><strong>Enter the depositor name and amount.</strong><span>For the sample, use the selected account owner and $125.50.</span></div></li>
+            <li><div><strong>Enter the teaching MICR line.</strong><span>@(paying is null ? "Format: tRoutingNumbert AccountNumbero CheckNumber." : $"Use t{paying.RoutingNumber}t {paying.AccountNumber}o 1001.") The routing number must pass its ABA checksum.</span></div></li>
+            <li><div><strong>Choose a processing scenario.</strong><span>Choose Standard for normal settlement.</span></div></li>
+            <li><div><strong>Upload the generated front and back files.</strong><span>Each file must have a .tif or .tiff extension, a TIFF header, and be no larger than 2 MB.</span></div></li>
+            <li><div><strong>Select Capture.</strong><span>The app stores the MICR data and image hashes, then queues the deposit for check processing.</span></div></li>
+        </ol>
+        <a class="btn btn-outline-primary" asp-action="Create">Capture check deposit</a>
+    </section>
+
+    <section id="observe" class="surface instruction-card">
+        <div class="instruction-heading"><div><div class="eyebrow">PROCESSING</div><h2 class="h3 mb-1">Follow the lifecycle</h2><p class="text-secondary mb-0">Open the check details page after capture and refresh as the workers process it.</p></div></div>
+        <ol class="instruction-steps">
+            <li><div><strong>Captured → Validated</strong><span>The check service revalidates MICR and both TIFF images.</span></div></li>
+            <li><div><strong>ImageCashLetterCreated → SentToExchange</strong><span>The service writes the readable X9.37/X9.100-187-inspired teaching payload and publishes it to the check exchange.</span></div></li>
+            <li><div><strong>PresentedToPayingBank</strong><span>The simulator resolves the paying bank and account from the MICR values.</span></div></li>
+            <li><div><strong>Settled or Returned</strong><span>Settlement debits the maker, credits the depositor, moves simulated bank balances, and creates balanced ledger entries. A failed decision records a return code and reason.</span></div></li>
+            <li><div><strong>Switch to the paying bank.</strong><span>Use the bank selector and open Checks to see the same item from the paying-bank persona.</span></div></li>
+        </ol>
+    </section>
+
+    <section id="scenarios" class="surface instruction-card">
+        <div class="instruction-heading"><div><div class="eyebrow">LEARNING PATHS</div><h2 class="h3 mb-1">Exercise rejection and return behavior</h2></div></div>
+        <div class="table-responsive"><table class="table destination-table mb-0"><thead><tr><th>Scenario</th><th>Expected result</th></tr></thead><tbody>
+            <tr><td>Standard</td><td>Settled when the paying account exists and has sufficient funds.</td></tr>
+            <tr><td>Invalid MICR</td><td>Rejected by the check service.</td></tr>
+            <tr><td>Poor image quality</td><td>Rejected by simulated image-quality analysis.</td></tr>
+            <tr><td>Paying bank returns</td><td>Returned with a simulated insufficient-funds reason.</td></tr>
+            <tr><td>Duplicate presentment</td><td>Returned as a duplicate item.</td></tr>
+        </tbody></table></div>
+    </section>
+</div>

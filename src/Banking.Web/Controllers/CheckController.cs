@@ -40,6 +40,38 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpGet]
+    public async Task<IActionResult> Instructions(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        var depositingAccounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
+            .OrderBy(x => x.Customer.Name).Select(x => new CheckInstructionAccountViewModel(
+                x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
+            .AsNoTracking().ToListAsync(token);
+        var payingAccounts = await db.Accounts.Where(x => x.Customer.BankId != bankId
+                && x.Customer.Bank.CountryCode == bank.CountryCode)
+            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
+            .Select(x => new CheckInstructionDestinationViewModel(x.Customer.Bank.Name,
+                x.Customer.Name, x.Customer.Bank.RoutingNumber, x.AccountNumber))
+            .AsNoTracking().ToListAsync(token);
+        return View(new CheckInstructionsViewModel(bank, depositingAccounts, payingAccounts));
+    }
+
+    [HttpGet]
+    public IActionResult Generator() => View(new CheckTiffGeneratorViewModel());
+
+    [HttpGet]
+    public IActionResult DownloadTiff(CheckTiffGeneratorViewModel model, CheckImageSide side)
+    {
+        if (!ModelState.IsValid) return View("Generator", model);
+        var content = CheckTiffGenerator.Generate(side, model.RoutingNumber,
+            model.AccountNumber, model.CheckNumber, model.Amount);
+        var suffix = side.ToString().ToLowerInvariant();
+        return File(content, "image/tiff", $"sample-check-{model.CheckNumber}-{suffix}.tiff");
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Create(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);

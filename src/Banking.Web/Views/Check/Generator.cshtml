@@ -1,0 +1,23 @@
+@model CheckTiffGeneratorViewModel
+@{ ViewData["Title"] = "Check TIFF generator"; }
+
+<div class="instructions-hero mb-4">
+    <div><div class="eyebrow">LAB IMAGE UTILITY</div><h1 class="mb-2">Check TIFF generator</h1><p class="text-secondary mb-0">Create synthetic front and back images accepted by the check capture form. These are test fixtures, not legal check images.</p></div>
+    <a class="btn btn-outline-secondary" asp-action="Instructions">View instructions</a>
+</div>
+
+<form asp-action="DownloadTiff" method="get" class="surface form-surface">
+    <div asp-validation-summary="All" class="text-danger"></div>
+    <div class="row g-3">
+        <div class="col-md-6"><label asp-for="RoutingNumber" class="form-label"></label><input asp-for="RoutingNumber" class="form-control" /><div class="form-text">Use a seeded bank's nine-digit routing number.</div></div>
+        <div class="col-md-6"><label asp-for="AccountNumber" class="form-label"></label><input asp-for="AccountNumber" class="form-control" /></div>
+        <div class="col-md-6"><label asp-for="CheckNumber" class="form-label"></label><input asp-for="CheckNumber" class="form-control" /></div>
+        <div class="col-md-6"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" class="form-control" /></div>
+        <div class="col-12 d-flex flex-wrap gap-2 mt-4">
+            <button class="btn btn-primary" type="submit" name="side" value="Front">Download front TIFF</button>
+            <button class="btn btn-outline-primary" type="submit" name="side" value="Back">Download back TIFF</button>
+            <a class="btn btn-link" asp-action="Create">Go to check capture</a>
+        </div>
+    </div>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }
