@@ -18,6 +18,8 @@ public static class ServiceRegistration
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
+        services.AddSingleton<NachaFileWriter>();
+        services.AddSingleton<NachaFileParser>();
         return services;
     }
 
@@ -123,6 +125,108 @@ public static class ServiceRegistration
                 );
                 CREATE INDEX IX_LedgerEntries_WireTransferId ON dbo.LedgerEntries (WireTransferId);
                 CREATE INDEX IX_LedgerEntries_JournalId ON dbo.LedgerEntries (JournalId);
+            END;
+            IF OBJECT_ID(N'dbo.AchFiles', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchFiles (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_AchFiles PRIMARY KEY,
+                    OriginatingBankId uniqueidentifier NOT NULL,
+                    ImmediateDestinationRoutingNumber nvarchar(9) NOT NULL,
+                    ImmediateOriginRoutingNumber nvarchar(9) NOT NULL,
+                    FileIdModifier nvarchar(1) NOT NULL,
+                    RawNachaPayload nvarchar(max) NOT NULL,
+                    Status nvarchar(20) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_AchFiles_Banks_OriginatingBankId FOREIGN KEY (OriginatingBankId) REFERENCES dbo.Banks(Id)
+                );
+                CREATE INDEX IX_AchFiles_CreatedDate ON dbo.AchFiles(CreatedDate);
+                CREATE INDEX IX_AchFiles_OriginatingBankId ON dbo.AchFiles(OriginatingBankId);
+            END;
+            IF OBJECT_ID(N'dbo.AchBatches', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchBatches (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_AchBatches PRIMARY KEY,
+                    OriginatingBankId uniqueidentifier NOT NULL,
+                    AchFileId uniqueidentifier NULL,
+                    SecCode nvarchar(max) NOT NULL,
+                    CompanyName nvarchar(16) NOT NULL,
+                    CompanyId nvarchar(10) NOT NULL,
+                    EffectiveEntryDate date NOT NULL,
+                    ServiceClassCode nvarchar(3) NOT NULL,
+                    Status nvarchar(20) NOT NULL,
+                    BatchNumber int NOT NULL,
+                    CONSTRAINT FK_AchBatches_Banks_OriginatingBankId FOREIGN KEY (OriginatingBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_AchBatches_AchFiles_AchFileId FOREIGN KEY (AchFileId) REFERENCES dbo.AchFiles(Id)
+                );
+                CREATE INDEX IX_AchBatches_EffectiveEntryDate ON dbo.AchBatches(EffectiveEntryDate);
+                CREATE INDEX IX_AchBatches_OriginatingBankId ON dbo.AchBatches(OriginatingBankId);
+                CREATE INDEX IX_AchBatches_AchFileId ON dbo.AchBatches(AchFileId);
+            END;
+            IF OBJECT_ID(N'dbo.AchEntries', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchEntries (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_AchEntries PRIMARY KEY,
+                    OriginatingBankId uniqueidentifier NOT NULL,
+                    ReceivingBankId uniqueidentifier NULL,
+                    OriginatingAccountId uniqueidentifier NOT NULL,
+                    AchBatchId uniqueidentifier NULL,
+                    CompanyName nvarchar(16) NOT NULL,
+                    CompanyId nvarchar(10) NOT NULL,
+                    SecCode nvarchar(max) NOT NULL,
+                    ReceiverName nvarchar(22) NOT NULL,
+                    ReceivingRoutingNumber nvarchar(9) NOT NULL,
+                    ReceivingAccountNumber nvarchar(17) NOT NULL,
+                    TransactionCode nvarchar(max) NOT NULL,
+                    Amount decimal(19,4) NOT NULL,
+                    EntryDescription nvarchar(10) NOT NULL,
+                    EffectiveEntryDate date NOT NULL,
+                    Addenda05 nvarchar(80) NULL,
+                    ReturnCode nvarchar(3) NULL,
+                    TraceNumber nvarchar(15) NULL,
+                    Status nvarchar(max) NOT NULL,
+                    Purpose nvarchar(max) NOT NULL,
+                    Scenario nvarchar(max) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_AchEntries_Banks_OriginatingBankId FOREIGN KEY (OriginatingBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_AchEntries_Banks_ReceivingBankId FOREIGN KEY (ReceivingBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_AchEntries_Accounts_OriginatingAccountId FOREIGN KEY (OriginatingAccountId) REFERENCES dbo.Accounts(Id),
+                    CONSTRAINT FK_AchEntries_AchBatches_AchBatchId FOREIGN KEY (AchBatchId) REFERENCES dbo.AchBatches(Id)
+                );
+                CREATE INDEX IX_AchEntries_TraceNumber ON dbo.AchEntries(TraceNumber);
+                CREATE INDEX IX_AchEntries_ReceivingRoutingNumber ON dbo.AchEntries(ReceivingRoutingNumber);
+                CREATE INDEX IX_AchEntries_OriginatingBankId ON dbo.AchEntries(OriginatingBankId);
+                CREATE INDEX IX_AchEntries_ReceivingBankId ON dbo.AchEntries(ReceivingBankId);
+                CREATE INDEX IX_AchEntries_OriginatingAccountId ON dbo.AchEntries(OriginatingAccountId);
+                CREATE INDEX IX_AchEntries_AchBatchId ON dbo.AchEntries(AchBatchId);
+            END;
+            IF OBJECT_ID(N'dbo.AchReturns', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchReturns (Id uniqueidentifier NOT NULL CONSTRAINT PK_AchReturns PRIMARY KEY,
+                    AchEntryId uniqueidentifier NOT NULL, ReturnCode nvarchar(3) NOT NULL, Reason nvarchar(240) NOT NULL,
+                    ReceivedDate datetimeoffset NOT NULL, CONSTRAINT FK_AchReturns_AchEntries_AchEntryId FOREIGN KEY (AchEntryId) REFERENCES dbo.AchEntries(Id) ON DELETE CASCADE);
+                CREATE INDEX IX_AchReturns_AchEntryId ON dbo.AchReturns(AchEntryId);
+            END;
+            IF OBJECT_ID(N'dbo.AchNotificationsOfChange', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchNotificationsOfChange (Id uniqueidentifier NOT NULL CONSTRAINT PK_AchNotificationsOfChange PRIMARY KEY,
+                    AchEntryId uniqueidentifier NOT NULL, ChangeCode nvarchar(3) NOT NULL, CorrectedData nvarchar(35) NOT NULL,
+                    Description nvarchar(240) NOT NULL, ReceivedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_AchNotificationsOfChange_AchEntries_AchEntryId FOREIGN KEY (AchEntryId) REFERENCES dbo.AchEntries(Id) ON DELETE CASCADE);
+                CREATE INDEX IX_AchNotificationsOfChange_AchEntryId ON dbo.AchNotificationsOfChange(AchEntryId);
+            END;
+            IF EXISTS (SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AchNotificationsOfChange') AND name = N'CorrectedData'
+                    AND max_length < 70)
+                ALTER TABLE dbo.AchNotificationsOfChange ALTER COLUMN CorrectedData nvarchar(35) NOT NULL;
+            IF OBJECT_ID(N'dbo.AchLedgerEntries', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AchLedgerEntries (Id uniqueidentifier NOT NULL CONSTRAINT PK_AchLedgerEntries PRIMARY KEY,
+                    JournalId uniqueidentifier NOT NULL, AchEntryId uniqueidentifier NOT NULL, AccountCode nvarchar(80) NOT NULL,
+                    AccountName nvarchar(120) NOT NULL, Debit decimal(19,4) NOT NULL, Credit decimal(19,4) NOT NULL,
+                    Description nvarchar(240) NOT NULL, CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_AchLedgerEntries_AchEntries_AchEntryId FOREIGN KEY (AchEntryId) REFERENCES dbo.AchEntries(Id) ON DELETE CASCADE);
+                CREATE INDEX IX_AchLedgerEntries_AchEntryId ON dbo.AchLedgerEntries(AchEntryId);
+                CREATE INDEX IX_AchLedgerEntries_JournalId ON dbo.AchLedgerEntries(JournalId);
             END;
             """, token);
 

@@ -15,6 +15,7 @@ public sealed class CreateWireViewModel
     public ProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
     public List<SelectListItem> Banks { get; set; } = [];
+    public List<SelectListItem> Rails { get; set; } = [];
 }
 
 public sealed record DashboardViewModel(Bank Bank, IReadOnlyList<WireTransfer> RecentWires,
@@ -22,6 +23,26 @@ public sealed record DashboardViewModel(Bank Bank, IReadOnlyList<WireTransfer> R
 
 public sealed record WireIndexViewModel(Bank Bank, WireDirection? Direction,
     IReadOnlyList<WireTransfer> Wires);
+
+public sealed record WireInstructionsViewModel(
+    Bank Bank,
+    IReadOnlyList<WireInstructionAccountViewModel> SourceAccounts,
+    IReadOnlyList<WireInstructionDestinationViewModel> DomesticDestinations,
+    IReadOnlyList<WireInstructionDestinationViewModel> FedNowDestinations,
+    IReadOnlyList<WireInstructionDestinationViewModel> InternationalDestinations);
+
+public sealed record WireInstructionAccountViewModel(
+    string CustomerName,
+    string AccountNumber,
+    decimal AvailableBalance);
+
+public sealed record WireInstructionDestinationViewModel(
+    string BankName,
+    string CustomerName,
+    string AccountNumber,
+    string RoutingNumber,
+    string Bic,
+    string CountryCode);
 
 public sealed record WireDetailsViewModel(
     WireTransfer Wire,

@@ -1,0 +1,112 @@
+@model AchInstructionsViewModel
+@{
+    ViewData["Title"] = "ACH instructions";
+    var source = Model.SourceAccounts.FirstOrDefault();
+    var destination = Model.Destinations.FirstOrDefault();
+}
+
+<div class="instructions-hero mb-4">
+    <div>
+        <div class="eyebrow">ACH PAYMENT GUIDE</div>
+        <h1 class="mb-2">How to create an ACH entry</h1>
+        <p class="text-secondary mb-0">Use the current lab data for <strong>@Model.Bank.Name</strong> to create a standard ACH entry or an EFTPS-style tax payment.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Create">Create ACH entry</a>
+</div>
+
+<nav class="instruction-jump surface mb-4" aria-label="ACH instructions">
+    <span>Jump to</span>
+    <a href="#standard-ach">Standard ACH</a>
+    <a href="#eftps">EFTPS-style</a>
+    <a href="#after-submit">After submission</a>
+</nav>
+
+<section class="surface instruction-source mb-4" aria-labelledby="ach-source-heading">
+    <div>
+        <div class="eyebrow">STEP ZERO</div>
+        <h2 id="ach-source-heading" class="h4 mb-1">Choose a funded source account</h2>
+        <p class="section-help mb-0">The account must belong to the active bank and have enough available funds for a credit entry.</p>
+    </div>
+    @if (Model.SourceAccounts.Count == 0)
+    {
+        <div class="instruction-empty">No source accounts are available for this bank.</div>
+    }
+    else
+    {
+        <div class="account-list">
+            @foreach (var account in Model.SourceAccounts)
+            {
+                <div class="account-option">
+                    <span>@account.CustomerName</span>
+                    <code>@account.AccountNumber</code>
+                    <strong>@account.AvailableBalance.ToString("C") available</strong>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+<div class="instruction-stack">
+    <section id="standard-ach" class="surface instruction-card">
+        <div class="instruction-heading">
+            <div><div class="eyebrow">STANDARD ENTRY</div><h2 class="h3 mb-1">Create a credit or debit</h2><p class="text-secondary mb-0">Payroll, vendor payment, or consumer debit</p></div>
+            <div class="instruction-meta"><span class="rail-rule">NACHA 94-character records</span><span class="rail-availability @(Model.Destinations.Count > 0 ? "available" : "unavailable")">@(Model.Destinations.Count > 0 ? "Destinations available" : "No destination data")</span></div>
+        </div>
+        <ol class="instruction-steps">
+            <li><div><strong>Open Create ACH entry and select the originating account.</strong><span>@(source is null ? "A source account must first be added to the database." : $"For example: {source.CustomerName} · {source.AccountNumber}.")</span></div></li>
+            <li><div><strong>Enter the company name and company ID.</strong><span>The simulator accepts up to 16 characters for the name and 10 for the ID.</span></div></li>
+            <li><div><strong>Choose the purpose, SEC code, and transaction code.</strong><span>Use PPD for a consumer entry or CCD for a corporate entry, then choose checking or savings and credit or debit.</span></div></li>
+            <li><div><strong>Enter the receiver's name, routing number, and account number.</strong><span>@(destination is null ? "No eligible receiver is currently loaded." : $"Example: {destination.CustomerName} · {destination.RoutingNumber} · {destination.AccountNumber}.")</span></div></li>
+            <li><div><strong>Set the amount and effective date.</strong><span>The date cannot be in the past. Add a short entry description and optional addenda 05 text.</span></div></li>
+            <li><div><strong>Choose a learning scenario and queue the entry.</strong><span>Standard follows the normal flow; the other options exercise returns, notifications of change, and file validation failures.</span></div></li>
+        </ol>
+        <div class="destination-block">
+            <h3 class="h6">Available lab receivers</h3>
+            @if (Model.Destinations.Count == 0)
+            {
+                <div class="instruction-empty">No same-country destination accounts are available.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table destination-table mb-0">
+                        <thead><tr><th>Bank</th><th>Receiver</th><th>Routing number</th><th>Account number</th></tr></thead>
+                        <tbody>
+                        @foreach (var receiver in Model.Destinations)
+                        {
+                            <tr><td>@receiver.BankName</td><td>@receiver.CustomerName</td><td><code>@receiver.RoutingNumber</code></td><td><code>@receiver.AccountNumber</code></td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section id="eftps" class="surface instruction-card">
+        <div class="instruction-heading">
+            <div><div class="eyebrow">CCD+ TAX PAYMENT</div><h2 class="h3 mb-1">Create an EFTPS-style entry</h2><p class="text-secondary mb-0">A simulated Treasury tax-payment workflow</p></div>
+            <div class="instruction-meta"><span class="rail-rule">TXP addenda</span></div>
+        </div>
+        <ol class="instruction-steps">
+            <li><div><strong>Open the EFTPS-style payment form.</strong><span>Use this dedicated form instead of selecting tax payment on the standard entry form.</span></div></li>
+            <li><div><strong>Select the source account and identify the company.</strong><span>Enter the company name and its 10-character-or-shorter company ID.</span></div></li>
+            <li><div><strong>Enter the taxpayer and tax-period details.</strong><span>Provide the TIN, tax type code, and tax period end date in YYMMDD format.</span></div></li>
+            <li><div><strong>Set the amount, settlement date, and scenario.</strong><span>The lab builds the TXP addenda and uses its configured simulated Treasury receiver.</span></div></li>
+        </ol>
+        <a class="btn btn-outline-primary" asp-action="Eftps">Create EFTPS-style payment</a>
+    </section>
+
+    <section id="after-submit" class="surface instruction-card">
+        <div class="instruction-heading">
+            <div><div class="eyebrow">PROCESSING</div><h2 class="h3 mb-1">Follow the entry through settlement</h2><p class="text-secondary mb-0">Each view exposes a different layer of the ACH lifecycle.</p></div>
+        </div>
+        <ol class="instruction-steps">
+            <li><div><strong>Entries</strong><span>Confirm validation status, effective date, trace number, and any return code.</span></div></li>
+            <li><div><strong>Batches</strong><span>See entries grouped by company, SEC code, and effective date.</span></div></li>
+            <li><div><strong>Files</strong><span>Inspect the generated fixed-width NACHA payload and control totals.</span></div></li>
+            <li><div><strong>Returns &amp; NOCs</strong><span>Review simulated rejected entries and corrected receiver information.</span></div></li>
+        </ol>
+        <partial name="_AchNav" />
+    </section>
+</div>

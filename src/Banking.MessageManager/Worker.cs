@@ -9,9 +9,129 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
         bus.ConsumeAsync<WireReadyForFed>(Queues.WireReadyForFed, SendToFedAsync, stoppingToken),
+        bus.ConsumeAsync<AchFileReady>(Queues.AchBatchReady, SendAchFileAsync, stoppingToken),
+        bus.ConsumeAsync<AchOperatorResult>(Queues.AchInbound, ReceiveAchResultAsync, stoppingToken),
+        bus.ConsumeAsync<AchReturnFile>(Queues.AchReturnInbound, ReceiveAchReturnAsync, stoppingToken),
+        bus.ConsumeAsync<AchNocFile>(Queues.AchNocInbound, ReceiveAchNocAsync, stoppingToken),
         bus.ConsumeAsync<FedEnvelope>(Queues.FedInbound, ReceiveFromFedAsync, stoppingToken),
         bus.ConsumeAsync<FedEnvelope>(Queues.FedNowInbound, ReceiveFromFedAsync, stoppingToken),
         bus.ConsumeAsync<FedEnvelope>(Queues.SwiftInbound, ReceiveFromFedAsync, stoppingToken));
+
+    private async Task SendAchFileAsync(AchFileReady message, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var file = await db.AchFiles.Include(x => x.Batches).ThenInclude(x => x.Entries)
+            .SingleOrDefaultAsync(x => x.Id == message.FileId, token);
+        if (file is null || file.Status != "Ready") return;
+        file.Status = "SentToOperator";
+        foreach (var entry in file.Batches.SelectMany(x => x.Entries)) entry.Status = AchEntryStatus.SentToOperator;
+        await db.SaveChangesAsync(token);
+        await bus.PublishAsync(Queues.AchOutbound,
+            new AchFileEnvelope(file.Id, file.OriginatingBankId, file.RawNachaPayload), token);
+    }
+
+    private async Task ReceiveAchResultAsync(AchOperatorResult result, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var file = await db.AchFiles.Include(x => x.Batches).ThenInclude(x => x.Entries)
+            .SingleOrDefaultAsync(x => x.Id == result.FileId, token);
+        if (file is null || file.Status is "Settled" or "Rejected") return;
+        if (!result.Accepted)
+        {
+            file.Status = "Rejected";
+            foreach (var entry in file.Batches.SelectMany(x => x.Entries))
+            {
+                entry.Status = AchEntryStatus.Returned;
+                entry.ReturnCode = "R99";
+                if (IsCredit(entry.TransactionCode))
+                {
+                    var origin = await db.Accounts.SingleAsync(x => x.Id == entry.OriginatingAccountId, token);
+                    origin.HeldBalance = Math.Max(0, origin.HeldBalance - entry.Amount);
+                }
+                db.AchReturns.Add(new AchReturn { AchEntryId = entry.Id, ReturnCode = "R99", Reason = result.Message[..Math.Min(240, result.Message.Length)] });
+            }
+            await db.SaveChangesAsync(token);
+            return;
+        }
+
+        file.Status = "Settled";
+        var settled = result.SettledEntryIds.ToHashSet();
+        foreach (var entry in file.Batches.SelectMany(x => x.Entries).Where(x => settled.Contains(x.Id)))
+        {
+            if (entry.Status is AchEntryStatus.Posted or AchEntryStatus.Settled) continue;
+            entry.Status = AchEntryStatus.Settled;
+            var origin = await db.Accounts.SingleAsync(x => x.Id == entry.OriginatingAccountId, token);
+            var originBank = await db.Banks.SingleAsync(x => x.Id == entry.OriginatingBankId, token);
+            if (entry.Purpose == AchPaymentPurpose.TaxPaymentEftps)
+            {
+                origin.HeldBalance = Math.Max(0, origin.HeldBalance - entry.Amount);
+                origin.Balance -= entry.Amount;
+                originBank.MasterAccountBalance -= entry.Amount;
+                AddEftpsJournal(db, entry, origin);
+                entry.Status = AchEntryStatus.Posted;
+                continue;
+            }
+            var receiver = await db.Accounts.Include(x => x.Customer).SingleOrDefaultAsync(x =>
+                x.Customer.BankId == entry.ReceivingBankId && x.AccountNumber == entry.ReceivingAccountNumber, token);
+            if (receiver is null) continue;
+            var receiverBank = await db.Banks.SingleAsync(x => x.Id == receiver.Customer.BankId, token);
+            if (IsCredit(entry.TransactionCode))
+            {
+                origin.HeldBalance = Math.Max(0, origin.HeldBalance - entry.Amount);
+                origin.Balance -= entry.Amount;
+                receiver.Balance += entry.Amount;
+                originBank.MasterAccountBalance -= entry.Amount;
+                receiverBank.MasterAccountBalance += entry.Amount;
+                AddAchCreditJournal(db, entry, origin, receiver);
+            }
+            else
+            {
+                receiver.Balance -= entry.Amount;
+                origin.Balance += entry.Amount;
+                receiverBank.MasterAccountBalance -= entry.Amount;
+                originBank.MasterAccountBalance += entry.Amount;
+                AddAchDebitJournal(db, entry, origin, receiver);
+            }
+            entry.Status = AchEntryStatus.Posted;
+        }
+        await db.SaveChangesAsync(token);
+        await bus.PublishAsync(Queues.AchSettled, new { result.FileId }, token);
+    }
+
+    private async Task ReceiveAchReturnAsync(AchReturnFile file, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        foreach (var item in file.Returns)
+        {
+            if (await db.AchReturns.AnyAsync(x => x.AchEntryId == item.EntryId && x.ReturnCode == item.ReturnCode, token)) continue;
+            var entry = await db.AchEntries.SingleOrDefaultAsync(x => x.Id == item.EntryId, token);
+            if (entry is null || entry.Status == AchEntryStatus.Posted) continue;
+            entry.Status = AchEntryStatus.Returned;
+            entry.ReturnCode = item.ReturnCode;
+            if (IsCredit(entry.TransactionCode))
+            {
+                var origin = await db.Accounts.SingleAsync(x => x.Id == entry.OriginatingAccountId, token);
+                origin.HeldBalance = Math.Max(0, origin.HeldBalance - entry.Amount);
+            }
+            db.AchReturns.Add(new AchReturn { AchEntryId = entry.Id, ReturnCode = item.ReturnCode, Reason = item.Reason });
+        }
+        await db.SaveChangesAsync(token);
+    }
+
+    private async Task ReceiveAchNocAsync(AchNocFile file, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        foreach (var item in file.Notifications)
+        {
+            if (await db.AchNotificationsOfChange.AnyAsync(x => x.AchEntryId == item.EntryId && x.ChangeCode == item.ChangeCode, token)) continue;
+            var entry = await db.AchEntries.SingleOrDefaultAsync(x => x.Id == item.EntryId, token);
+            if (entry is null) continue;
+            entry.Status = AchEntryStatus.NocReceived;
+            db.AchNotificationsOfChange.Add(new AchNotificationOfChange { AchEntryId = entry.Id,
+                ChangeCode = item.ChangeCode, CorrectedData = item.CorrectedData, Description = item.Description });
+        }
+        await db.SaveChangesAsync(token);
+    }
 
     private async Task SendToFedAsync(WireReadyForFed message, CancellationToken token)
     {
@@ -201,4 +321,39 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         JournalId = journal, WireTransferId = wireId, AccountCode = code, AccountName = name,
         Debit = debit, Credit = credit, Description = description
     };
+
+    private static bool IsCredit(AchTransactionCode code) => code is AchTransactionCode.CheckingCredit or AchTransactionCode.SavingsCredit;
+
+    private static void AddAchCreditJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit originator deposit liability"),
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit outgoing ACH clearing"),
+            AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", entry.Amount, 0, "Debit incoming FedACH settlement"),
+            AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit receiver deposit liability"));
+    }
+
+    private static void AddAchDebitJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit receiver deposit liability"),
+            AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", 0, entry.Amount, "Credit outgoing FedACH settlement"),
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit incoming ACH clearing"),
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit originator deposit liability"));
+    }
+
+    private static void AddEftpsJournal(BankingDbContext db, AchEntry entry, Account origin)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit taxpayer deposit liability"),
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit simulated Treasury tax payment settlement"));
+    }
+
+    private static AchLedgerEntry AchJournal(Guid journal, Guid entryId, string code, string name,
+        decimal debit, decimal credit, string description) => new()
+    { JournalId = journal, AchEntryId = entryId, AccountCode = code, AccountName = name,
+        Debit = debit, Credit = credit, Description = description };
 }

@@ -1,0 +1,11 @@
+@model WireInstructionHeadingViewModel
+<div class="instruction-heading">
+    <div>
+        <div class="eyebrow">@Model.Description</div>
+        <h2 class="h3 mb-0">@Model.Name</h2>
+    </div>
+    <div class="instruction-meta">
+        <span class="rail-rule">@Model.Rule</span>
+        <span class="rail-availability @(Model.IsAvailable ? "available" : "unavailable")">@(Model.IsAvailable ? "Ready to create" : "No eligible route")</span>
+    </div>
+</div>

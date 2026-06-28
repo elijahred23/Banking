@@ -1,0 +1,16 @@
+@model AchIndexViewModel
+@{ ViewData["Title"] = "ACH entries"; }
+<div class="d-flex justify-content-between align-items-end mb-3">
+    <div><div class="eyebrow">@Model.Bank.Name</div><h1>ACH entries</h1><p class="text-secondary mb-0">Batch-oriented FedACH/NACHA learning flow.</p></div>
+    <a class="btn btn-primary" asp-action="Create">Create ACH entry</a>
+</div>
+<partial name="_AchNav" />
+<div class="surface table-responsive"><table class="table align-middle mb-0">
+    <thead><tr><th>Created</th><th>Company / receiver</th><th>SEC</th><th>Type</th><th>Amount</th><th>Effective</th><th>Status</th><th>Trace / return</th></tr></thead>
+    <tbody>
+    @foreach (var entry in Model.Entries) {
+        <tr><td>@entry.CreatedDate.ToLocalTime().ToString("g")</td><td><strong>@entry.CompanyName</strong><br><span class="text-secondary">@entry.ReceiverName · @entry.ReceivingRoutingNumber / @entry.ReceivingAccountNumber</span></td><td>@entry.SecCode</td><td>@entry.TransactionCode</td><td>@entry.Amount.ToString("C")</td><td>@entry.EffectiveEntryDate</td><td><span class="badge text-bg-light">@entry.Status</span></td><td><code>@(entry.TraceNumber ?? "—")</code><br><span class="text-danger">@entry.ReturnCode</span></td></tr>
+    }
+    @if (Model.Entries.Count == 0) { <tr><td colspan="8" class="text-secondary py-4 text-center">No ACH entries for this bank.</td></tr> }
+    </tbody>
+</table></div>

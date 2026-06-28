@@ -31,6 +31,14 @@
                     <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index">All wires</a></li>
                     <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
                     <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" asp-controller="Wires" asp-action="Instructions">Wires</a></li>
+                            <li><a class="dropdown-item" asp-controller="Ach" asp-action="Instructions">ACH</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item"><a class="nav-link" asp-controller="Ach" asp-action="Index">ACH</a></li>
                 </ul>
                 <form asp-controller="BankContext" asp-action="Switch" method="post" class="d-flex bank-switcher me-3">
                     <input type="hidden" name="returnUrl" value="@Context.Request.Path@Context.Request.QueryString" />
@@ -50,7 +58,7 @@
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
     @RenderBody()
 </main>
-<footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, and SWIFT CBPR+ learning environment · All balances and messages are simulated.</footer>
+<footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, and ACH learning environment · All balances and messages are simulated.</footer>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

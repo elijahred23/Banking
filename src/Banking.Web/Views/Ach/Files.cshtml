@@ -1,0 +1,5 @@
+@model AchFileIndexViewModel
+@{ ViewData["Title"] = "NACHA files"; }
+<div class="mb-3"><div class="eyebrow">@Model.Bank.Name</div><h1>NACHA files</h1></div><partial name="_AchNav" />
+@foreach (var file in Model.Files) { <div class="surface p-4 mb-3"><div class="d-flex justify-content-between"><div><strong>File @file.Id.ToString()[..8]</strong> · @file.CreatedDate.ToLocalTime().ToString("g")<br><span class="text-secondary">@file.Batches.Count batches · @file.Batches.Sum(x => x.Entries.Count) entries</span></div><span class="badge text-bg-light align-self-start">@file.Status</span></div><details class="mt-3"><summary>View fixed-width payload</summary><pre class="mt-3 p-3 bg-light overflow-auto"><code>@file.RawNachaPayload</code></pre></details></div> }
+@if (Model.Files.Count == 0) { <div class="surface p-4 text-secondary">No NACHA files.</div> }

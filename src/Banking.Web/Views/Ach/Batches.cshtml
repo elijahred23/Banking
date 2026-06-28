@@ -1,0 +1,7 @@
+@model AchBatchIndexViewModel
+@{ ViewData["Title"] = "ACH batches"; }
+<div class="mb-3"><div class="eyebrow">@Model.Bank.Name</div><h1>ACH batches</h1></div><partial name="_AchNav" />
+<div class="surface table-responsive"><table class="table mb-0"><thead><tr><th>Batch</th><th>Company</th><th>SEC</th><th>Effective</th><th>Entries</th><th>Totals</th><th>Status</th></tr></thead><tbody>
+@foreach (var batch in Model.Batches) { <tr><td><code>@batch.Id.ToString()[..8]</code> / @batch.BatchNumber</td><td>@batch.CompanyName<br><span class="text-secondary">@batch.CompanyId</span></td><td>@batch.SecCode</td><td>@batch.EffectiveEntryDate</td><td>@batch.Entries.Count</td><td>@batch.Entries.Sum(x => x.Amount).ToString("C")</td><td>@batch.Status</td></tr> }
+@if (Model.Batches.Count == 0) { <tr><td colspan="7" class="text-center text-secondary py-4">No ACH batches.</td></tr> }
+</tbody></table></div>

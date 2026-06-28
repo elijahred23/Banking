@@ -1,6 +1,6 @@
 # Bank Payments Lab
 
-A .NET 10 learning system that models two-bank Fedwire, FedNow, and SWIFT CBPR+ customer payments. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
+A .NET 10 learning system that models Fedwire, FedNow, SWIFT CBPR+, and batch-oriented ACH customer payments. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
 
 The lab emphasizes observable payment behavior rather than a single happy path:
 
@@ -13,6 +13,7 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - customer funds holds that become posted debits only after final settlement;
 - balanced debit/credit journals for outgoing and incoming posting; and
 - selectable pending, network-rejection, and malformed-message learning scenarios.
+- ACH entry validation, scheduled batch cutoff, fixed-width NACHA files, FedACH-style settlement, returns, notifications of change, and EFTPS-style CCD+ addenda.
 
 ## Run
 
@@ -36,13 +37,30 @@ Version-controlled table definitions and the location for future migration scrip
 
 - `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, and ISO history.
 - `Banking.WireService`: funds/OFAC/sanctions simulation and `pacs.008` generation.
+- `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.MessageManager`: outbound delivery tracking plus inbound status/payment routing.
 - `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008`.
 - `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of the settled `pacs.008`.
 - `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, payment statuses, and delivery of the original `pacs.008`.
+- `Banking.FedAchSimulator`: NACHA file validation plus simulated settlement, returns, and notifications of change.
 - `Banking.Domain` and `Banking.Infrastructure`: contracts, ISO translation, EF Core, and messaging.
 
 `FED.OUTBOUND`/`FED.INBOUND`, `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND`, and `SWIFT.OUTBOUND`/`SWIFT.INBOUND` are transport-abstraction queues carried by RabbitMQ in the default laptop profile. An optional IBM MQ container is included (`docker compose --profile ibmmq up -d`), but the application does not claim to use IBM MQ until an IBM XMS transport implementation is supplied. The `IMessageBus` boundary is the replacement point.
+
+## ACH/NACHA scope
+
+The ACH rail is a learning-only FedACH-style simulator. It models ODFI/RDFI roles,
+ABA routing-number validation, NACHA-style 94-character files, batches, entry
+details, addenda records, settlement, returns, and notifications of change.
+
+Supported examples include PPD credits/debits, CCD credits/debits, and a narrow
+EFTPS-style CCD+ tax-payment addenda flow. ACH uses its own file contracts and
+`ACH.*` queues; it is not transported as an ISO 20022 or `FedEnvelope` message.
+
+This is not production ACH certification. It does not implement the full Nacha
+Operating Rules, FedLine connectivity, prefunding/risk controls, exposure limits,
+full Same Day ACH processing windows, OFAC compliance, account validation services,
+or Federal Reserve/Treasury certification.
 
 ## SWIFT CBPR+ scope
 

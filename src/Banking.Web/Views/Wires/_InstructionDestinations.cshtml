@@ -1,0 +1,27 @@
+@model IReadOnlyList<WireInstructionDestinationViewModel>
+<div class="destination-block">
+    <h3 class="h6">Eligible database examples</h3>
+    @if (Model.Count == 0)
+    {
+        <div class="instruction-empty">No eligible destination account is currently available for this wire type.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table destination-table mb-0">
+                <thead><tr><th>Receiving bank</th><th>Beneficiary</th><th>Account / IBAN</th><th>Routing identifier</th></tr></thead>
+                <tbody>
+                @foreach (var destination in Model)
+                {
+                    <tr>
+                        <td><strong>@destination.BankName</strong><small>@destination.CountryCode</small></td>
+                        <td>@destination.CustomerName</td>
+                        <td><code>@destination.AccountNumber</code></td>
+                        <td><small>ABA @destination.RoutingNumber</small><code>BIC @destination.Bic</code></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

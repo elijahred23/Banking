@@ -1,0 +1,92 @@
+@model WireInstructionsViewModel
+@{
+    ViewData["Title"] = "Wire instructions";
+    var source = Model.SourceAccounts.FirstOrDefault();
+}
+
+<div class="instructions-hero mb-4">
+    <div>
+        <div class="eyebrow">PAYMENT GUIDE</div>
+        <h1 class="mb-2">How to create each wire type</h1>
+        <p class="text-secondary mb-0">Follow these steps using the current data for <strong>@Model.Bank.Name</strong>. Accounts, institutions, and routing details shown below are read from the lab database.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Create">Create a payment</a>
+</div>
+
+<nav class="instruction-jump surface mb-4" aria-label="Wire type instructions">
+    <span>Jump to</span>
+    <a href="#fedwire">Fedwire</a>
+    <a href="#fednow">FedNow</a>
+    <a href="#swift">SWIFT CBPR+</a>
+</nav>
+
+<section class="surface instruction-source mb-4" aria-labelledby="source-heading">
+    <div>
+        <div class="eyebrow">STEP ZERO</div>
+        <h2 id="source-heading" class="h4 mb-1">Choose a funded source account</h2>
+        <p class="section-help mb-0">The selected account must belong to the active bank persona.</p>
+    </div>
+    @if (Model.SourceAccounts.Count == 0)
+    {
+        <div class="instruction-empty">No source accounts are available for this bank.</div>
+    }
+    else
+    {
+        <div class="account-list">
+            @foreach (var account in Model.SourceAccounts)
+            {
+                <div class="account-option">
+                    <span>@account.CustomerName</span>
+                    <code>@account.AccountNumber</code>
+                    <strong>@account.AvailableBalance.ToString("C") available</strong>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+<div class="instruction-stack">
+    <section id="fedwire" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Fedwire", "Domestic high-value payment", "Same-country banks", Model.DomesticDestinations.Count > 0)' />
+        <ol class="instruction-steps">
+            <li><div><strong>Select Fedwire as the payment rail.</strong><span>Use it for a domestic payment to another bank in @Model.Bank.CountryCode.</span></div></li>
+            <li><div><strong>Choose the source account.</strong><span>@(source is null ? "A source account must first be added to the database." : $"For example: {source.CustomerName} · {source.AccountNumber}.")</span></div></li>
+            <li><div><strong>Select a receiving bank and beneficiary.</strong><span>Copy the beneficiary account exactly from an eligible database record below.</span></div></li>
+            <li><div><strong>Enter the USD amount and scenario.</strong><span>Standard completes normally; the other scenarios demonstrate pending, rejection, or malformed-message handling.</span></div></li>
+            <li><div><strong>Submit and inspect the wire timeline.</strong><span>The lab creates a funds hold, ISO 20022 messages, Fed settlement identifiers, and ledger entries as processing advances.</span></div></li>
+        </ol>
+        <partial name="_InstructionDestinations" model="Model.DomesticDestinations" />
+    </section>
+
+    <section id="fednow" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("FedNow", "Domestic instant payment", "Maximum $10,000,000", Model.Bank.FedNowEnabled && Model.Bank.FedNowSendEnabled && Model.Bank.FedNowOnline && Model.FedNowDestinations.Count > 0)' />
+        @if (!Model.Bank.FedNowEnabled || !Model.Bank.FedNowSendEnabled || !Model.Bank.FedNowOnline)
+        {
+            <div class="alert alert-warning mt-3 mb-0">@Model.Bank.Name is not currently enabled and online to send FedNow payments in the database.</div>
+        }
+        <ol class="instruction-steps">
+            <li><div><strong>Select FedNow as the payment rail.</strong><span>The receiver must be a same-country FedNow participant that is enabled, receive-enabled, and online.</span></div></li>
+            <li><div><strong>Choose the source account.</strong><span>Confirm its available balance covers the payment.</span></div></li>
+            <li><div><strong>Select an eligible receiver.</strong><span>The list below already applies the current participation and availability flags from the database.</span></div></li>
+            <li><div><strong>Enter an amount up to $10 million.</strong><span>Choose a learning scenario, then submit the payment.</span></div></li>
+            <li><div><strong>Review instant-payment processing.</strong><span>Watch for receiver acceptance, immediate final settlement, account posting, and completion.</span></div></li>
+        </ol>
+        <partial name="_InstructionDestinations" model="Model.FedNowDestinations" />
+    </section>
+
+    <section id="swift" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("SWIFT CBPR+", "International USD wire", "IBAN and BIC required", Model.Bank.SwiftEnabled && Model.InternationalDestinations.Count > 0)' />
+        @if (!Model.Bank.SwiftEnabled)
+        {
+            <div class="alert alert-warning mt-3 mb-0">@Model.Bank.Name is not currently SWIFT-enabled in the database.</div>
+        }
+        <ol class="instruction-steps">
+            <li><div><strong>Select SWIFT international wire (CBPR+).</strong><span>Use this rail when the receiving bank is outside @Model.Bank.CountryCode.</span></div></li>
+            <li><div><strong>Choose the source account and foreign receiving bank.</strong><span>Both sending and receiving institutions must be SWIFT-enabled.</span></div></li>
+            <li><div><strong>Enter the beneficiary name and IBAN.</strong><span>Use the exact name and international account number shown below; routing uses the receiving bank's BIC.</span></div></li>
+            <li><div><strong>Enter the USD amount and scenario.</strong><span>This learning flow settles in USD and does not perform foreign exchange.</span></div></li>
+            <li><div><strong>Submit and follow the serial-method flow.</strong><span>Inspect the CBPR+ pacs.008, status messages, simulated correspondent settlement, and receiving-bank posting.</span></div></li>
+        </ol>
+        <partial name="_InstructionDestinations" model="Model.InternationalDestinations" />
+    </section>
+</div>

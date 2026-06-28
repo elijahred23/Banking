@@ -25,6 +25,55 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpGet]
+    public async Task<IActionResult> Instructions(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+
+        var sourceAccounts = await db.Accounts
+            .Where(x => x.Customer.BankId == bankId)
+            .OrderBy(x => x.Customer.Name)
+            .Select(x => new WireInstructionAccountViewModel(
+                x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
+            .AsNoTracking()
+            .ToListAsync(token);
+
+        var destinations = await db.Accounts
+            .Where(x => x.Customer.BankId != bankId)
+            .OrderBy(x => x.Customer.Bank.Name)
+            .ThenBy(x => x.Customer.Name)
+            .Select(x => new
+            {
+                BankName = x.Customer.Bank.Name,
+                CustomerName = x.Customer.Name,
+                x.AccountNumber,
+                x.Customer.Bank.RoutingNumber,
+                x.Customer.Bank.Bic,
+                x.Customer.Bank.CountryCode,
+                x.Customer.Bank.FedNowEnabled,
+                x.Customer.Bank.FedNowReceiveEnabled,
+                x.Customer.Bank.FedNowOnline,
+                x.Customer.Bank.SwiftEnabled
+            })
+            .AsNoTracking()
+            .ToListAsync(token);
+
+        var domestic = destinations.Where(x => x.CountryCode == bank.CountryCode)
+            .Select(x => new WireInstructionDestinationViewModel(x.BankName, x.CustomerName, x.AccountNumber,
+                x.RoutingNumber, x.Bic, x.CountryCode)).ToList();
+        var fedNow = destinations.Where(x => x.CountryCode == bank.CountryCode
+                && x.FedNowEnabled && x.FedNowReceiveEnabled && x.FedNowOnline)
+            .Select(x => new WireInstructionDestinationViewModel(x.BankName, x.CustomerName, x.AccountNumber,
+                x.RoutingNumber, x.Bic, x.CountryCode)).ToList();
+        var international = destinations.Where(x => x.CountryCode != bank.CountryCode && x.SwiftEnabled)
+            .Select(x => new WireInstructionDestinationViewModel(x.BankName, x.CustomerName, x.AccountNumber,
+                x.RoutingNumber, x.Bic, x.CountryCode)).ToList();
+
+        return View(new WireInstructionsViewModel(bank, sourceAccounts, domestic, fedNow, international));
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Create(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -44,6 +93,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         if (account is null) ModelState.AddModelError(nameof(model.FromAccountId), "Select an account owned by the active bank.");
         if (receiverBank is null || receiverBank.Id == bankId)
             ModelState.AddModelError(nameof(model.ReceiverBankId), "Select a different receiving bank.");
+        if (model.Rail == PaymentRail.Ach)
+            ModelState.AddModelError(nameof(model.Rail), "Create ACH payments from the ACH workspace so they are batched into a NACHA file.");
         if (model.Rail == PaymentRail.FedNow && model.Amount > FedNowProfile.CustomerCreditTransferLimit)
             ModelState.AddModelError(nameof(model.Amount),
                 $"FedNow customer credit transfers cannot exceed {FedNowProfile.CustomerCreditTransferLimit:C0}.");
@@ -185,6 +236,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString()))
             .ToListAsync(token);
+        model.Rails = Enum.GetValues<PaymentRail>().Where(x => x != PaymentRail.Ach)
+            .Select(x => new SelectListItem(x == PaymentRail.SwiftCbprPlus
+                ? "SWIFT international wire (CBPR+)" : x.ToString(), ((int)x).ToString())).ToList();
         return model;
     }
 }
