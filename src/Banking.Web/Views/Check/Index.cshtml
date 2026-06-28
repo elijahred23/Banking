@@ -1,0 +1,25 @@
+@model CheckIndexViewModel
+@{ ViewData["Title"] = "Check processing"; }
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div><h1>Check processing</h1><p class="text-secondary mb-0">Active bank: <strong>@Model.Bank.Name</strong></p></div>
+    <a class="btn btn-primary" asp-action="Create">Capture check deposit</a>
+</div>
+
+<div class="table-responsive">
+<table class="table align-middle">
+    <thead><tr><th>Created</th><th>Depositor</th><th>MICR routing / account</th><th>Check #</th><th>Amount</th><th>Status</th><th>Images</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var item in Model.Deposits)
+    {
+        <tr>
+            <td>@item.CreatedDate.LocalDateTime.ToString("g")</td><td>@item.DepositorName</td>
+            <td><code>@item.PayingRoutingNumber</code> / <code>@item.PayingAccountNumber</code></td>
+            <td>@item.CheckNumber</td><td>@item.Amount.ToString("C")</td><td>@item.Status</td>
+            <td>@item.Images.Count</td><td><a asp-action="Details" asp-route-id="@item.Id">Details</a></td>
+        </tr>
+    }
+    @if (Model.Deposits.Count == 0) { <tr><td colspan="8" class="text-secondary">No check items are visible to this bank.</td></tr> }
+    </tbody>
+</table>
+</div>

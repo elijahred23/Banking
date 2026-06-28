@@ -1,0 +1,31 @@
+@model CheckDetailsViewModel
+@{ ViewData["Title"] = "Check details"; var item = Model.Deposit; }
+
+<div class="d-flex justify-content-between align-items-start mb-4"><div><h1>Check @item.CheckNumber</h1><p class="text-secondary">@item.CorrelationId</p></div><a asp-action="Index" class="btn btn-outline-secondary">Back to checks</a></div>
+<dl class="row">
+    <dt class="col-sm-3">Depository bank</dt><dd class="col-sm-9">@item.DepositoryBank.Name</dd>
+    <dt class="col-sm-3">Paying bank</dt><dd class="col-sm-9">@(item.PayingBank?.Name ?? "Not resolved")</dd>
+    <dt class="col-sm-3">Depositor</dt><dd class="col-sm-9">@item.DepositorName · account @item.DepositingAccount.AccountNumber</dd>
+    <dt class="col-sm-3">MICR</dt><dd class="col-sm-9"><code>@item.RawMicrLine</code></dd>
+    <dt class="col-sm-3">Amount</dt><dd class="col-sm-9">@item.Amount.ToString("C")</dd>
+    <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><strong>@item.Status</strong></dd>
+    @if (item.ReturnReason is not null) { <dt class="col-sm-3">Return / rejection</dt><dd class="col-sm-9">@item.ReturnCode @item.ReturnReason</dd> }
+</dl>
+
+<h2 class="h4 mt-4">Images</h2>
+<table class="table"><thead><tr><th>Side</th><th>File</th><th>Format</th><th>Bytes</th><th>SHA-256</th></tr></thead><tbody>
+@foreach (var image in item.Images.OrderBy(x => x.Side)) { <tr><td>@image.Side</td><td>@image.FileName</td><td>@image.ContentType</td><td>@image.SizeBytes</td><td><code class="small">@image.Sha256Hash</code></td></tr> }
+</tbody></table>
+
+<h2 class="h4 mt-4">Event timeline</h2>
+<ol class="list-group list-group-numbered mb-4">@foreach (var evt in item.Events.OrderBy(x => x.CreatedDate)) { <li class="list-group-item"><strong>@evt.EventType</strong> · @evt.CreatedDate.LocalDateTime.ToString("g")<br /><span class="text-secondary">@evt.Description</span></li> }</ol>
+
+<h2 class="h4 mt-4">Ledger entries</h2>
+<table class="table"><thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>
+@foreach (var entry in item.LedgerEntries.OrderBy(x => x.CreatedDate)) { <tr><td><code>@entry.AccountCode</code><br />@entry.AccountName</td><td>@entry.Description</td><td>@(entry.Debit == 0 ? "" : entry.Debit.ToString("C"))</td><td>@(entry.Credit == 0 ? "" : entry.Credit.ToString("C"))</td></tr> }
+@if (item.LedgerEntries.Count == 0) { <tr><td colspan="4" class="text-secondary">No posting entries yet.</td></tr> }
+</tbody></table>
+
+<h2 class="h4 mt-4">Image cash letter payload</h2>
+@if (item.ImageCashLetterPayload is null) { <p class="text-secondary">Not created yet.</p> }
+else { <pre class="border rounded bg-light p-3 overflow-auto" style="max-height:28rem">@item.ImageCashLetterPayload</pre> }

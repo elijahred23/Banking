@@ -1,4 +1,5 @@
 using Banking.Domain;
+using Banking.Infrastructure.Checks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,7 @@ public static class ServiceRegistration
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
         services.AddSingleton<NachaFileWriter>();
         services.AddSingleton<NachaFileParser>();
+        services.AddSingleton<X937CashLetterWriter>();
         return services;
     }
 
@@ -227,6 +229,121 @@ public static class ServiceRegistration
                     CONSTRAINT FK_AchLedgerEntries_AchEntries_AchEntryId FOREIGN KEY (AchEntryId) REFERENCES dbo.AchEntries(Id) ON DELETE CASCADE);
                 CREATE INDEX IX_AchLedgerEntries_AchEntryId ON dbo.AchLedgerEntries(AchEntryId);
                 CREATE INDEX IX_AchLedgerEntries_JournalId ON dbo.AchLedgerEntries(JournalId);
+            END;
+            IF OBJECT_ID(N'dbo.CheckCashLetters', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckCashLetters (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckCashLetters PRIMARY KEY,
+                    DepositoryBankId uniqueidentifier NOT NULL,
+                    DestinationRoutingNumber nvarchar(9) NOT NULL,
+                    OriginRoutingNumber nvarchar(9) NOT NULL,
+                    FileIdModifier nvarchar(1) NOT NULL,
+                    RawX937Payload nvarchar(max) NOT NULL,
+                    Status nvarchar(30) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckCashLetters_Banks_DepositoryBankId
+                        FOREIGN KEY (DepositoryBankId) REFERENCES dbo.Banks(Id)
+                );
+                CREATE INDEX IX_CheckCashLetters_CreatedDate ON dbo.CheckCashLetters(CreatedDate);
+                CREATE INDEX IX_CheckCashLetters_DepositoryBankId ON dbo.CheckCashLetters(DepositoryBankId);
+            END;
+            IF OBJECT_ID(N'dbo.CheckDeposits', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckDeposits (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckDeposits PRIMARY KEY,
+                    DepositoryBankId uniqueidentifier NOT NULL,
+                    PayingBankId uniqueidentifier NULL,
+                    DepositingAccountId uniqueidentifier NOT NULL,
+                    CheckCashLetterId uniqueidentifier NULL,
+                    DepositorName nvarchar(120) NOT NULL,
+                    PayingRoutingNumber nvarchar(9) NOT NULL,
+                    PayingAccountNumber nvarchar(34) NOT NULL,
+                    CheckNumber nvarchar(15) NOT NULL,
+                    RawMicrLine nvarchar(80) NOT NULL,
+                    Amount decimal(19,4) NOT NULL,
+                    Status nvarchar(max) NOT NULL,
+                    Scenario nvarchar(max) NOT NULL,
+                    CorrelationId uniqueidentifier NOT NULL,
+                    ImageCashLetterPayload nvarchar(max) NULL,
+                    ReturnCode nvarchar(10) NULL,
+                    ReturnReason nvarchar(240) NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckDeposits_Banks_DepositoryBankId FOREIGN KEY (DepositoryBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_CheckDeposits_Banks_PayingBankId FOREIGN KEY (PayingBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_CheckDeposits_Accounts_DepositingAccountId FOREIGN KEY (DepositingAccountId) REFERENCES dbo.Accounts(Id),
+                    CONSTRAINT FK_CheckDeposits_CheckCashLetters_CheckCashLetterId FOREIGN KEY (CheckCashLetterId) REFERENCES dbo.CheckCashLetters(Id)
+                );
+                CREATE UNIQUE INDEX IX_CheckDeposits_CorrelationId ON dbo.CheckDeposits(CorrelationId);
+                CREATE INDEX IX_CheckDeposits_PayingRoutingNumber ON dbo.CheckDeposits(PayingRoutingNumber);
+                CREATE INDEX IX_CheckDeposits_DuplicateDetection ON dbo.CheckDeposits(PayingRoutingNumber, PayingAccountNumber, CheckNumber, Amount);
+                CREATE INDEX IX_CheckDeposits_DepositoryBankId ON dbo.CheckDeposits(DepositoryBankId);
+                CREATE INDEX IX_CheckDeposits_PayingBankId ON dbo.CheckDeposits(PayingBankId);
+                CREATE INDEX IX_CheckDeposits_DepositingAccountId ON dbo.CheckDeposits(DepositingAccountId);
+                CREATE INDEX IX_CheckDeposits_CheckCashLetterId ON dbo.CheckDeposits(CheckCashLetterId);
+            END;
+            IF OBJECT_ID(N'dbo.CheckImages', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckImages (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckImages PRIMARY KEY,
+                    CheckDepositId uniqueidentifier NOT NULL,
+                    Side nvarchar(10) NOT NULL,
+                    Format nvarchar(10) NOT NULL,
+                    FileName nvarchar(120) NOT NULL,
+                    ContentType nvarchar(80) NOT NULL,
+                    Content varbinary(max) NOT NULL,
+                    SizeBytes int NOT NULL,
+                    Sha256Hash nvarchar(128) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckImages_CheckDeposits_CheckDepositId FOREIGN KEY (CheckDepositId)
+                        REFERENCES dbo.CheckDeposits(Id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IX_CheckImages_CheckDepositId_Side ON dbo.CheckImages(CheckDepositId, Side);
+            END;
+            IF OBJECT_ID(N'dbo.CheckReturns', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckReturns (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckReturns PRIMARY KEY,
+                    CheckDepositId uniqueidentifier NOT NULL,
+                    ReturnCode nvarchar(10) NOT NULL,
+                    Reason nvarchar(240) NOT NULL,
+                    ReceivedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckReturns_CheckDeposits_CheckDepositId FOREIGN KEY (CheckDepositId)
+                        REFERENCES dbo.CheckDeposits(Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IX_CheckReturns_CheckDepositId ON dbo.CheckReturns(CheckDepositId);
+            END;
+            IF OBJECT_ID(N'dbo.CheckLedgerEntries', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckLedgerEntries (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckLedgerEntries PRIMARY KEY,
+                    JournalId uniqueidentifier NOT NULL,
+                    CheckDepositId uniqueidentifier NOT NULL,
+                    AccountCode nvarchar(80) NOT NULL,
+                    AccountName nvarchar(120) NOT NULL,
+                    Debit decimal(19,4) NOT NULL,
+                    Credit decimal(19,4) NOT NULL,
+                    Description nvarchar(240) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckLedgerEntries_CheckDeposits_CheckDepositId FOREIGN KEY (CheckDepositId)
+                        REFERENCES dbo.CheckDeposits(Id) ON DELETE CASCADE,
+                    CONSTRAINT CK_CheckLedgerEntries_OneSide CHECK
+                        ((Debit > 0 AND Credit = 0) OR (Credit > 0 AND Debit = 0))
+                );
+                CREATE INDEX IX_CheckLedgerEntries_CheckDepositId ON dbo.CheckLedgerEntries(CheckDepositId);
+                CREATE INDEX IX_CheckLedgerEntries_JournalId ON dbo.CheckLedgerEntries(JournalId);
+            END;
+            IF OBJECT_ID(N'dbo.CheckEvents', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CheckEvents (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CheckEvents PRIMARY KEY,
+                    CheckDepositId uniqueidentifier NOT NULL,
+                    EventType nvarchar(60) NOT NULL,
+                    Description nvarchar(500) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CheckEvents_CheckDeposits_CheckDepositId FOREIGN KEY (CheckDepositId)
+                        REFERENCES dbo.CheckDeposits(Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IX_CheckEvents_CheckDepositId ON dbo.CheckEvents(CheckDepositId);
             END;
             """, token);
 

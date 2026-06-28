@@ -20,6 +20,12 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<AchReturn> AchReturns => Set<AchReturn>();
     public DbSet<AchNotificationOfChange> AchNotificationsOfChange => Set<AchNotificationOfChange>();
     public DbSet<AchLedgerEntry> AchLedgerEntries => Set<AchLedgerEntry>();
+    public DbSet<CheckDeposit> CheckDeposits => Set<CheckDeposit>();
+    public DbSet<CheckImage> CheckImages => Set<CheckImage>();
+    public DbSet<CheckCashLetter> CheckCashLetters => Set<CheckCashLetter>();
+    public DbSet<CheckReturn> CheckReturns => Set<CheckReturn>();
+    public DbSet<CheckLedgerEntry> CheckLedgerEntries => Set<CheckLedgerEntry>();
+    public DbSet<CheckEvent> CheckEvents => Set<CheckEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,5 +78,33 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<AchLedgerEntry>().Property(x => x.Credit).HasPrecision(19, 4);
         modelBuilder.Entity<AchLedgerEntry>().HasIndex(x => x.AchEntryId);
         modelBuilder.Entity<AchLedgerEntry>().HasIndex(x => x.JournalId);
+
+        modelBuilder.Entity<CheckDeposit>().Property(x => x.Amount).HasPrecision(19, 4);
+        modelBuilder.Entity<CheckDeposit>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<CheckDeposit>().Property(x => x.Scenario).HasConversion<string>();
+        modelBuilder.Entity<CheckImage>().Property(x => x.Side).HasConversion<string>().HasMaxLength(10);
+        modelBuilder.Entity<CheckImage>().Property(x => x.Format).HasConversion<string>().HasMaxLength(10);
+        modelBuilder.Entity<CheckDeposit>().HasIndex(x => x.CorrelationId).IsUnique();
+        modelBuilder.Entity<CheckDeposit>().HasIndex(x => x.PayingRoutingNumber);
+        modelBuilder.Entity<CheckDeposit>().HasIndex(x => new
+            { x.PayingRoutingNumber, x.PayingAccountNumber, x.CheckNumber, x.Amount });
+        modelBuilder.Entity<CheckImage>().HasIndex(x => new { x.CheckDepositId, x.Side }).IsUnique();
+        modelBuilder.Entity<CheckCashLetter>().HasIndex(x => x.CreatedDate);
+        modelBuilder.Entity<CheckReturn>().HasIndex(x => x.CheckDepositId);
+        modelBuilder.Entity<CheckLedgerEntry>().Property(x => x.Debit).HasPrecision(19, 4);
+        modelBuilder.Entity<CheckLedgerEntry>().Property(x => x.Credit).HasPrecision(19, 4);
+        modelBuilder.Entity<CheckLedgerEntry>().HasIndex(x => x.CheckDepositId);
+        modelBuilder.Entity<CheckLedgerEntry>().HasIndex(x => x.JournalId);
+        modelBuilder.Entity<CheckEvent>().HasIndex(x => x.CheckDepositId);
+        modelBuilder.Entity<CheckDeposit>().HasOne(x => x.DepositoryBank).WithMany()
+            .HasForeignKey(x => x.DepositoryBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CheckDeposit>().HasOne(x => x.PayingBank).WithMany()
+            .HasForeignKey(x => x.PayingBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CheckDeposit>().HasOne(x => x.DepositingAccount).WithMany()
+            .HasForeignKey(x => x.DepositingAccountId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CheckDeposit>().HasOne(x => x.CashLetter).WithMany(x => x.Deposits)
+            .HasForeignKey(x => x.CheckCashLetterId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CheckCashLetter>().HasOne(x => x.DepositoryBank).WithMany()
+            .HasForeignKey(x => x.DepositoryBankId).OnDelete(DeleteBehavior.Restrict);
     }
 }

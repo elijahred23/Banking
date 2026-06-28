@@ -39,3 +39,7 @@ The application currently uses EF Core `EnsureCreated` for local first-run setup
 For existing lab databases, `202606280000_payment_learning.sql` adds held balances,
 explicit beneficiary data, processing scenarios, and the balanced journal table. Web
 startup runs the same upgrade idempotently for the default local workflow.
+
+`202606282000_add_check_processing.sql` adds image cash letters, check deposits,
+front/back TIFF blobs, returns, event timelines, and balanced check journals. Web
+startup applies the equivalent idempotent upgrade to existing local databases.

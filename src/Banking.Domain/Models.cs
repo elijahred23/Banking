@@ -12,7 +12,8 @@ public enum PaymentRail
     Fedwire,
     FedNow,
     [Display(Name = "SWIFT international wire (CBPR+)")] SwiftCbprPlus,
-    Ach
+    Ach,
+    Check
 }
 
 public sealed class Bank

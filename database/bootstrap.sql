@@ -18,5 +18,11 @@ SET XACT_ABORT ON;
 :r database/tables/023_AchReturns.sql
 :r database/tables/024_AchNotificationsOfChange.sql
 :r database/tables/025_AchLedgerEntries.sql
+:r database/tables/030_CheckCashLetters.sql
+:r database/tables/031_CheckDeposits.sql
+:r database/tables/032_CheckImages.sql
+:r database/tables/033_CheckReturns.sql
+:r database/tables/034_CheckLedgerEntries.sql
+:r database/tables/035_CheckEvents.sql
 
 PRINT 'BankingDb baseline schema is ready.';

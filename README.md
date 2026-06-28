@@ -1,6 +1,6 @@
 # Bank Payments Lab
 
-A .NET 10 learning system that models Fedwire, FedNow, SWIFT CBPR+, and batch-oriented ACH customer payments. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
+A .NET 10 learning system that models Fedwire, FedNow, SWIFT CBPR+, batch-oriented ACH customer payments, and image-based check processing. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
 
 The lab emphasizes observable payment behavior rather than a single happy path:
 
@@ -14,6 +14,7 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - balanced debit/credit journals for outgoing and incoming posting; and
 - selectable pending, network-rejection, and malformed-message learning scenarios.
 - ACH entry validation, scheduled batch cutoff, fixed-width NACHA files, FedACH-style settlement, returns, notifications of change, and EFTPS-style CCD+ addenda.
+- check capture, MICR validation, front/back TIFF storage, simplified image cash letters, paying-bank presentment, settlement, and returns.
 
 ## Run
 
@@ -38,12 +39,33 @@ Version-controlled table definitions and the location for future migration scrip
 - `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, and ISO history.
 - `Banking.WireService`: funds/OFAC/sanctions simulation and `pacs.008` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
+- `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.
+- `Banking.CheckImageExchangeSimulator`: paying-bank routing, duplicate detection, check settlement, and returns.
 - `Banking.MessageManager`: outbound delivery tracking plus inbound status/payment routing.
 - `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008`.
 - `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of the settled `pacs.008`.
 - `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, payment statuses, and delivery of the original `pacs.008`.
 - `Banking.FedAchSimulator`: NACHA file validation plus simulated settlement, returns, and notifications of change.
 - `Banking.Domain` and `Banking.Infrastructure`: contracts, ISO translation, EF Core, and messaging.
+
+## Check Processing scope
+
+The check rail is a learning-only Image Cash Letter simulator. It models check
+capture, MICR parsing, front/back TIFF image storage, simplified X9.37/X9.100-187-style
+file creation, Check 21 concepts, paying-bank presentment, settlement, duplicate
+presentment scenarios, and returns. Checks use dedicated `CHECK.*` queues and are
+not represented as ACH entries.
+
+This is not production check processing or bank certification. It does not
+implement the licensed ANSI X9.100-187 specification, full X9.100-181 TIFF image
+quality rules, full X9.100-140 substitute-check requirements, ECCHO rules,
+Federal Reserve image cash letter certification, production endorsement rules,
+fraud detection, maker signature verification, deposit holds, Reg CC availability
+logic, or legal substitute-check warranty workflows.
+
+To exercise the standard flow, use Bankers Bank, its `123456` depositing account,
+MICR line `t103000648t 654321o 1001`, and small front/back TIFF files. Switch to
+First Oklahoma Bank afterward to inspect the paying-bank view.
 
 `FED.OUTBOUND`/`FED.INBOUND`, `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND`, and `SWIFT.OUTBOUND`/`SWIFT.INBOUND` are transport-abstraction queues carried by RabbitMQ in the default laptop profile. An optional IBM MQ container is included (`docker compose --profile ibmmq up -d`), but the application does not claim to use IBM MQ until an IBM XMS transport implementation is supplied. The `IMessageBus` boundary is the replacement point.
 

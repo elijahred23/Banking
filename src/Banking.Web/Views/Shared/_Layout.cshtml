@@ -39,6 +39,7 @@
                         </ul>
                     </li>
                     <li class="nav-item"><a class="nav-link" asp-controller="Ach" asp-action="Index">ACH</a></li>
+                    <li class="nav-item"><a class="nav-link" asp-controller="Check" asp-action="Index">Checks</a></li>
                 </ul>
                 <form asp-controller="BankContext" asp-action="Switch" method="post" class="d-flex bank-switcher me-3">
                     <input type="hidden" name="returnUrl" value="@Context.Request.Path@Context.Request.QueryString" />
@@ -58,7 +59,7 @@
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
     @RenderBody()
 </main>
-<footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, and ACH learning environment · All balances and messages are simulated.</footer>
+<footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, ACH, and check processing learning environment · All balances and messages are simulated.</footer>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

@@ -1,0 +1,18 @@
+@model CreateCheckDepositViewModel
+@{ ViewData["Title"] = "Capture check"; }
+
+<h1>Capture check deposit</h1>
+<p class="text-secondary">Upload one front and one back TIFF image, each no larger than 2 MB.</p>
+<form asp-action="Create" method="post" enctype="multipart/form-data" class="row g-3">
+    <div asp-validation-summary="All" class="text-danger"></div>
+    <div class="col-12"><label asp-for="DepositingAccountId" class="form-label"></label><select asp-for="DepositingAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select></div>
+    <div class="col-md-6"><label asp-for="DepositorName" class="form-label"></label><input asp-for="DepositorName" class="form-control" /></div>
+    <div class="col-md-6"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" class="form-control" /></div>
+    <div class="col-12"><label asp-for="RawMicrLine" class="form-label"></label><input asp-for="RawMicrLine" class="form-control" placeholder="t103000648t 654321o 1001" /><div class="form-text">Teaching format: tRoutingNumbert AccountNumbero CheckNumber</div></div>
+    <div class="col-md-6"><label asp-for="Scenario" class="form-label"></label><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<CheckProcessingScenario>()" class="form-select"></select></div>
+    <div class="col-md-6"></div>
+    <div class="col-md-6"><label asp-for="FrontImage" class="form-label"></label><input asp-for="FrontImage" class="form-control" accept=".tif,.tiff,image/tiff" /></div>
+    <div class="col-md-6"><label asp-for="BackImage" class="form-label"></label><input asp-for="BackImage" class="form-control" accept=".tif,.tiff,image/tiff" /></div>
+    <div class="col-12"><button class="btn btn-primary">Capture</button> <a asp-action="Index" class="btn btn-link">Cancel</a></div>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }
