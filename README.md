@@ -7,11 +7,12 @@ A .NET 10 learning system that models a two-bank Fedwire payment. It uses the ex
 Prerequisites: .NET 10, SQL Server on `localhost:11433`, and RabbitMQ on `localhost:5672`. The configured RabbitMQ credentials are `taskwrapper` / `taskwrapper123`; SQL Server uses the `BankingDb` database.
 
 ```bash
-dotnet run --project src/Banking.Web
-dotnet run --project src/Banking.WireService
-dotnet run --project src/Banking.MessageManager
-dotnet run --project src/Banking.FedwireSimulator
+python3 run_all.py
 ```
+
+The script builds the solution once, starts the web app before the worker services,
+and stops every project when you press Ctrl+C. Run `python3 run_all.py --help` for
+configuration and build options.
 
 Open the URL printed by `Banking.Web` and sign in with `operator` / `fedwire-lab`. Start the web project first on a fresh database; it creates the schema and seed data. To exercise the sample, create a wire from John Smith at Bankers Bank to Mary Jones at First Oklahoma Bank.
 
