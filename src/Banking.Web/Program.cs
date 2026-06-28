@@ -1,9 +1,13 @@
 using Banking.Infrastructure;
+using Banking.Web.Realtime;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<WireUpdateTracker>();
+builder.Services.AddHostedService<WireUpdateBroadcaster>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -35,6 +39,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();
+app.MapHub<WireUpdatesHub>("/hubs/wires");
 
 app.MapControllerRoute(
     name: "default",

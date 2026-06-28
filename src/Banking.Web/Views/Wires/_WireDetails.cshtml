@@ -1,0 +1,127 @@
+@model WireDetailsViewModel
+@{
+    var wire = Model.Wire;
+}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <div class="eyebrow">@wire.Direction WIRE</div>
+        <h1>@wire.Amount.ToString("C")</h1>
+        <div class="text-secondary">@wire.SenderName → @wire.ReceiverName</div>
+    </div>
+    <span class="status status-@wire.Status.ToString().ToLowerInvariant() status-large">@wire.Status</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <section class="surface section mb-4">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                <div><h2 class="h5 mb-1">Lifecycle</h2><div class="section-help">Every persisted processing stage.</div></div>
+                <span class="duration-pill">@FormatDuration(Model.ProcessingDuration) total</span>
+            </div>
+            <div class="timeline">
+                @foreach (var stage in Model.Stages)
+                {
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-heading">
+                            <strong>@stage.Event.EventType</strong>
+                            <span class="service-badge">@stage.Service</span>
+                        </div>
+                        <div>@stage.Event.Description</div>
+                        <small>
+                            @stage.Event.CreatedDate.ToLocalTime().ToString("MMM d, yyyy · HH:mm:ss.fff")
+                            @if (stage.DurationSincePrevious is TimeSpan elapsed)
+                            { <span> · +@FormatDuration(elapsed)</span> }
+                        </small>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="surface section">
+            <div class="mb-3"><h2 class="h5 mb-1">Processing observability</h2><div class="section-help">Transport delivery, attempts, timing, and failures.</div></div>
+            @if (Model.Deliveries.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table diagnostics-table mb-0">
+                        <thead><tr><th>Destination</th><th>Status</th><th>Attempts</th><th>Last update</th></tr></thead>
+                        <tbody>
+                        @foreach (var delivery in Model.Deliveries)
+                        {
+                            <tr>
+                                <td><code>@delivery.Destination</code></td>
+                                <td><span class="delivery-status delivery-@delivery.Status.ToString().ToLowerInvariant()">@delivery.Status</span></td>
+                                <td>@delivery.Attempts</td>
+                                <td>@delivery.UpdatedDate.ToLocalTime().ToString("HH:mm:ss.fff")</td>
+                            </tr>
+                            @if (!string.IsNullOrWhiteSpace(delivery.LastError))
+                            { <tr class="delivery-error"><td colspan="4"><strong>Failure:</strong> @delivery.LastError</td></tr> }
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-secondary mb-0">No transport delivery has been recorded yet.</p>
+            }
+            @if (Model.FailureReason is not null)
+            { <div class="failure-callout mt-3"><strong>Latest failure</strong><span>@Model.FailureReason</span></div> }
+        </section>
+    </div>
+
+    <div class="col-xl-5">
+        <section class="surface section mb-4">
+            <h2 class="h5">Identifiers</h2>
+            <dl class="detail-grid">
+                <dt>Wire ID</dt><dd><code>@wire.Id</code></dd>
+                <dt>Correlation</dt><dd><code>@wire.CorrelationId</code></dd>
+                <dt>IMAD</dt><dd>@(wire.Imad ?? "Pending")</dd>
+                <dt>OMAD</dt><dd>@(wire.Omad ?? "Pending")</dd>
+            </dl>
+        </section>
+    </div>
+</div>
+
+<section class="surface section mt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div><h2 class="h5 mb-1">ISO 20022 messages</h2><div class="section-help">Formatted payloads and structural validation.</div></div>
+        @if (Model.Messages.Count > 1)
+        { <span class="compare-hint">Side-by-side comparison</span> }
+    </div>
+    @if (Model.Messages.Any())
+    {
+        <div class="message-grid @(Model.Messages.Count > 1 ? "message-grid-compare" : "")">
+            @foreach (var item in Model.Messages)
+            {
+                <article class="iso-message" data-message-id="@item.Message.Id" data-message-type="@item.Message.MessageType">
+                    <header class="iso-message-header">
+                        <div><strong>@item.Message.MessageType</strong><div>@item.Message.Direction · @item.Message.CreatedDate.ToLocalTime().ToString("HH:mm:ss.fff")</div></div>
+                        <div class="message-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary copy-xml">Copy</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary download-xml">Download</button>
+                        </div>
+                    </header>
+                    <div class="xml-validation @(item.IsWellFormed && item.HasExpectedNamespace ? "xml-valid" : "xml-warning")">
+                        <span aria-hidden="true">@(item.IsWellFormed && item.HasExpectedNamespace ? "✓" : "!")</span>
+                        @item.ValidationMessage
+                    </div>
+                    <pre class="xml-viewer"><code class="language-xml">@item.FormattedXml</code></pre>
+                </article>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="text-secondary mb-0">No messages generated yet. This page will update as the wire progresses.</p>
+    }
+</section>
+
+@functions {
+    private static string FormatDuration(TimeSpan value)
+    {
+        if (value.TotalMinutes >= 1) return $"{(int)value.TotalMinutes}m {value.Seconds}s";
+        if (value.TotalSeconds >= 1) return $"{value.TotalSeconds:0.00}s";
+        return $"{value.TotalMilliseconds:0}ms";
+    }
+}

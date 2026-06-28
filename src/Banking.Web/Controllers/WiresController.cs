@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using System.Xml.Linq;
 
 namespace Banking.Web.Controllers;
 
@@ -64,11 +65,83 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var wire = await db.WireTransfers.Include(x => x.Bank).Include(x => x.Events)
-            .Include(x => x.IsoMessages).AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
-        return wire is null ? NotFound() : View(wire);
+        var model = await LoadDetailsAsync(id, bankId, db, token);
+        return model is null ? NotFound() : View(model);
     }
+
+    [HttpGet]
+    public async Task<IActionResult> DetailsFragment(Guid id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var model = await LoadDetailsAsync(id, bankId, db, token);
+        return model is null ? NotFound() : PartialView("_WireDetails", model);
+    }
+
+    private static async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
+        BankingDbContext db, CancellationToken token)
+    {
+        var wire = await db.WireTransfers.Include(x => x.Bank).Include(x => x.Events)
+            .Include(x => x.IsoMessages).AsSplitQuery().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
+        if (wire is null) return null;
+
+        var deliveries = await db.MessageDeliveries.Where(x => x.WireTransferId == id)
+            .OrderBy(x => x.UpdatedDate).AsNoTracking().ToListAsync(token);
+        var events = wire.Events.OrderBy(x => x.CreatedDate).ToList();
+        var stages = events.Select((item, index) => new ProcessingStageViewModel(
+            item,
+            ServiceFor(item.EventType),
+            index == 0 ? null : item.CreatedDate - events[index - 1].CreatedDate)).ToList();
+        var messages = wire.IsoMessages.OrderBy(x => x.CreatedDate).Select(BuildMessage).ToList();
+        var failure = deliveries.LastOrDefault(x => !string.IsNullOrWhiteSpace(x.LastError))?.LastError
+            ?? events.LastOrDefault(x => x.EventType.Contains("Reject", StringComparison.OrdinalIgnoreCase))?.Description;
+        var lastActivity = new[]
+        {
+            events.LastOrDefault()?.CreatedDate ?? wire.CreatedDate,
+            wire.IsoMessages.OrderBy(x => x.CreatedDate).LastOrDefault()?.CreatedDate ?? wire.CreatedDate,
+            deliveries.LastOrDefault()?.UpdatedDate ?? wire.CreatedDate
+        }.Max();
+        return new WireDetailsViewModel(wire, deliveries, stages, messages, failure,
+            lastActivity - wire.CreatedDate);
+    }
+
+    private static IsoMessageViewModel BuildMessage(IsoMessage message)
+    {
+        try
+        {
+            var document = XDocument.Parse(message.XmlPayload);
+            var expectedNamespace = message.MessageType switch
+            {
+                "pacs.008" => "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10",
+                "pacs.002" => "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.10",
+                _ => null
+            };
+            var actualNamespace = document.Root?.Name.NamespaceName;
+            var recognized = expectedNamespace is not null && actualNamespace == expectedNamespace;
+            var validation = recognized
+                ? "Well-formed XML · expected ISO 20022 namespace"
+                : expectedNamespace is null
+                    ? "Well-formed XML · message namespace is not configured"
+                    : $"Well-formed XML · unexpected namespace: {actualNamespace ?? "none"}";
+            return new IsoMessageViewModel(message, document.ToString(), true, recognized, validation);
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or InvalidOperationException)
+        {
+            return new IsoMessageViewModel(message, message.XmlPayload, false, false,
+                $"Invalid XML · {ex.Message}");
+        }
+    }
+
+    private static string ServiceFor(string eventType) => eventType switch
+    {
+        "Created" => "Banking.Web",
+        "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
+        "AcceptedByFed" or "RejectedByFed" => "FedwireSimulator → MessageManager",
+        "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "Completed"
+            => "Banking.MessageManager",
+        _ => "Unknown"
+    };
 
     private static async Task<CreateWireViewModel> PopulateAsync(CreateWireViewModel model, Guid bankId,
         BankingDbContext db, CancellationToken token)

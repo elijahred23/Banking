@@ -19,3 +19,23 @@ public sealed record DashboardViewModel(Bank Bank, IReadOnlyList<WireTransfer> R
 
 public sealed record WireIndexViewModel(Bank Bank, WireDirection? Direction,
     IReadOnlyList<WireTransfer> Wires);
+
+public sealed record WireDetailsViewModel(
+    WireTransfer Wire,
+    IReadOnlyList<MessageDelivery> Deliveries,
+    IReadOnlyList<ProcessingStageViewModel> Stages,
+    IReadOnlyList<IsoMessageViewModel> Messages,
+    string? FailureReason,
+    TimeSpan ProcessingDuration);
+
+public sealed record ProcessingStageViewModel(
+    WireEvent Event,
+    string Service,
+    TimeSpan? DurationSincePrevious);
+
+public sealed record IsoMessageViewModel(
+    IsoMessage Message,
+    string FormattedXml,
+    bool IsWellFormed,
+    bool HasExpectedNamespace,
+    string ValidationMessage);
