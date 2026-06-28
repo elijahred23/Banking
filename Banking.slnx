@@ -5,6 +5,7 @@
     <Project Path="src/Banking.FedNowSimulator/Banking.FedNowSimulator.csproj" />
     <Project Path="src/Banking.Infrastructure/Banking.Infrastructure.csproj" />
     <Project Path="src/Banking.MessageManager/Banking.MessageManager.csproj" />
+    <Project Path="src/Banking.SwiftSimulator/Banking.SwiftSimulator.csproj" />
     <Project Path="src/Banking.Web/Banking.Web.csproj" />
     <Project Path="src/Banking.WireService/Banking.WireService.csproj" />
     <Project Path="tests/Banking.Domain.Tests/Banking.Domain.Tests.csproj" />

@@ -8,6 +8,7 @@ public sealed class Worker(
     IMessageBus bus,
     IDbContextFactory<BankingDbContext> dbFactory,
     IIsoMessageService iso,
+    ICbprPlusMessageService cbpr,
     ILogger<Worker> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
@@ -50,21 +51,29 @@ public sealed class Worker(
             .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id
                 && x.AccountNumber == wire.BeneficiaryAccountNumber,
                 cancellationToken);
-        var xml = wire.Rail == PaymentRail.FedNow
-            ? iso.CreateFedNowPacs008(wire, sender, receiver, account.AccountNumber,
+        var xml = wire.Rail switch
+        {
+            PaymentRail.FedNow => iso.CreateFedNowPacs008(wire, sender, receiver,
+                account.AccountNumber, wire.BeneficiaryAccountNumber),
+            PaymentRail.SwiftCbprPlus => iso.CreateCbprPlusPacs008(wire, sender, receiver,
+                account.AccountNumber, wire.BeneficiaryAccountNumber),
+            _ => iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
                 wire.BeneficiaryAccountNumber)
-            : iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
-                wire.BeneficiaryAccountNumber);
+        };
         if (wire.Scenario == ProcessingScenario.MalformedIso) xml = xml[..^12];
         var validation = iso.Validate(xml);
-        if (!validation.IsValid)
+        var cbprValidation = wire.Rail == PaymentRail.SwiftCbprPlus
+            ? cbpr.ValidateCustomerCreditTransfer(xml)
+            : null;
+        if (!validation.IsValid || cbprValidation is { IsValid: false })
         {
             account.HeldBalance -= wire.Amount;
             wire.Status = WireStatus.Rejected;
             db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
                 Direction = MessageDirection.Outbound, XmlPayload = xml });
             db.WireEvents.Add(Event(wire.Id, "Rejected",
-                $"ISO profile validation failed; funds hold released. {string.Join(" ", validation.Errors)}"));
+                $"ISO profile validation failed; funds hold released. {string.Join(" ",
+                    validation.Errors.Concat(cbprValidation?.Errors ?? []))}"));
             await db.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -80,7 +89,7 @@ public sealed class Worker(
             new WireReadyForFed(wire.Id, wire.CorrelationId, sender.Id, receiver.Id, wire.Amount, xml,
                 wire.Scenario),
             cancellationToken);
-        logger.LogInformation("Wire {WireId} is ready for Fed", wire.Id);
+        logger.LogInformation("Wire {WireId} is ready for {Rail}", wire.Id, wire.Rail);
     }
 
     private static WireEvent Event(Guid wireId, string type, string description) =>

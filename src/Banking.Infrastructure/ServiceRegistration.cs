@@ -17,6 +17,7 @@ public static class ServiceRegistration
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
+        services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
         return services;
     }
 
@@ -66,6 +67,28 @@ public static class ServiceRegistration
                     FedNowRequestForPaymentEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowRfpEnabled DEFAULT (1),
                     FedNowOnline bit NOT NULL CONSTRAINT DF_Banks_FedNowOnline DEFAULT (1);
             END;
+            IF COL_LENGTH(N'dbo.Banks', N'Bic') IS NULL
+            BEGIN
+                ALTER TABLE dbo.Banks ADD
+                    Bic nvarchar(11) NOT NULL CONSTRAINT DF_Banks_Bic DEFAULT (N'UNKNOWNXX'),
+                    TownName nvarchar(35) NOT NULL CONSTRAINT DF_Banks_TownName DEFAULT (N'Unknown'),
+                    CountryCode nvarchar(2) NOT NULL CONSTRAINT DF_Banks_CountryCode DEFAULT (N'US'),
+                    SwiftEnabled bit NOT NULL CONSTRAINT DF_Banks_SwiftEnabled DEFAULT (1);
+            END;
+            UPDATE dbo.Banks SET
+                Bic = CASE RoutingNumber
+                    WHEN N'101000019' THEN N'BAKRUS44XXX'
+                    WHEN N'103000648' THEN N'FIOKUS44XXX'
+                    WHEN N'111901234' THEN N'CNATUS44XXX'
+                    WHEN N'111000753' THEN N'RRBAUS44XXX'
+                    ELSE N'ZZZZUS' + RIGHT(RoutingNumber, 5)
+                END,
+                TownName = CASE WHEN RoutingNumber = N'103000648' THEN N'Oklahoma City'
+                    WHEN TownName = N'Unknown' THEN N'Tulsa' ELSE TownName END
+            WHERE Bic = N'UNKNOWNXX';
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes
+                WHERE object_id = OBJECT_ID(N'dbo.Banks') AND name = N'IX_Banks_Bic')
+                CREATE UNIQUE INDEX IX_Banks_Bic ON dbo.Banks (Bic);
             IF OBJECT_ID(N'dbo.LedgerEntries', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.LedgerEntries (
@@ -92,6 +115,15 @@ public static class ServiceRegistration
         (string Name, string Account, decimal Balance) customer) => new()
     {
         Name = name, RoutingNumber = routing, FedParticipantId = participant,
+        Bic = participant switch
+        {
+            "BANKERS" => "BAKRUS44XXX",
+            "FIRSTOK" => "FIOKUS44XXX",
+            "COMMUNITY" => "CNATUS44XXX",
+            _ => "RRBAUS44XXX"
+        },
+        TownName = participant == "FIRSTOK" ? "Oklahoma City" : "Tulsa",
+        CountryCode = "US",
         MasterAccountBalance = balance,
         Customers = [new Customer { Name = customer.Name,
             Accounts = [new Account { AccountNumber = customer.Account, Balance = customer.Balance }] }]

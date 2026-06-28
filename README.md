@@ -1,6 +1,6 @@
-# Fed Payments Lab
+# Bank Payments Lab
 
-A .NET 10 learning system that models two-bank Fedwire and FedNow payments. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
+A .NET 10 learning system that models two-bank Fedwire, FedNow, and SWIFT CBPR+ customer payments. It uses SQL Server on `localhost:11433` for durable state and RabbitMQ on `localhost:5672` for application events.
 
 The lab emphasizes observable payment behavior rather than a single happy path:
 
@@ -9,9 +9,10 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - a version-aware catalog and generic header/envelope construction for the supported `admi`, `pacs`, `pain`, and `camt` wire-message families;
 - concrete `pacs.008` instructions and `pacs.002` `PDNG`, `ACSC`, and `RJCT` statuses;
 - a separate FedNow rail with `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND` queues, participant capability and availability checks, receiver `ACCP`/`ACWP` processing states, immediate final settlement, duplicate-safe processing, and a $10 million customer-credit-transfer limit;
+- a SWIFT CBPR+ serial-method learning flow with dedicated queues, `pacs.008.001.08`, BICFI routing, `INDA` settlement method, `SHAR` charges, structured party addresses, and `ACSP`/`ACCC`/`RJCT` statuses;
 - customer funds holds that become posted debits only after final settlement;
 - balanced debit/credit journals for outgoing and incoming posting; and
-- selectable pending, Fed-rejection, and malformed-message learning scenarios.
+- selectable pending, network-rejection, and malformed-message learning scenarios.
 
 ## Run
 
@@ -25,7 +26,7 @@ The script builds the solution once, starts the web app before the worker servic
 and stops every project when you press Ctrl+C. Run `python3 run_all.py --help` for
 configuration and build options.
 
-Open the URL printed by `Banking.Web` and sign in with `operator` / `fedwire-lab`. Start the web project first on a fresh database; it creates the schema and seed data. Create a payment from John Smith at Bankers Bank to Mary Jones at First Oklahoma Bank, beneficiary account `654321`, and select either rail. Use the scenario selector to exercise pending, rejection, and validation-failure paths.
+Open the URL printed by `Banking.Web` and sign in with `operator` / `fedwire-lab`. Start the web project first on a fresh database; it creates the schema and seed data. Create a payment from John Smith at Bankers Bank to Mary Jones at First Oklahoma Bank, beneficiary account `654321`, and select a rail. Use the scenario selector to exercise pending, rejection, and validation-failure paths.
 
 Configuration can be overridden with standard .NET environment variables, for example `ConnectionStrings__DefaultConnection`, `RabbitMq__HostName`, `RabbitMq__UserName`, and `RabbitMq__Password`.
 
@@ -38,9 +39,16 @@ Version-controlled table definitions and the location for future migration scrip
 - `Banking.MessageManager`: outbound delivery tracking plus inbound status/payment routing.
 - `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008`.
 - `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of the settled `pacs.008`.
+- `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, payment statuses, and delivery of the original `pacs.008`.
 - `Banking.Domain` and `Banking.Infrastructure`: contracts, ISO translation, EF Core, and messaging.
 
-`FED.OUTBOUND`/`FED.INBOUND` and `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND` are transport-abstraction queues carried by RabbitMQ in the default laptop profile. An optional IBM MQ container is included (`docker compose --profile ibmmq up -d`), but the application does not claim to use IBM MQ until an IBM XMS transport implementation is supplied. The `IMessageBus` boundary is the replacement point.
+`FED.OUTBOUND`/`FED.INBOUND`, `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND`, and `SWIFT.OUTBOUND`/`SWIFT.INBOUND` are transport-abstraction queues carried by RabbitMQ in the default laptop profile. An optional IBM MQ container is included (`docker compose --profile ibmmq up -d`), but the application does not claim to use IBM MQ until an IBM XMS transport implementation is supplied. The `IMessageBus` boundary is the replacement point.
+
+## SWIFT CBPR+ scope
+
+The included profile is a deliberately narrow customer-credit-transfer teaching subset. It generates the live CBPR+ message version listed by Swift (`pacs.008.001.08`) and models the serial method described in Swift customer-payment training. It also requires town and country in structured addresses ahead of Swift's 14 November 2026 removal of fully unstructured addresses.
+
+SWIFT is a messaging network, not the settlement system. The simulator therefore labels balance movement as simulated correspondent positions. It is not production CBPR+ conformance: the private MyStandards usage guidelines, FINplus connectivity, PKI/signing, sanctions controls, correspondent account configuration, currency/FX handling, cover payments, and Vendor Readiness testing are not implemented. See Swift's [CBPR+ readiness requirements](https://www.swift.com/cbpr-self-attestation) and [structured-address timeline](https://www.swift.com/standards/iso-20022/removal-unstructured-address).
 
 ## FedNow message scope
 
@@ -48,7 +56,7 @@ The FedNow profile covers the public message set described by the Federal Reserv
 
 This remains a learning simulator, not a production FedNow connection. Public Federal Reserve documentation requires the private MyStandards usage guidelines, Technical Specifications, participant onboarding, endpoint connectivity, message signing/key management, size controls, and certification testing. Those external controls are deliberately not represented as completed production capabilities here.
 
-The web application applies the included idempotent lab schema upgrade at startup so existing local databases gain held balances, beneficiary fields, scenarios, and journal entries. The equivalent forward SQL migration is in `database/migrations`. Use managed EF migrations before evolving this schema beyond the lab.
+The web application applies the included idempotent lab schema upgrade at startup so existing local databases gain held balances, beneficiary fields, scenarios, journal entries, BICs, structured locations, and SWIFT capability flags. Equivalent forward SQL migrations are in `database/migrations`. Use managed EF migrations before evolving this schema beyond the lab.
 
 ## Verification
 
@@ -56,4 +64,4 @@ The web application applies the included idempotent lab schema upgrade at startu
 dotnet test Banking.slnx
 ```
 
-The domain tests verify generated headers and UETRs, catalog coverage, generic construction of every supported wire-message type, supported Fed statuses, semantic profile validation, and malformed XML handling. Generic construction validates the ISO envelope, message identity, and header consistency; scheme-specific business-rule or XSD validation must be added with each concrete workflow.
+The domain tests verify generated headers and UETRs, catalog coverage, generic construction of every supported wire-message type, Fed and CBPR+ statuses, semantic profile validation, and malformed XML handling. Generic construction validates the ISO envelope, message identity, and header consistency; authoritative scheme XSD and MyStandards validation remain external requirements.

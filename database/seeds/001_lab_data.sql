@@ -10,18 +10,22 @@ BEGIN TRY
         Name nvarchar(120) NOT NULL,
         RoutingNumber nvarchar(9) NOT NULL,
         FedParticipantId nvarchar(12) NOT NULL,
+        Bic nvarchar(11) NOT NULL,
+        TownName nvarchar(35) NOT NULL,
+        CountryCode nvarchar(2) NOT NULL,
         MasterAccountBalance decimal(19, 4) NOT NULL
     );
 
-    INSERT INTO @Banks (Id, Name, RoutingNumber, FedParticipantId, MasterAccountBalance)
+    INSERT INTO @Banks (Id, Name, RoutingNumber, FedParticipantId, Bic, TownName, CountryCode, MasterAccountBalance)
     VALUES
-        ('10000000-0000-0000-0000-000000000001', N'Bankers Bank',             N'101000019', N'BANKERS',   50000000.0000),
-        ('10000000-0000-0000-0000-000000000002', N'First Oklahoma Bank',      N'103000648', N'FIRSTOK',   40000000.0000),
-        ('10000000-0000-0000-0000-000000000003', N'Community National Bank',  N'111901234', N'COMMUNITY', 25000000.0000),
-        ('10000000-0000-0000-0000-000000000004', N'Red River Bank',           N'111000753', N'REDRIVER',  30000000.0000);
+        ('10000000-0000-0000-0000-000000000001', N'Bankers Bank',             N'101000019', N'BANKERS',   N'BAKRUS44XXX', N'Tulsa',         N'US', 50000000.0000),
+        ('10000000-0000-0000-0000-000000000002', N'First Oklahoma Bank',      N'103000648', N'FIRSTOK',   N'FIOKUS44XXX', N'Oklahoma City', N'US', 40000000.0000),
+        ('10000000-0000-0000-0000-000000000003', N'Community National Bank',  N'111901234', N'COMMUNITY', N'CNATUS44XXX', N'Tulsa',         N'US', 25000000.0000),
+        ('10000000-0000-0000-0000-000000000004', N'Red River Bank',           N'111000753', N'REDRIVER',  N'RRBAUS44XXX', N'Tulsa',         N'US', 30000000.0000);
 
-    INSERT INTO dbo.Banks (Id, Name, RoutingNumber, FedParticipantId, MasterAccountBalance)
-    SELECT seed.Id, seed.Name, seed.RoutingNumber, seed.FedParticipantId, seed.MasterAccountBalance
+    INSERT INTO dbo.Banks (Id, Name, RoutingNumber, FedParticipantId, Bic, TownName, CountryCode, MasterAccountBalance)
+    SELECT seed.Id, seed.Name, seed.RoutingNumber, seed.FedParticipantId, seed.Bic, seed.TownName,
+           seed.CountryCode, seed.MasterAccountBalance
     FROM @Banks AS seed
     WHERE NOT EXISTS
     (

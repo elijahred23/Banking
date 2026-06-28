@@ -37,6 +37,18 @@ public sealed class IsoMessageServiceTests
         Assert.Equal("pacs.002", result.MessageType);
     }
 
+    [Theory]
+    [InlineData("ACSP")]
+    [InlineData("ACCC")]
+    public void Pacs002_accepts_cbpr_processing_and_credit_confirmation_statuses(string status)
+    {
+        var xml = _service.CreateCbprPlusPacs002(Guid.NewGuid(), status, "lab reason",
+            "SWIFT-REFERENCE", "FIOKUS44XXX", "BAKRUS44XXX");
+
+        Assert.True(_service.Validate(xml).IsValid);
+        Assert.Contains("<BizSvc>swift.cbprplus.02</BizSvc>", xml);
+    }
+
     [Fact]
     public void Validation_reports_malformed_xml_without_throwing()
     {
@@ -129,6 +141,42 @@ public sealed class IsoMessageServiceTests
         Assert.False(service.Validate(xml, FedNowProfile.CustomerCreditTransferLimit + 0.01m).IsValid);
     }
 
+    [Fact]
+    public void CbprPlus_customer_payment_uses_serial_method_bics_and_structured_addresses()
+    {
+        var wire = Wire();
+        wire.Rail = PaymentRail.SwiftCbprPlus;
+        var xml = _service.CreateCbprPlusPacs008(wire, Bank("101000019", "BAKRUS44XXX"),
+            Bank("103000648", "FIOKUS44XXX"), "123456", "654321");
+        var result = new CbprPlusMessageService(_service).ValidateCustomerCreditTransfer(xml);
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Errors));
+        Assert.Contains("<BizSvc>swift.cbprplus.02</BizSvc>", xml);
+        Assert.Contains("<SttlmMtd>INDA</SttlmMtd>", xml);
+        Assert.Contains("<ChrgBr>SHAR</ChrgBr>", xml);
+        Assert.Contains("<BICFI>BAKRUS44XXX</BICFI>", xml);
+        Assert.Contains("<TwnNm>Tulsa</TwnNm>", xml);
+    }
+
+    [Theory]
+    [InlineData("SttlmMtd", "CLRG", "serial method")]
+    [InlineData("ChrgBr", "SLEV", "charge bearer")]
+    [InlineData("Ctry", "usa", "structured town and country")]
+    public void CbprPlus_customer_payment_rejects_values_outside_the_lab_profile(
+        string elementName, string replacement, string expectedError)
+    {
+        var xml = XDocument.Parse(_service.CreateCbprPlusPacs008(Wire(),
+            Bank("101000019", "BAKRUS44XXX"), Bank("103000648", "FIOKUS44XXX"),
+            "123456", "654321"));
+        xml.Descendants().First(x => x.Name.LocalName == elementName).Value = replacement;
+
+        var result = new CbprPlusMessageService(_service)
+            .ValidateCustomerCreditTransfer(xml.ToString());
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.Contains(expectedError, StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData("ACCP")]
     [InlineData("ACWP")]
@@ -175,9 +223,10 @@ public sealed class IsoMessageServiceTests
         SenderName = "John Smith", ReceiverName = "Mary Jones", BeneficiaryAccountNumber = "654321"
     };
 
-    private static Bank Bank(string routing) => new()
+    private static Bank Bank(string routing, string bic = "TESTUS44XXX") => new()
     {
         Name = "Test Bank", RoutingNumber = routing, FedParticipantId = "TEST",
+        Bic = bic, TownName = "Tulsa", CountryCode = "US",
         MasterAccountBalance = 1_000_000m
     };
 

@@ -1,7 +1,7 @@
 @model DashboardViewModel
 @{ ViewData["Title"] = "Overview"; }
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-    <div><div class="eyebrow">CURRENT PERSONA</div><h1 class="mb-1">@Model.Bank.Name</h1><div class="text-secondary">Routing @Model.Bank.RoutingNumber · @Model.Bank.FedParticipantId</div></div>
+    <div><div class="eyebrow">CURRENT PERSONA</div><h1 class="mb-1">@Model.Bank.Name</h1><div class="text-secondary">Routing @Model.Bank.RoutingNumber · BIC @Model.Bank.Bic · @Model.Bank.FedParticipantId</div></div>
     <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create outgoing payment</a>
 </div>
 <div class="row g-3 mb-5">

@@ -10,7 +10,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
         bus.ConsumeAsync<WireReadyForFed>(Queues.WireReadyForFed, SendToFedAsync, stoppingToken),
         bus.ConsumeAsync<FedEnvelope>(Queues.FedInbound, ReceiveFromFedAsync, stoppingToken),
-        bus.ConsumeAsync<FedEnvelope>(Queues.FedNowInbound, ReceiveFromFedAsync, stoppingToken));
+        bus.ConsumeAsync<FedEnvelope>(Queues.FedNowInbound, ReceiveFromFedAsync, stoppingToken),
+        bus.ConsumeAsync<FedEnvelope>(Queues.SwiftInbound, ReceiveFromFedAsync, stoppingToken));
 
     private async Task SendToFedAsync(WireReadyForFed message, CancellationToken token)
     {
@@ -18,7 +19,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == message.WireId, token);
         if (wire is null || wire.Status != WireStatus.ReadyForFed) return;
         wire.Status = WireStatus.SentToFed;
-        var destination = wire.Rail == PaymentRail.FedNow ? Queues.FedNowOutbound : Queues.FedOutbound;
+        var destination = DestinationFor(wire.Rail);
         db.WireEvents.Add(Event(wire.Id, "SentToFed",
             $"Message Manager delivered pacs.008 to {destination}."));
         var delivery = new MessageDelivery { WireTransferId = wire.Id, Destination = destination,
@@ -64,7 +65,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         wire.Omad = message.Omad;
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.002",
             Direction = MessageDirection.Inbound, XmlPayload = message.XmlPayload });
-        var destination = wire.Rail == PaymentRail.FedNow ? Queues.FedNowOutbound : Queues.FedOutbound;
+        var destination = DestinationFor(wire.Rail);
         var delivery = await db.MessageDeliveries
             .OrderByDescending(x => x.UpdatedDate)
             .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id && x.Destination == destination, token);
@@ -73,21 +74,23 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             delivery.Status = DeliveryStatus.Delivered;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
         }
-        if (message.StatusCode is "PDNG" or "ACCP" or "ACWP")
+        if (message.StatusCode is "PDNG" or "ACTC" or "ACCP" or "ACWP" or "ACSP")
         {
             wire.Status = WireStatus.PendingAtFed;
             db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
                 $"{wire.Rail} reported {message.StatusCode}. Customer funds remain held while processing continues."));
         }
-        else if (message.StatusCode == "ACSC")
+        else if (message.StatusCode is "ACSC" or "ACCC")
         {
             wire.Status = WireStatus.Settled;
-            var reference = wire.Rail == PaymentRail.FedNow
-                ? $"network reference {message.Imad}"
-                : $"IMAD {message.Imad}";
+            var reference = wire.Rail == PaymentRail.Fedwire
+                ? $"IMAD {message.Imad}"
+                : $"network reference {message.Imad}";
             db.WireEvents.Add(Event(wire.Id, "AcceptedByFed",
-                $"{wire.Rail} returned ACSC and settled the payment; {reference}."));
-            db.WireEvents.Add(Event(wire.Id, "Settled", "Sender master account debited and receiver master account credited."));
+                $"{wire.Rail} returned {message.StatusCode} and completed the payment; {reference}."));
+            db.WireEvents.Add(Event(wire.Id, "Settled", wire.Rail == PaymentRail.SwiftCbprPlus
+                ? "Simulated correspondent positions debited and credited using the serial method."
+                : "Sender master account debited and receiver master account credited."));
             if (wire.FromAccountId is Guid accountId)
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
@@ -107,7 +110,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
                 account.HeldBalance = Math.Max(0, account.HeldBalance - wire.Amount);
                 db.WireEvents.Add(Event(wire.Id, "HoldReleased",
-                    $"Fed rejection released the {wire.Amount:C} customer funds hold; no debit posted."));
+                    $"Network rejection released the {wire.Amount:C} customer funds hold; no debit posted."));
             }
         }
         await db.SaveChangesAsync(token);
@@ -159,13 +162,23 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static WireEvent Event(Guid wireId, string type, string description) =>
         new() { WireTransferId = wireId, EventType = type, Description = description };
 
+    private static string DestinationFor(PaymentRail rail) => rail switch
+    {
+        PaymentRail.FedNow => Queues.FedNowOutbound,
+        PaymentRail.SwiftCbprPlus => Queues.SwiftOutbound,
+        _ => Queues.FedOutbound
+    };
+
     private static void AddOutgoingJournal(BankingDbContext db, WireTransfer wire, Account account)
     {
         var journal = Guid.NewGuid();
         db.LedgerEntries.AddRange(
             Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
                 wire.Amount, 0, "Debit customer deposit liability"),
-            Entry(journal, wire.Id, $"FEDMASTER:{wire.SenderBankId:N}", "Fed master account",
+            Entry(journal, wire.Id,
+                wire.Rail == PaymentRail.SwiftCbprPlus
+                    ? $"CORRESPONDENT:{wire.SenderBankId:N}" : $"FEDMASTER:{wire.SenderBankId:N}",
+                wire.Rail == PaymentRail.SwiftCbprPlus ? "Correspondent position" : "Fed master account",
                 0, wire.Amount, "Credit settlement cash for outgoing payment"));
     }
 
@@ -173,7 +186,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     {
         var journal = Guid.NewGuid();
         db.LedgerEntries.AddRange(
-            Entry(journal, wire.Id, $"FEDMASTER:{wire.ReceiverBankId:N}", "Fed master account",
+            Entry(journal, wire.Id,
+                wire.Rail == PaymentRail.SwiftCbprPlus
+                    ? $"CORRESPONDENT:{wire.ReceiverBankId:N}" : $"FEDMASTER:{wire.ReceiverBankId:N}",
+                wire.Rail == PaymentRail.SwiftCbprPlus ? "Correspondent position" : "Fed master account",
                 wire.Amount, 0, "Debit settlement cash for incoming payment"),
             Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
                 0, wire.Amount, "Credit beneficiary deposit liability"));

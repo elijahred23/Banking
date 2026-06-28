@@ -13,6 +13,8 @@ public static class Queues
     public const string FedInbound = "FED.INBOUND";
     public const string FedNowOutbound = "FEDNOW.OUTBOUND";
     public const string FedNowInbound = "FEDNOW.INBOUND";
+    public const string SwiftOutbound = "SWIFT.OUTBOUND";
+    public const string SwiftInbound = "SWIFT.INBOUND";
 }
 
 public sealed record WireCreated(Guid WireId);

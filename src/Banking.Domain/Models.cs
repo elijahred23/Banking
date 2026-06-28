@@ -7,7 +7,12 @@ public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFe
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
 public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
-public enum PaymentRail { Fedwire, FedNow }
+public enum PaymentRail
+{
+    Fedwire,
+    FedNow,
+    [Display(Name = "SWIFT CBPR+")] SwiftCbprPlus
+}
 
 public sealed class Bank
 {
@@ -15,12 +20,16 @@ public sealed class Bank
     [MaxLength(120)] public required string Name { get; set; }
     [MaxLength(9)] public required string RoutingNumber { get; set; }
     [MaxLength(12)] public required string FedParticipantId { get; set; }
+    [MaxLength(11)] public required string Bic { get; set; }
+    [MaxLength(35)] public required string TownName { get; set; }
+    [MaxLength(2)] public required string CountryCode { get; set; }
     public decimal MasterAccountBalance { get; set; }
     public bool FedNowEnabled { get; set; } = true;
     public bool FedNowSendEnabled { get; set; } = true;
     public bool FedNowReceiveEnabled { get; set; } = true;
     public bool FedNowRequestForPaymentEnabled { get; set; } = true;
     public bool FedNowOnline { get; set; } = true;
+    public bool SwiftEnabled { get; set; } = true;
     public List<Customer> Customers { get; set; } = [];
 }
 

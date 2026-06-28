@@ -79,7 +79,7 @@
                 <dt>Beneficiary account</dt><dd><code>@wire.BeneficiaryAccountNumber</code></dd>
                 <dt>Scenario</dt><dd>@wire.Scenario</dd>
                 <dt>Payment rail</dt><dd>@wire.Rail</dd>
-                @if (wire.Rail == PaymentRail.FedNow)
+                @if (wire.Rail is PaymentRail.FedNow or PaymentRail.SwiftCbprPlus)
                 { <dt>Network reference</dt><dd>@(wire.Imad ?? "Pending")</dd> }
                 else
                 {
@@ -101,7 +101,7 @@
             <tfoot><tr><th colspan="3">Totals</th><th class="text-end">@Model.LedgerEntries.Sum(x => x.Debit).ToString("C")</th><th class="text-end">@Model.LedgerEntries.Sum(x => x.Credit).ToString("C")</th></tr></tfoot>
         </table></div>
     }
-    else { <p class="text-secondary mb-0">No journal has posted. Validated outgoing funds remain on hold until final Fed acceptance.</p> }
+    else { <p class="text-secondary mb-0">No journal has posted. Validated outgoing funds remain on hold until final network acceptance.</p> }
 </section>
 
 <section class="surface section mt-4">

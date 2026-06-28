@@ -11,7 +11,7 @@ namespace Banking.Web.Controllers;
 
 [Authorize]
 public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus,
-    IIsoMessageService iso) : Controller
+    IIsoMessageService iso, ICbprPlusMessageService cbpr) : Controller
 {
     public async Task<IActionResult> Index(WireDirection? direction, CancellationToken token)
     {
@@ -50,6 +50,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             && (!receiverBank.FedNowEnabled || !receiverBank.FedNowReceiveEnabled || !receiverBank.FedNowOnline))
             ModelState.AddModelError(nameof(model.ReceiverBankId),
                 "The receiving bank is not currently enabled and online to receive FedNow payments.");
+        if (model.Rail == PaymentRail.SwiftCbprPlus && receiverBank is not null
+            && !receiverBank.SwiftEnabled)
+            ModelState.AddModelError(nameof(model.ReceiverBankId),
+                "The receiving institution is not enabled for the SWIFT CBPR+ lab.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
         var beneficiaryAccount = model.BeneficiaryAccountNumber.Trim();
@@ -105,7 +109,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             item,
             ServiceFor(item.EventType),
             index == 0 ? null : item.CreatedDate - events[index - 1].CreatedDate)).ToList();
-        var messages = wire.IsoMessages.OrderBy(x => x.CreatedDate).Select(x => BuildMessage(x)).ToList();
+        var messages = wire.IsoMessages.OrderBy(x => x.CreatedDate)
+            .Select(x => BuildMessage(x, wire.Rail)).ToList();
         var ledgerEntries = await db.LedgerEntries.Where(x => x.WireTransferId == id)
             .OrderBy(x => x.CreatedDate).ThenBy(x => x.AccountCode).AsNoTracking().ToListAsync(token);
         var failure = deliveries.LastOrDefault(x => !string.IsNullOrWhiteSpace(x.LastError))?.LastError
@@ -120,16 +125,20 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             lastActivity - wire.CreatedDate);
     }
 
-    private IsoMessageViewModel BuildMessage(IsoMessage message)
+    private IsoMessageViewModel BuildMessage(IsoMessage message, PaymentRail rail)
     {
         try
         {
             var document = XDocument.Parse(message.XmlPayload);
             var result = iso.Validate(message.XmlPayload);
-            var validation = result.IsValid
+            var cbprResult = rail == PaymentRail.SwiftCbprPlus && result.MessageType == "pacs.008"
+                ? cbpr.ValidateCustomerCreditTransfer(message.XmlPayload)
+                : null;
+            var valid = result.IsValid && cbprResult is not { IsValid: false };
+            var validation = valid
                 ? $"Valid {result.MessageType} lab profile · business header, UETR, and required fields present"
-                : string.Join(" ", result.Errors);
-            return new IsoMessageViewModel(message, document.ToString(), true, result.IsValid, validation);
+                : string.Join(" ", result.Errors.Concat(cbprResult?.Errors ?? []));
+            return new IsoMessageViewModel(message, document.ToString(), true, valid, validation);
         }
         catch (Exception ex) when (ex is System.Xml.XmlException or InvalidOperationException)
         {
@@ -142,7 +151,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         "Created" => "Banking.Web",
         "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
-        "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Fed rail simulator → MessageManager",
+        "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Payment-network simulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",
         _ => "Unknown"
