@@ -1,0 +1,14 @@
+@model CreateWireViewModel
+@{ ViewData["Title"] = "Create wire"; }
+<div class="row justify-content-center"><div class="col-lg-7">
+    <div class="mb-4"><div class="eyebrow">OUTGOING PAYMENT</div><h1>Create a Fedwire transfer</h1><p class="text-secondary">The wire will enter validation immediately after submission.</p></div>
+    <form method="post" class="surface form-surface">
+        <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+        <div class="mb-3"><label asp-for="FromAccountId" class="form-label">From account</label><select asp-for="FromAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select><span asp-validation-for="FromAccountId" class="text-danger"></span></div>
+        <div class="mb-3"><label asp-for="ReceiverBankId" class="form-label">Receiving bank</label><select asp-for="ReceiverBankId" asp-items="Model.Banks" class="form-select"><option value="">Select a bank</option></select><span asp-validation-for="ReceiverBankId" class="text-danger"></span></div>
+        <div class="mb-3"><label asp-for="ReceiverName" class="form-label">Beneficiary name</label><input asp-for="ReceiverName" class="form-control" placeholder="Mary Jones"><div class="form-text">Use a seeded customer name to simulate automatic posting.</div><span asp-validation-for="ReceiverName" class="text-danger"></span></div>
+        <div class="mb-4"><label asp-for="Amount" class="form-label">Amount (USD)</label><div class="input-group"><span class="input-group-text">$</span><input asp-for="Amount" class="form-control" inputmode="decimal" placeholder="10000.00"></div><span asp-validation-for="Amount" class="text-danger"></span></div>
+        <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Submit wire</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>
+    </form>
+</div></div>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

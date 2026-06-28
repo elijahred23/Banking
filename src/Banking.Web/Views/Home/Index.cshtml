@@ -1,0 +1,13 @@
+@model DashboardViewModel
+@{ ViewData["Title"] = "Overview"; }
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div><div class="eyebrow">CURRENT PERSONA</div><h1 class="mb-1">@Model.Bank.Name</h1><div class="text-secondary">Routing @Model.Bank.RoutingNumber · @Model.Bank.FedParticipantId</div></div>
+    <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create outgoing wire</a>
+</div>
+<div class="row g-3 mb-5">
+    <div class="col-md-4"><div class="metric"><span>Master account</span><strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong><small>Simulated Fed balance</small></div></div>
+    <div class="col-md-4"><div class="metric"><span>Outgoing wires</span><strong>@Model.OutgoingCount</strong><small>@Model.OutgoingTotal.ToString("C") in recent activity</small></div></div>
+    <div class="col-md-4"><div class="metric"><span>Incoming wires</span><strong>@Model.IncomingCount</strong><small>For the active persona</small></div></div>
+</div>
+<div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Recent wire activity</h2><a asp-controller="Wires" asp-action="Index">View all</a></div>
+<partial name="_WireTable" model="Model.RecentWires" />

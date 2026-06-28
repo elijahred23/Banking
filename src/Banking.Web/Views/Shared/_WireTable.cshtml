@@ -1,0 +1,20 @@
+@model IEnumerable<WireTransfer>
+<div class="table-responsive surface">
+<table class="table align-middle mb-0">
+    <thead><tr><th>Created</th><th>Direction</th><th>Parties</th><th>Status</th><th class="text-end">Amount</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var wire in Model)
+    {
+        <tr>
+            <td><span class="text-nowrap">@wire.CreatedDate.ToLocalTime().ToString("MMM d, HH:mm")</span><br><code>@wire.Id.ToString()[..8]</code></td>
+            <td><span class="direction @wire.Direction.ToString().ToLowerInvariant()">@wire.Direction</span></td>
+            <td><strong>@wire.SenderName</strong><br><span class="text-secondary">to @wire.ReceiverName</span></td>
+            <td><span class="status status-@wire.Status.ToString().ToLowerInvariant()">@wire.Status</span></td>
+            <td class="text-end fw-semibold">@wire.Amount.ToString("C")</td>
+            <td class="text-end"><a asp-controller="Wires" asp-action="Details" asp-route-id="@wire.Id">Details</a></td>
+        </tr>
+    }
+    @if (!Model.Any()) { <tr><td colspan="6" class="empty">No wires for this bank yet.</td></tr> }
+    </tbody>
+</table>
+</div>

@@ -1,0 +1,5 @@
+@model string
+@{ ViewData["Title"] = "Sign in"; }
+<div class="login-wrap"><div class="surface login-card"><div class="brand-mark mb-4">F</div><h1 class="h3">Wire operations</h1><p class="text-secondary">Sign in to the correspondent banking lab.</p>
+<form method="post"><input type="hidden" name="returnUrl" value="@Model"><div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div><div class="mb-3"><label class="form-label">Username</label><input class="form-control" name="username" value="operator" autocomplete="username"></div><div class="mb-4"><label class="form-label">Password</label><input class="form-control" type="password" name="password" value="fedwire-lab" autocomplete="current-password"></div><button class="btn btn-primary w-100">Sign in</button></form>
+</div></div>

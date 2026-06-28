@@ -1,0 +1,19 @@
+services:
+  ibmmq:
+    image: icr.io/ibm-messaging/mq:latest
+    platform: linux/amd64
+    container_name: fedwire-ibmmq
+    profiles: ["ibmmq"]
+    environment:
+      LICENSE: "accept"
+      MQ_QMGR_NAME: "FEDWIRE"
+      MQ_APP_PASSWORD: "FedwireLab!2026"
+      MQ_ADMIN_PASSWORD: "FedwireLab!2026"
+    ports:
+      - "1414:1414"
+      - "9443:9443"
+    volumes:
+      - fedwire-mq:/mnt/mqm
+
+volumes:
+  fedwire-mq:

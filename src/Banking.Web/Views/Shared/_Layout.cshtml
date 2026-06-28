@@ -1,0 +1,57 @@
+@inject IDbContextFactory<BankingDbContext> DbFactory
+@{
+    var banks = new List<Bank>();
+    Guid activeBankId = default;
+    if (User.Identity?.IsAuthenticated == true)
+    {
+        await using var layoutDb = await DbFactory.CreateDbContextAsync();
+        banks = await layoutDb.Banks.OrderBy(x => x.Name).AsNoTracking().ToListAsync();
+        Guid.TryParse(Context.Session.GetString("ActiveBankId"), out activeBankId);
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] · Fedwire Lab</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<header class="topbar">
+    <nav class="navbar navbar-expand-lg navbar-dark container py-3">
+        <a class="navbar-brand fw-semibold" asp-controller="Home" asp-action="Index"><span class="brand-mark">F</span> Fedwire Lab</a>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+            <div id="nav" class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-4 me-auto">
+                    <li class="nav-item"><a class="nav-link" asp-controller="Home" asp-action="Index">Overview</a></li>
+                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index">All wires</a></li>
+                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
+                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
+                </ul>
+                <form asp-controller="BankContext" asp-action="Switch" method="post" class="d-flex bank-switcher me-3">
+                    <input type="hidden" name="returnUrl" value="@Context.Request.Path@Context.Request.QueryString" />
+                    <select name="bankId" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Current bank">
+                        @foreach (var bank in banks)
+                        {
+                            <option value="@bank.Id" selected="@(bank.Id == activeBankId)">@bank.Name</option>
+                        }
+                    </select>
+                </form>
+                <form asp-controller="Auth" asp-action="Logout" method="post"><button class="btn btn-sm btn-outline-light">Sign out</button></form>
+            </div>
+        }
+    </nav>
+</header>
+<main class="container py-4 py-lg-5">
+    @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
+    @RenderBody()
+</main>
+<footer class="container py-4 text-secondary small border-top">Fedwire learning environment · All balances and messages are simulated.</footer>
+<script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
