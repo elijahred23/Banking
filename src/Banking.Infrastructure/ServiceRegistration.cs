@@ -75,20 +75,20 @@ public static class ServiceRegistration
                     CountryCode nvarchar(2) NOT NULL CONSTRAINT DF_Banks_CountryCode DEFAULT (N'US'),
                     SwiftEnabled bit NOT NULL CONSTRAINT DF_Banks_SwiftEnabled DEFAULT (1);
             END;
-            UPDATE dbo.Banks SET
+            EXEC(N'UPDATE dbo.Banks SET
                 Bic = CASE RoutingNumber
-                    WHEN N'101000019' THEN N'BAKRUS44XXX'
-                    WHEN N'103000648' THEN N'FIOKUS44XXX'
-                    WHEN N'111901234' THEN N'CNATUS44XXX'
-                    WHEN N'111000753' THEN N'RRBAUS44XXX'
-                    ELSE N'ZZZZUS' + RIGHT(RoutingNumber, 5)
+                    WHEN N''101000019'' THEN N''BAKRUS44XXX''
+                    WHEN N''103000648'' THEN N''FIOKUS44XXX''
+                    WHEN N''111901234'' THEN N''CNATUS44XXX''
+                    WHEN N''111000753'' THEN N''RRBAUS44XXX''
+                    ELSE N''ZZZZUS'' + RIGHT(RoutingNumber, 5)
                 END,
-                TownName = CASE WHEN RoutingNumber = N'103000648' THEN N'Oklahoma City'
-                    WHEN TownName = N'Unknown' THEN N'Tulsa' ELSE TownName END
-            WHERE Bic = N'UNKNOWNXX';
+                TownName = CASE WHEN RoutingNumber = N''103000648'' THEN N''Oklahoma City''
+                    WHEN TownName = N''Unknown'' THEN N''Tulsa'' ELSE TownName END
+            WHERE Bic = N''UNKNOWNXX'';');
             IF NOT EXISTS (SELECT 1 FROM sys.indexes
                 WHERE object_id = OBJECT_ID(N'dbo.Banks') AND name = N'IX_Banks_Bic')
-                CREATE UNIQUE INDEX IX_Banks_Bic ON dbo.Banks (Bic);
+                EXEC(N'CREATE UNIQUE INDEX IX_Banks_Bic ON dbo.Banks (Bic);');
             IF OBJECT_ID(N'dbo.LedgerEntries', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.LedgerEntries (
