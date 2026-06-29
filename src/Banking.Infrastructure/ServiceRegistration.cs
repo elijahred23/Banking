@@ -16,6 +16,7 @@ public static class ServiceRegistration
         services.AddDbContextFactory<BankingDbContext>(options =>
             options.UseSqlServer(sql, sqlOptions => sqlOptions.EnableRetryOnFailure()));
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
+        services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();

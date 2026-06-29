@@ -1,0 +1,183 @@
+@model OperationsDashboardViewModel
+@{
+    ViewData["Title"] = "Operations Dashboard";
+    var queueGroups = Model.QueueSnapshot.Queues.GroupBy(x => x.Name.Split('.')[0]);
+}
+
+<div class="operations-heading mb-4">
+    <div>
+        <div class="eyebrow">PAYMENT OPERATIONS CENTER</div>
+        <h1 class="mb-1">Operations dashboard</h1>
+        <div class="text-secondary">@Model.Bank.Name · live rail, settlement, journal, and exception visibility</div>
+    </div>
+    <div class="operations-refresh">
+        <span class="live-dot @(Model.QueueSnapshot.BrokerAvailable ? "is-live" : "")"></span>
+        <span>Updated <time id="dashboard-updated" datetime="@Model.RefreshedDate.ToString("O")">just now</time></span>
+        <button id="refresh-dashboard" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
+    </div>
+</div>
+
+<section aria-labelledby="payment-heading" class="mb-4">
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <div><div class="eyebrow">PAYMENTS</div><h2 id="payment-heading" class="h4 mb-0">Lifecycle position</h2></div>
+        <span class="text-secondary small">@Model.Payments.Total tracked for this persona</span>
+    </div>
+    <div class="row g-3">
+        <div class="col-6 col-lg-3"><div class="ops-kpi kpi-created"><span>Created</span><strong>@Model.Payments.Created</strong><small>Awaiting validation</small></div></div>
+        <div class="col-6 col-lg-3"><div class="ops-kpi kpi-pending"><span>Pending</span><strong>@Model.Payments.Pending</strong><small>In rail processing</small></div></div>
+        <div class="col-6 col-lg-3"><div class="ops-kpi kpi-settled"><span>Settled</span><strong>@Model.Payments.Settled</strong><small>Final or posted</small></div></div>
+        <div class="col-6 col-lg-3"><div class="ops-kpi kpi-rejected"><span>Rejected</span><strong>@Model.Payments.Rejected</strong><small>Returned or failed</small></div></div>
+    </div>
+</section>
+
+<div class="row g-4 mb-4">
+    <section class="col-xl-8" aria-labelledby="queue-heading">
+        <div class="surface operations-panel h-100">
+            <div class="panel-heading">
+                <div><div class="eyebrow">QUEUES</div><h2 id="queue-heading" class="h4 mb-0">Transport depth</h2></div>
+                <span class="broker-state @(Model.QueueSnapshot.BrokerAvailable ? "broker-up" : "broker-down")">
+                    RabbitMQ @(Model.QueueSnapshot.BrokerAvailable ? "connected" : "unavailable")
+                </span>
+            </div>
+            <div class="queue-groups">
+                @foreach (var group in queueGroups)
+                {
+                    <div class="queue-group">
+                        <div class="queue-group-name">@group.Key</div>
+                        @foreach (var queue in group)
+                        {
+                            <div class="queue-row">
+                                <code>@queue.Name</code>
+                                @if (queue.Exists)
+                                {
+                                    <span class="queue-consumers">@queue.ConsumerCount consumer@(queue.ConsumerCount == 1 ? "" : "s")</span>
+                                    <strong class="queue-depth @(queue.MessageCount > 0 ? "has-messages" : "")">@queue.MessageCount</strong>
+                                }
+                                else
+                                {
+                                    <span class="queue-unavailable">Not declared</span><strong class="queue-depth">—</strong>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <section class="col-xl-4" aria-labelledby="rail-heading">
+        <div class="surface operations-panel h-100">
+            <div class="eyebrow">RAIL STATUS</div>
+            <h2 id="rail-heading" class="h4 mb-3">Network health</h2>
+            <div class="rail-health-list">
+                @foreach (var rail in Model.Rails)
+                {
+                    <div class="rail-health-row">
+                        <span class="health-indicator health-@rail.Status.ToLowerInvariant()"></span>
+                        <div><strong>@rail.Rail</strong><small>@rail.Detail</small></div>
+                        <span class="health-label health-@rail.Status.ToLowerInvariant()">@rail.Status</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="row g-4 mb-4">
+    <section class="col-lg-6" aria-labelledby="exception-heading">
+        <div class="surface operations-panel h-100">
+            <div class="panel-heading">
+                <div><div class="eyebrow">EXCEPTIONS</div><h2 id="exception-heading" class="h4 mb-0">Attention required</h2></div>
+                <span class="exception-count">@Model.Exceptions.Count recent</span>
+            </div>
+            @if (Model.Exceptions.Count == 0)
+            {
+                <div class="operations-empty">No payment exceptions for this persona.</div>
+            }
+            else
+            {
+                <div class="exception-list">
+                    @foreach (var item in Model.Exceptions)
+                    {
+                        <div class="exception-row">
+                            <span class="exception-mark">!</span>
+                            <div><strong>@item.Type</strong><small>@item.Area · @item.Detail</small></div>
+                            <div class="text-end"><code>@item.Reference</code><time>@item.OccurredDate.ToLocalTime().ToString("MMM d, HH:mm")</time></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="col-lg-6" aria-labelledby="settlement-heading">
+        <div class="surface operations-panel h-100">
+            <div class="panel-heading">
+                <div><div class="eyebrow">SETTLEMENT</div><h2 id="settlement-heading" class="h4 mb-0">Master account movement</h2></div>
+                <div class="master-balance"><span>Current</span><strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong></div>
+            </div>
+            @if (Model.SettlementMovements.Count == 0)
+            {
+                <div class="operations-empty">No settled master account movements yet.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table operations-table mb-0">
+                        <thead><tr><th>Rail / ref</th><th>Counterparty</th><th class="text-end">Movement</th></tr></thead>
+                        <tbody>
+                        @foreach (var movement in Model.SettlementMovements)
+                        {
+                            <tr>
+                                <td><strong>@movement.Rail</strong><code>@movement.Reference</code></td>
+                                <td>@movement.Counterparty<small>@movement.RecordedDate.ToLocalTime().ToString("MMM d, HH:mm")</small></td>
+                                <td class="text-end movement @(movement.Amount >= 0 ? "movement-in" : "movement-out")">@(movement.Amount >= 0 ? "+" : "")@movement.Amount.ToString("C")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+<section class="surface operations-panel" aria-labelledby="journal-heading">
+    <div class="panel-heading">
+        <div><div class="eyebrow">JOURNALS</div><h2 id="journal-heading" class="h4 mb-0">Debit / credit control</h2></div>
+        <span class="text-secondary small">Recent journals across all rails</span>
+    </div>
+    @if (Model.Journals.Count == 0)
+    {
+        <div class="operations-empty">No journal entries have been posted yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table operations-table mb-0">
+                <thead><tr><th>Journal</th><th>Rail</th><th>Entries</th><th class="text-end">Debits</th><th class="text-end">Credits</th><th class="text-end">Control</th></tr></thead>
+                <tbody>
+                @foreach (var journal in Model.Journals)
+                {
+                    <tr>
+                        <td><code>@journal.JournalId.ToString("N")[..12]</code><small>@journal.CreatedDate.ToLocalTime().ToString("MMM d, HH:mm:ss")</small></td>
+                        <td>@journal.Rail</td><td>@journal.EntryCount</td>
+                        <td class="text-end">@journal.Debits.ToString("C")</td><td class="text-end">@journal.Credits.ToString("C")</td>
+                        <td class="text-end"><span class="journal-control @(journal.IsBalanced ? "is-balanced" : "is-unbalanced")">@(journal.IsBalanced ? "Balanced" : "Out of balance")</span></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@section Scripts {
+<script>
+(() => {
+    const refresh = () => window.location.reload();
+    document.getElementById('refresh-dashboard')?.addEventListener('click', refresh);
+    window.setTimeout(() => { if (!document.hidden) refresh(); }, 15000);
+})();
+</script>
+}

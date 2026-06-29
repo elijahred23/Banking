@@ -15,6 +15,7 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - selectable pending, network-rejection, and malformed-message learning scenarios.
 - ACH entry validation, scheduled batch cutoff, fixed-width NACHA files, FedACH-style settlement, returns, notifications of change, and EFTPS-style CCD+ addenda.
 - check capture, MICR validation, front/back TIFF storage, simplified image cash letters, paying-bank presentment, settlement, and returns.
+- an operator dashboard with live RabbitMQ queue depth, cross-rail lifecycle counts, payment exceptions, master-account movements, balanced-journal controls, and rail health.
 
 ## Run
 
@@ -36,7 +37,7 @@ Version-controlled table definitions and the location for future migration scrip
 
 ## Projects
 
-- `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, and ISO history.
+- `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, ISO history, and the cross-rail Operations dashboard.
 - `Banking.WireService`: funds/OFAC/sanctions simulation and `pacs.008` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.
