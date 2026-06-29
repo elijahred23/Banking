@@ -17,6 +17,7 @@ BEGIN
         BeneficiaryAccountNumber nvarchar(34) NOT NULL,
         Scenario nvarchar(max) NOT NULL,
         Rail nvarchar(max) NOT NULL CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire'),
+        TransferType nvarchar(max) NOT NULL CONSTRAINT DF_WireTransfers_TransferType DEFAULT (N'CustomerCreditTransfer'),
         Imad nvarchar(35) NULL,
         Omad nvarchar(35) NULL,
         CreatedDate datetimeoffset NOT NULL,

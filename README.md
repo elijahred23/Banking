@@ -7,7 +7,7 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - explicit beneficiary account and routing information;
 - `head.001` business headers, UETRs, and semantic ISO profile validation;
 - a version-aware catalog and generic header/envelope construction for the supported `admi`, `pacs`, `pain`, and `camt` wire-message families;
-- concrete `pacs.008` instructions and `pacs.002` `PDNG`, `ACSC`, and `RJCT` statuses;
+- concrete `pacs.008` customer transfers and `pacs.009.001.08` financial institution liquidity transfers, with `pacs.002` `PDNG`, `ACSC`, and `RJCT` statuses;
 - a separate FedNow rail with `FEDNOW.OUTBOUND`/`FEDNOW.INBOUND` queues, participant capability and availability checks, receiver `ACCP`/`ACWP` processing states, immediate final settlement, duplicate-safe processing, and a $10 million customer-credit-transfer limit;
 - international USD wires over a SWIFT CBPR+ serial-method learning flow with dedicated queues, IBAN and BICFI routing, structured cross-border party addresses, `pacs.008.001.08`, `INDA`, `SHAR`, and `ACSP`/`ACCC`/`RJCT` statuses;
 - customer funds holds that become posted debits only after final settlement;
@@ -39,13 +39,13 @@ Version-controlled table definitions and the location for future migration scrip
 
 - `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, ISO history, and the cross-rail Operations dashboard.
 - Settled outgoing wires support return requests, while network-submitted outgoing wires support investigations. The wire detail workflow persists each case, generates rail-appropriate ISO 20022 requests and responses, and records accepted `pacs.004` returns with balanced customer and settlement journals.
-- `Banking.WireService`: funds/OFAC/sanctions simulation and `pacs.008` generation.
+- `Banking.WireService`: customer-funds or master-account-liquidity validation plus `pacs.008` and `pacs.009` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.
 - `Banking.CheckImageExchangeSimulator`: paying-bank routing, duplicate detection, check settlement, and returns.
 - `Banking.MessageManager`: outbound delivery tracking plus inbound status/payment routing.
-- `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008`.
-- `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of the settled `pacs.008`.
+- `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008` or `pacs.009`.
+- `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of settled `pacs.008` and `pacs.009` transfers.
 - `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, per-leg payment statuses, and delivery of the original `pacs.008`.
 - `Banking.FedAchSimulator`: NACHA file validation plus simulated settlement, returns, and notifications of change.
 - `Banking.Domain` and `Banking.Infrastructure`: contracts, ISO translation, EF Core, and messaging.
@@ -102,7 +102,7 @@ route to Euro Demo Bank is `Bankers Bank → Big New York Correspondent Bank →
 
 ## FedNow message scope
 
-The FedNow profile covers the public message set described by the Federal Reserve: value messages (`pacs.008`, `pacs.004`, `pacs.009`), status and non-value exchanges (`pacs.002`, `pacs.028`, `camt.026`, `camt.028`, `camt.029`, `camt.055`, `camt.056`, `pain.013`, `pain.014`), reports (`camt.052`, `camt.054`, `camt.060`), and system messages (`admi.002`, `admi.004`, `admi.006`, `admi.007`, `admi.011`, `admi.998`). `FedNowProfile` records categories, acknowledgement requirements, and expected response types; the generic ISO service constructs and identifies each message.
+The FedNow profile covers the public message set described by the Federal Reserve: value messages (`pacs.008`, `pacs.004`, `pacs.009`), status and non-value exchanges (`pacs.002`, `pacs.028`, `camt.026`, `camt.028`, `camt.029`, `camt.055`, `camt.056`, `pain.013`, `pain.014`), reports (`camt.052`, `camt.054`, `camt.060`), and system messages (`admi.002`, `admi.004`, `admi.006`, `admi.007`, `admi.011`, `admi.998`). `FedNowProfile` records categories, acknowledgement requirements, and expected response types. The end-to-end `pacs.009.001.08` flow moves the active bank's own master-account liquidity over Fedwire or FedNow; the customer-transfer $10 million limit does not apply. SWIFT CBPR+ `pacs.009` and cover payments remain outside this lab profile.
 
 This remains a learning simulator, not a production FedNow connection. Public Federal Reserve documentation requires the private MyStandards usage guidelines, Technical Specifications, participant onboarding, endpoint connectivity, message signing/key management, size controls, and certification testing. Those external controls are deliberately not represented as completed production capabilities here.
 

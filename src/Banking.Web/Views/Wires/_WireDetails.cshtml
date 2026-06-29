@@ -1,10 +1,12 @@
 @model WireDetailsViewModel
 @{
     var wire = Model.Wire;
+    var paymentMessageType = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+        ? "pacs.009" : "pacs.008";
 }
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <div class="eyebrow">@wire.Direction @wire.Rail</div>
+        <div class="eyebrow">@wire.Direction @wire.Rail · @paymentMessageType</div>
         <h1>@wire.Amount.ToString("C")</h1>
         <div class="text-secondary">@wire.SenderName → @wire.ReceiverName</div>
     </div>
@@ -153,9 +155,13 @@
             <dl class="detail-grid">
                 <dt>Wire ID</dt><dd><code>@wire.Id</code></dd>
                 <dt>Correlation</dt><dd><code>@wire.CorrelationId</code></dd>
-                <dt>Beneficiary account</dt><dd><code>@wire.BeneficiaryAccountNumber</code></dd>
+                @if (wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
+                { <dt>Receiving participant</dt><dd><code>@wire.BeneficiaryAccountNumber</code></dd> }
+                else
+                { <dt>Beneficiary account</dt><dd><code>@wire.BeneficiaryAccountNumber</code></dd> }
                 <dt>Scenario</dt><dd>@wire.Scenario</dd>
                 <dt>Payment rail</dt><dd>@wire.Rail</dd>
+                <dt>Payment type</dt><dd>@paymentMessageType</dd>
                 @if (wire.Rail is PaymentRail.FedNow or PaymentRail.SwiftCbprPlus)
                 { <dt>Network reference</dt><dd>@(wire.Imad ?? "Pending")</dd> }
                 else

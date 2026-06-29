@@ -23,6 +23,34 @@ public sealed class IsoMessageServiceTests
         Assert.Contains(wire.CorrelationId.ToString().ToLowerInvariant(), xml);
     }
 
+    [Fact]
+    public void Pacs009_contains_institutions_amount_uetr_and_matching_header()
+    {
+        var wire = Wire();
+        wire.TransferType = WireTransferType.FinancialInstitutionCreditTransfer;
+        var xml = _service.CreatePacs009(wire, Bank("101000019"), Bank("103000648"));
+
+        var result = _service.Validate(xml);
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Errors));
+        Assert.Equal("pacs.009", result.MessageType);
+        Assert.Contains("pacs.009.001.08", xml);
+        Assert.Contains("<FICdtTrf>", xml);
+        Assert.Contains("<MmbId>101000019</MmbId>", xml);
+        Assert.Contains("<MmbId>103000648</MmbId>", xml);
+        Assert.Contains(wire.CorrelationId.ToString().ToLowerInvariant(), xml);
+    }
+
+    [Fact]
+    public void Pacs009_status_identifies_the_original_message_definition()
+    {
+        var xml = _service.CreatePacs002(Guid.NewGuid(), "ACSC", "settled", "IMAD",
+            "pacs.009.001.08");
+
+        Assert.True(_service.Validate(xml).IsValid);
+        Assert.Contains("<OrgnlMsgNmId>pacs.009.001.08</OrgnlMsgNmId>", xml);
+    }
+
     [Theory]
     [InlineData("PDNG")]
     [InlineData("ACSC")]
@@ -139,6 +167,23 @@ public sealed class IsoMessageServiceTests
         Assert.True(service.Validate(xml, FedNowProfile.CustomerCreditTransferLimit).IsValid);
         Assert.Contains("<BizSvc>fednow</BizSvc>", xml);
         Assert.False(service.Validate(xml, FedNowProfile.CustomerCreditTransferLimit + 0.01m).IsValid);
+    }
+
+    [Fact]
+    public void FedNow_pacs009_uses_profile_header_without_the_customer_transfer_limit()
+    {
+        var wire = Wire();
+        wire.Rail = PaymentRail.FedNow;
+        wire.TransferType = WireTransferType.FinancialInstitutionCreditTransfer;
+        wire.Amount = FedNowProfile.CustomerCreditTransferLimit + 1m;
+        var xml = _service.CreateFedNowPacs009(wire, Bank("101000019"), Bank("103000648"));
+        var service = new FedNowMessageService(_service);
+
+        var result = service.Validate(xml, wire.Amount);
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Errors));
+        Assert.Equal("pacs.009", result.MessageType);
+        Assert.Contains("<BizSvc>fednow</BizSvc>", xml);
     }
 
     [Fact]
@@ -278,6 +323,14 @@ public sealed class IsoMessageServiceTests
                 new XElement("Cdtr", new XElement("Nm", "Creditor")),
                 new XElement("CdtrAcct", new XElement("Id", new XElement("Othr",
                     new XElement("Id", "456")))))),
+        "pacs.009" => new XElement("FICdtTrf",
+            new XElement("CdtTrfTxInf",
+                new XElement("PmtId", new XElement("UETR", Guid.NewGuid())),
+                new XElement("IntrBkSttlmAmt", new XAttribute("Ccy", "USD"), "1.00"),
+                new XElement("Dbtr", new XElement("FinInstnId", new XElement("ClrSysMmbId",
+                    new XElement("MmbId", "101000019")))),
+                new XElement("Cdtr", new XElement("FinInstnId", new XElement("ClrSysMmbId",
+                    new XElement("MmbId", "103000648")))))),
         _ => new XElement("TestBusinessMessage", new XElement("MessageId", "test-id"))
     };
 }

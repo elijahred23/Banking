@@ -50,6 +50,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<MessageDelivery>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Scenario).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Rail).HasConversion<string>();
+        modelBuilder.Entity<WireTransfer>().Property(x => x.TransferType).HasConversion<string>();
         modelBuilder.Entity<WireCase>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<WireCase>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireCase>().HasIndex(x => new { x.WireTransferId, x.CreatedDate });

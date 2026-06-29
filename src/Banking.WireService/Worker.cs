@@ -23,12 +23,20 @@ public sealed class Worker(
 
         var account = wire.FromAccountId is null ? null :
             await db.Accounts.SingleOrDefaultAsync(x => x.Id == wire.FromAccountId, cancellationToken);
+        var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
+        var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
+        var institutionTransfer = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer;
         var blocked = wire.SenderName.Contains("blocked", StringComparison.OrdinalIgnoreCase)
             || wire.ReceiverName.Contains("blocked", StringComparison.OrdinalIgnoreCase);
         var rejection = blocked ? "OFAC simulation matched a blocked name."
             : wire.Amount <= 0 ? "Amount must be positive."
-            : account is null ? "Originating account was not found."
-            : account.AvailableBalance < wire.Amount ? "Insufficient available customer funds."
+            : institutionTransfer && wire.Rail == PaymentRail.SwiftCbprPlus
+                ? "pacs.009 is supported over Fedwire and FedNow only."
+            : institutionTransfer && sender.MasterAccountBalance < wire.Amount
+                ? "Insufficient master-account liquidity."
+            : !institutionTransfer && account is null ? "Originating account was not found."
+            : !institutionTransfer && account!.AvailableBalance < wire.Amount
+                ? "Insufficient available customer funds."
             : null;
         if (rejection is not null)
         {
@@ -39,8 +47,6 @@ public sealed class Worker(
             return;
         }
 
-        var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
-        var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
         PaymentRoute? paymentRoute = null;
         if (wire.Rail == PaymentRail.SwiftCbprPlus)
         {
@@ -80,24 +86,28 @@ public sealed class Worker(
                     .Select(x => names[x.FromBankId]).Append(names[resolved.Steps[^1].ToBankId]))}."));
         }
 
-        account!.HeldBalance += wire.Amount;
+        if (!institutionTransfer) account!.HeldBalance += wire.Amount;
         wire.Status = WireStatus.Validated;
         db.WireEvents.Add(Event(wire.Id, "Validated",
-            $"Validation passed; {wire.Amount:C} placed on hold. Ledger balance is unchanged."));
+            institutionTransfer
+                ? $"Validation passed; {wire.Amount:C} of master-account liquidity is available."
+                : $"Validation passed; {wire.Amount:C} placed on hold. Ledger balance is unchanged."));
         await db.SaveChangesAsync(cancellationToken);
         await bus.PublishAsync(Queues.WireValidated, new { wire.Id, wire.CorrelationId }, cancellationToken);
 
-        var receiverAccount = await db.Accounts.Include(x => x.Customer)
-            .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id
-                && x.AccountNumber == wire.BeneficiaryAccountNumber,
-                cancellationToken);
-        var xml = wire.Rail switch
+        var messageType = institutionTransfer ? "pacs.009" : "pacs.008";
+        var customerAccount = account!;
+        var xml = institutionTransfer ? wire.Rail switch
+        {
+            PaymentRail.FedNow => iso.CreateFedNowPacs009(wire, sender, receiver),
+            _ => iso.CreatePacs009(wire, sender, receiver)
+        } : wire.Rail switch
         {
             PaymentRail.FedNow => iso.CreateFedNowPacs008(wire, sender, receiver,
-                account.AccountNumber, wire.BeneficiaryAccountNumber),
+                customerAccount.AccountNumber, wire.BeneficiaryAccountNumber),
             PaymentRail.SwiftCbprPlus => iso.CreateCbprPlusPacs008(wire, sender, receiver,
-                account.AccountNumber, wire.BeneficiaryAccountNumber),
-            _ => iso.CreatePacs008(wire, sender, receiver, account.AccountNumber,
+                customerAccount.AccountNumber, wire.BeneficiaryAccountNumber),
+            _ => iso.CreatePacs008(wire, sender, receiver, customerAccount.AccountNumber,
                 wire.BeneficiaryAccountNumber)
         };
         if (wire.Scenario == ProcessingScenario.MalformedIso) xml = xml[..^12];
@@ -107,10 +117,10 @@ public sealed class Worker(
             : null;
         if (!validation.IsValid || cbprValidation is { IsValid: false })
         {
-            account.HeldBalance -= wire.Amount;
+            if (!institutionTransfer) account!.HeldBalance -= wire.Amount;
             wire.Status = WireStatus.Rejected;
             if (paymentRoute is not null) paymentRoute.RouteStatus = PaymentRouteStatuses.Failed;
-            db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
+            db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = messageType,
                 Direction = MessageDirection.Outbound, XmlPayload = xml });
             db.WireEvents.Add(Event(wire.Id, "Rejected",
                 $"ISO profile validation failed; funds hold released. {string.Join(" ",
@@ -119,16 +129,16 @@ public sealed class Worker(
             return;
         }
 
-        db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
+        db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = messageType,
             Direction = MessageDirection.Outbound, XmlPayload = xml });
         wire.Status = WireStatus.ReadyForFed;
         db.WireEvents.Add(Event(wire.Id, "IsoGenerated",
-            $"pacs.008 generated with head.001 business header and UETR; {wire.Rail} lab profile validation passed."));
+            $"{messageType} generated with head.001 business header and UETR; {wire.Rail} lab profile validation passed."));
         await db.SaveChangesAsync(cancellationToken);
-        await bus.PublishAsync(Queues.WireIsoGenerated, new { wire.Id, MessageType = "pacs.008" }, cancellationToken);
+        await bus.PublishAsync(Queues.WireIsoGenerated, new { wire.Id, MessageType = messageType }, cancellationToken);
         await bus.PublishAsync(Queues.WireReadyForFed,
             new WireReadyForFed(wire.Id, wire.CorrelationId, sender.Id, receiver.Id, wire.Amount, xml,
-                wire.Scenario),
+                messageType, wire.Scenario),
             cancellationToken);
         logger.LogInformation("Wire {WireId} is ready for {Rail}", wire.Id, wire.Rail);
     }

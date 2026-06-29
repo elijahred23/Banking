@@ -55,7 +55,8 @@ public sealed record CheckReturnFile(Guid CashLetterId, IReadOnlyList<CheckRetur
 public sealed record CheckSettlementNotice(Guid CashLetterId,
     IReadOnlyList<Guid> SettledCheckDepositIds);
 public sealed record WireReadyForFed(Guid WireId, Guid CorrelationId, Guid SenderBankId,
-    Guid ReceiverBankId, decimal Amount, string Pacs008Xml, ProcessingScenario Scenario);
+    Guid ReceiverBankId, decimal Amount, string PaymentXml, string MessageType,
+    ProcessingScenario Scenario);
 public enum FedMessageKind { Payment, Status }
 public sealed record FedEnvelope(FedMessageKind Kind, Guid WireId, Guid CorrelationId,
     Guid SenderBankId, Guid ReceiverBankId, decimal Amount, string XmlPayload,

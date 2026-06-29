@@ -7,7 +7,7 @@
 <div class="instructions-hero mb-4">
     <div>
         <div class="eyebrow">PAYMENT GUIDE</div>
-        <h1 class="mb-2">How to create each wire type</h1>
+        <h1 class="mb-2">How to create wires and servicing cases</h1>
         <p class="text-secondary mb-0">Follow these steps using the current data for <strong>@Model.Bank.Name</strong>. Accounts, institutions, and routing details shown below are read from the lab database.</p>
     </div>
     <a class="btn btn-primary" asp-action="Create">Create a payment</a>
@@ -18,6 +18,9 @@
     <a href="#fedwire">Fedwire</a>
     <a href="#fednow">FedNow</a>
     <a href="#swift">SWIFT CBPR+</a>
+    <a href="#pacs009">pacs.009</a>
+    <a href="#return-request">Return request</a>
+    <a href="#investigation">Investigation</a>
 </nav>
 
 <section class="surface instruction-source mb-4" aria-labelledby="source-heading">
@@ -88,5 +91,38 @@
             <li><div><strong>Submit and follow the serial-method flow.</strong><span>Inspect the CBPR+ pacs.008, status messages, simulated correspondent settlement, and receiving-bank posting.</span></div></li>
         </ol>
         <partial name="_InstructionDestinations" model="Model.InternationalDestinations" />
+    </section>
+
+    <section id="pacs009" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("pacs.009", "Financial institution credit transfer", "Fedwire or FedNow", true)' />
+        <ol class="instruction-steps">
+            <li><div><strong>Select Financial institution credit transfer (pacs.009).</strong><span>This moves the active bank's own settlement liquidity and does not debit a customer account.</span></div></li>
+            <li><div><strong>Choose Fedwire or FedNow.</strong><span>The lab does not apply its customer-payment FedNow limit to pacs.009. SWIFT CBPR+ pacs.009 is outside the implemented profile.</span></div></li>
+            <li><div><strong>Select the receiving bank.</strong><span>The message identifies both financial institutions by routing number; no beneficiary name or account is required.</span></div></li>
+            <li><div><strong>Enter the USD amount and scenario.</strong><span>The sending bank must have enough master-account liquidity to settle the transfer.</span></div></li>
+            <li><div><strong>Submit and inspect processing.</strong><span>The lab creates pacs.009.001.08, validates it, settles the banks' master accounts, returns pacs.002 statuses, creates the incoming transfer, and records balanced institution-transfer journals.</span></div></li>
+        </ol>
+    </section>
+
+    <section id="return-request" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Return request", "Request recovery of a completed payment", "Settled outgoing wires only", true)' />
+        <ol class="instruction-steps">
+            <li><div><strong>Open a settled outgoing wire.</strong><span>From Outgoing or All wires, select a payment whose status is Settled. Return requests are not available for incoming or unsettled payments.</span></div></li>
+            <li><div><strong>Find Wire servicing on the detail page.</strong><span>The Request return button appears when the payment is eligible and no other return request is currently open.</span></div></li>
+            <li><div><strong>Enter a case reason.</strong><span>Provide between 10 and 500 characters explaining why the original payment should be returned.</span></div></li>
+            <li><div><strong>Select Request return and confirm.</strong><span>The lab sends a camt.056 return request and records the case in the wire lifecycle and ISO 20022 message history.</span></div></li>
+            <li><div><strong>Review the response and return result.</strong><span>A camt.029 records the decision. In the standard simulation, sufficient beneficiary and settlement balances produce a pacs.004 return, restore the originating customer's funds, and change the wire status to Returned.</span></div></li>
+        </ol>
+    </section>
+
+    <section id="investigation" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Investigation", "Request the status of an outgoing payment", "Network-submitted wires", true)' />
+        <ol class="instruction-steps">
+            <li><div><strong>Open an outgoing wire that reached the network.</strong><span>An investigation is available after submission for wires in SentToFed, PendingAtFed, Settled, Rejected, or Returned status.</span></div></li>
+            <li><div><strong>Find Wire servicing on the detail page.</strong><span>The Open investigation button appears when the payment is eligible and no other investigation is currently open.</span></div></li>
+            <li><div><strong>Enter a case reason.</strong><span>Provide between 10 and 500 characters describing the status, delivery, or processing issue to investigate.</span></div></li>
+            <li><div><strong>Select Open investigation.</strong><span>FedNow uses a pacs.028 status request; Fedwire and SWIFT CBPR+ use camt.027.</span></div></li>
+            <li><div><strong>Inspect the resolution.</strong><span>The lab records the response as pacs.002 for FedNow or camt.029 for Fedwire and SWIFT CBPR+, then shows the resolution in the servicing case and message history.</span></div></li>
+        </ol>
     </section>
 </div>

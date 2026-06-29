@@ -76,7 +76,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private async Task PublishStatusAsync(FedEnvelope payment, FedSettlement settlement,
         string statusCode, string reason, CancellationToken token)
     {
-        var statusXml = iso.CreatePacs002(payment.CorrelationId, statusCode, reason, settlement.Imad);
+        var originalDefinition = payment.XmlPayload.Contains("pacs.009.001.08", StringComparison.Ordinal)
+            ? "pacs.009.001.08" : "pacs.008.001.08";
+        var statusXml = iso.CreatePacs002(payment.CorrelationId, statusCode, reason, settlement.Imad,
+            originalDefinition);
         await bus.PublishAsync(Queues.FedInbound, payment with
         {
             Kind = FedMessageKind.Status, XmlPayload = statusXml, Imad = settlement.Imad,

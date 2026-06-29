@@ -6,16 +6,19 @@ namespace Banking.Web.Models;
 
 public sealed class CreateWireViewModel
 {
-    [Required] public Guid FromAccountId { get; set; }
+    public WireTransferType TransferType { get; set; }
+    public Guid? FromAccountId { get; set; }
     [Required] public Guid ReceiverBankId { get; set; }
-    [Required, StringLength(120)] public string ReceiverName { get; set; } = "";
-    [Required, StringLength(34, MinimumLength = 4)] public string BeneficiaryAccountNumber { get; set; } = "";
+    [StringLength(120)] public string? ReceiverName { get; set; }
+    [StringLength(34, MinimumLength = 4)] public string? BeneficiaryAccountNumber { get; set; }
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     public PaymentRail Rail { get; set; }
     public ProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
     public List<SelectListItem> Banks { get; set; } = [];
     public List<SelectListItem> Rails { get; set; } = [];
+    public string SenderBankName { get; set; } = "";
+    public decimal SenderMasterAccountBalance { get; set; }
 }
 
 public sealed record DashboardViewModel(Bank Bank, IReadOnlyList<WireTransfer> RecentWires,

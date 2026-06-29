@@ -88,18 +88,30 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var account = await db.Accounts.Include(x => x.Customer)
-            .SingleOrDefaultAsync(x => x.Id == model.FromAccountId && x.Customer.BankId == bankId, token);
+        var isInstitutionTransfer = model.TransferType == WireTransferType.FinancialInstitutionCreditTransfer;
+        var account = isInstitutionTransfer || model.FromAccountId is null ? null
+            : await db.Accounts.Include(x => x.Customer)
+                .SingleOrDefaultAsync(x => x.Id == model.FromAccountId && x.Customer.BankId == bankId, token);
         var senderBank = await db.Banks.SingleAsync(x => x.Id == bankId, token);
         var receiverBank = await db.Banks.SingleOrDefaultAsync(x => x.Id == model.ReceiverBankId, token);
-        if (account is null) ModelState.AddModelError(nameof(model.FromAccountId), "Select an account owned by the active bank.");
+        if (!isInstitutionTransfer && account is null)
+            ModelState.AddModelError(nameof(model.FromAccountId), "Select an account owned by the active bank.");
+        if (!isInstitutionTransfer && string.IsNullOrWhiteSpace(model.ReceiverName))
+            ModelState.AddModelError(nameof(model.ReceiverName), "Enter the beneficiary name.");
+        if (!isInstitutionTransfer && string.IsNullOrWhiteSpace(model.BeneficiaryAccountNumber))
+            ModelState.AddModelError(nameof(model.BeneficiaryAccountNumber), "Enter the beneficiary account or IBAN.");
         if (receiverBank is null || receiverBank.Id == bankId)
             ModelState.AddModelError(nameof(model.ReceiverBankId), "Select a different receiving bank.");
-        if (model.Rail == PaymentRail.Ach)
-            ModelState.AddModelError(nameof(model.Rail), "Create ACH payments from the ACH workspace so they are batched into a NACHA file.");
-        if (model.Rail == PaymentRail.FedNow && model.Amount > FedNowProfile.CustomerCreditTransferLimit)
+        if (model.Rail is not (PaymentRail.Fedwire or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus))
+            ModelState.AddModelError(nameof(model.Rail),
+                "Select Fedwire, FedNow, or SWIFT CBPR+ for a wire payment.");
+        if (!isInstitutionTransfer && model.Rail == PaymentRail.FedNow
+            && model.Amount > FedNowProfile.CustomerCreditTransferLimit)
             ModelState.AddModelError(nameof(model.Amount),
                 $"FedNow customer credit transfers cannot exceed {FedNowProfile.CustomerCreditTransferLimit:C0}.");
+        if (isInstitutionTransfer && model.Rail == PaymentRail.SwiftCbprPlus)
+            ModelState.AddModelError(nameof(model.Rail),
+                "The lab supports pacs.009 financial institution transfers over Fedwire and FedNow only.");
         if (model.Rail == PaymentRail.FedNow && receiverBank is not null
             && (!receiverBank.FedNowEnabled || !receiverBank.FedNowReceiveEnabled || !receiverBank.FedNowOnline))
             ModelState.AddModelError(nameof(model.ReceiverBankId),
@@ -115,30 +127,36 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             && model.Rail != PaymentRail.SwiftCbprPlus)
             ModelState.AddModelError(nameof(model.Rail),
                 "Cross-border payments must use the SWIFT international wire rail.");
-        if (receiverBank is not null && receiverBank.CountryCode != "US"
+        if (!isInstitutionTransfer && receiverBank is not null && receiverBank.CountryCode != "US"
             && model.Rail == PaymentRail.SwiftCbprPlus
-            && !CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber))
+            && !CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber ?? ""))
             ModelState.AddModelError(nameof(model.BeneficiaryAccountNumber),
                 "Enter a valid IBAN for this international beneficiary.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
-        var beneficiaryAccount = model.Rail == PaymentRail.SwiftCbprPlus
-            && CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber)
-                ? new string(model.BeneficiaryAccountNumber.Where(char.IsLetterOrDigit).ToArray())
+        var beneficiaryAccount = isInstitutionTransfer
+            ? receiverBank!.FedParticipantId
+            : model.Rail == PaymentRail.SwiftCbprPlus
+            && CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber ?? "")
+                ? new string(model.BeneficiaryAccountNumber!.Where(char.IsLetterOrDigit).ToArray())
                     .ToUpperInvariant()
-                : model.BeneficiaryAccountNumber.Trim();
-        var receiverAccount = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
-            x.Customer.BankId == model.ReceiverBankId && x.AccountNumber == beneficiaryAccount, token);
+                : model.BeneficiaryAccountNumber!.Trim();
+        var receiverAccount = isInstitutionTransfer ? null
+            : await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
+                x.Customer.BankId == model.ReceiverBankId && x.AccountNumber == beneficiaryAccount, token);
         var wire = new WireTransfer
         {
             BankId = bankId, SenderBankId = bankId, ReceiverBankId = model.ReceiverBankId,
-            FromAccountId = account!.Id, ToAccountId = receiverAccount?.Id,
+            FromAccountId = account?.Id, ToAccountId = receiverAccount?.Id,
             Direction = WireDirection.Outgoing, Status = WireStatus.Created, Amount = model.Amount,
-            SenderName = account.Customer.Name, ReceiverName = model.ReceiverName.Trim(),
+            SenderName = isInstitutionTransfer ? senderBank.Name : account!.Customer.Name,
+            ReceiverName = isInstitutionTransfer ? receiverBank!.Name : model.ReceiverName!.Trim(),
             BeneficiaryAccountNumber = beneficiaryAccount, Scenario = model.Scenario,
-            Rail = model.Rail,
+            Rail = model.Rail, TransferType = model.TransferType,
             Events = [new WireEvent { EventType = "Created",
-                Description = receiverBank!.CountryCode == senderBank.CountryCode
+                Description = isInstitutionTransfer
+                    ? $"Outgoing pacs.009 financial institution credit transfer created over {model.Rail} using the {model.Scenario} lab scenario."
+                    : receiverBank!.CountryCode == senderBank.CountryCode
                     ? $"Outgoing {model.Rail} payment created using the {model.Scenario} lab scenario."
                     : $"Outgoing international USD wire to {receiverBank.CountryCode} created over SWIFT CBPR+ using the {model.Scenario} lab scenario." }]
         };
@@ -351,7 +369,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         wireCase.UpdatedDate = DateTimeOffset.UtcNow;
         var response = wireCase.ResponseMessageType == "pacs.002"
             ? iso.CreateFedNowPacs002(wire.CorrelationId, StatusCode(wire.Status), wireCase.Resolution,
-                wire.Imad ?? wire.CorrelationId.ToString("N"), receiver.RoutingNumber, sender.RoutingNumber)
+                wire.Imad ?? wire.CorrelationId.ToString("N"), receiver.RoutingNumber, sender.RoutingNumber,
+                wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+                    ? "pacs.009.001.08" : "pacs.008.001.08")
             : CreateCamt029(wire, wireCase, receiver, sender, true);
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id,
             MessageType = wireCase.ResponseMessageType, Direction = MessageDirection.Inbound,
@@ -384,7 +404,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             return;
         }
 
-        WireReturnPosting.Complete(wire, incoming!, origin!, beneficiary!, sender, receiver);
+        var incomingWire = incoming!;
+        WireReturnPosting.Complete(wire, incomingWire, origin, beneficiary, sender, receiver);
         wireCase.Status = WireCaseStatus.ReturnCompleted;
         wireCase.Resolution = "The receiving institution accepted the request and returned the full payment amount.";
         var response = CreateCamt029(wire, wireCase, receiver, sender, true);
@@ -394,13 +415,20 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 Direction = MessageDirection.Inbound, XmlPayload = response },
             new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.004",
                 Direction = MessageDirection.Inbound, XmlPayload = paymentReturn },
-            new IsoMessage { WireTransferId = incoming.Id, MessageType = "pacs.004",
+            new IsoMessage { WireTransferId = incomingWire.Id, MessageType = "pacs.004",
                 Direction = MessageDirection.Outbound, XmlPayload = paymentReturn });
-        AddReturnJournals(db, wire, incoming, origin, beneficiary);
+        if (wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
+            AddInstitutionReturnJournals(db, wire, incomingWire);
+        else
+            AddReturnJournals(db, wire, incomingWire, origin!, beneficiary!);
         db.WireEvents.Add(CaseEvent(wire.Id, "ReturnCompleted",
-            $"{wire.Amount:C} was returned and re-credited to the originating customer account."));
-        db.WireEvents.Add(CaseEvent(incoming.Id, "ReturnCompleted",
-            $"{wire.Amount:C} was debited from the beneficiary account and returned to the sending bank."));
+            wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+                ? $"{wire.Amount:C} was returned to the sending bank's master-account liquidity."
+                : $"{wire.Amount:C} was returned and re-credited to the originating customer account."));
+        db.WireEvents.Add(CaseEvent(incomingWire.Id, "ReturnCompleted",
+            wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+                ? $"{wire.Amount:C} was debited from master-account liquidity and returned to the sending bank."
+                : $"{wire.Amount:C} was debited from the beneficiary account and returned to the sending bank."));
     }
 
     private string CreateCamt029(WireTransfer wire, WireCase wireCase, Bank from, Bank to,
@@ -479,6 +507,24 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 0, incoming.Amount, "Credit cash sent for returned payment"));
     }
 
+    private static void AddInstitutionReturnJournals(BankingDbContext db, WireTransfer outgoing,
+        WireTransfer incoming)
+    {
+        var outgoingJournal = Guid.NewGuid();
+        var incomingJournal = Guid.NewGuid();
+        db.LedgerEntries.AddRange(
+            ReturnEntry(outgoingJournal, outgoing.Id, $"FEDMASTER:{outgoing.SenderBankId:N}",
+                "Fed master account", outgoing.Amount, 0, "Debit returned master-account liquidity"),
+            ReturnEntry(outgoingJournal, outgoing.Id, $"FI_CLEARING:{outgoing.ReceiverBankId:N}",
+                "Financial institution transfer clearing", 0, outgoing.Amount,
+                "Credit returned institution transfer clearing"),
+            ReturnEntry(incomingJournal, incoming.Id, $"FI_CLEARING:{incoming.SenderBankId:N}",
+                "Financial institution transfer clearing", incoming.Amount, 0,
+                "Debit institution return clearing"),
+            ReturnEntry(incomingJournal, incoming.Id, $"FEDMASTER:{incoming.ReceiverBankId:N}",
+                "Fed master account", 0, incoming.Amount, "Credit returned master-account liquidity"));
+    }
+
     private static LedgerEntry ReturnEntry(Guid journal, Guid wireId, string code, string name,
         decimal debit, decimal credit, string description) => new()
     {
@@ -502,9 +548,13 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString()))
             .ToListAsync(token);
-        model.Rails = Enum.GetValues<PaymentRail>().Where(x => x != PaymentRail.Ach)
+        model.Rails = Enum.GetValues<PaymentRail>().Where(x => x is PaymentRail.Fedwire
+                or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus)
             .Select(x => new SelectListItem(x == PaymentRail.SwiftCbprPlus
                 ? "SWIFT international wire (CBPR+)" : x.ToString(), ((int)x).ToString())).ToList();
+        var sender = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        model.SenderBankName = sender.Name;
+        model.SenderMasterAccountBalance = sender.MasterAccountBalance;
         return model;
     }
 }

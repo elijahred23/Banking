@@ -47,3 +47,7 @@ startup applies the equivalent idempotent upgrade to existing local databases.
 
 `202606282100_correspondent_routing.sql` adds configured SWIFT correspondent edges and the
 persisted route/route-step history used for direct and one-intermediary payment delivery.
+
+`202606282300_pacs009_institution_transfers.sql` distinguishes customer `pacs.008` wires from
+financial institution `pacs.009` liquidity transfers. Web startup applies the same column
+upgrade idempotently for existing local databases.

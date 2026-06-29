@@ -86,6 +86,25 @@ public sealed class WireCaseTests
             Wire(WireStatus.Completed, WireDirection.Incoming), Account(900m), Account(99m), Bank(8_000m)));
     }
 
+    [Fact]
+    public void Completing_institution_return_reverses_master_account_liquidity_without_customer_accounts()
+    {
+        var outgoing = Wire(WireStatus.Settled, WireDirection.Outgoing);
+        outgoing.TransferType = WireTransferType.FinancialInstitutionCreditTransfer;
+        var incoming = Wire(WireStatus.Completed, WireDirection.Incoming);
+        incoming.TransferType = WireTransferType.FinancialInstitutionCreditTransfer;
+        var sender = Bank(9_900m);
+        var receiver = Bank(8_100m);
+
+        Assert.True(WireReturnPosting.CanComplete(outgoing, incoming, null, null, receiver));
+        WireReturnPosting.Complete(outgoing, incoming, null, null, sender, receiver);
+
+        Assert.Equal(10_000m, sender.MasterAccountBalance);
+        Assert.Equal(8_000m, receiver.MasterAccountBalance);
+        Assert.Equal(WireStatus.Returned, outgoing.Status);
+        Assert.Equal(WireStatus.Returned, incoming.Status);
+    }
+
     private static WireTransfer Wire(WireStatus status, WireDirection direction) => new()
     {
         BankId = Guid.NewGuid(), SenderBankId = Guid.NewGuid(), ReceiverBankId = Guid.NewGuid(),

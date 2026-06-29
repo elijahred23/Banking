@@ -140,13 +140,13 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         if (wire is null || wire.Status != WireStatus.ReadyForFed) return;
         if (wire.Rail == PaymentRail.SwiftCbprPlus)
         {
-            await SendNextSwiftRouteStepAsync(wire.Id, message.Pacs008Xml, message.Scenario, token);
+            await SendNextSwiftRouteStepAsync(wire.Id, message.PaymentXml, message.Scenario, token);
             return;
         }
         wire.Status = WireStatus.SentToFed;
         var destination = DestinationFor(wire.Rail);
         db.WireEvents.Add(Event(wire.Id, "SentToFed",
-            $"Message Manager delivered pacs.008 to {destination}."));
+            $"Message Manager delivered {message.MessageType} to {destination}."));
         var delivery = new MessageDelivery { WireTransferId = wire.Id, Destination = destination,
             Status = DeliveryStatus.Pending, Attempts = 1 };
         db.MessageDeliveries.Add(delivery);
@@ -155,7 +155,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         {
             await bus.PublishAsync(destination,
                 new FedEnvelope(FedMessageKind.Payment, wire.Id, wire.CorrelationId,
-                    wire.SenderBankId, wire.ReceiverBankId, wire.Amount, message.Pacs008Xml,
+                    wire.SenderBankId, wire.ReceiverBankId, wire.Amount, message.PaymentXml,
                     Scenario: message.Scenario, Rail: wire.Rail), token);
             delivery.Status = DeliveryStatus.Sent;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
@@ -280,7 +280,9 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                     $"Correspondent route step {routeStep.StepNumber} was accepted with {message.StatusCode}."));
             }
             else db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
-                $"{wire.Rail} reported {message.StatusCode}. Customer funds remain held while processing continues."));
+                wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+                    ? $"{wire.Rail} reported {message.StatusCode}. Master-account liquidity remains pending."
+                    : $"{wire.Rail} reported {message.StatusCode}. Customer funds remain held while processing continues."));
         }
         else if (message.StatusCode is "ACSC" or "ACCC")
         {
@@ -326,6 +328,12 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 db.WireEvents.Add(Event(wire.Id, "Posted",
                     $"Customer debit posted; {wire.Amount:C} hold removed."));
             }
+            else if (wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
+            {
+                AddInstitutionOutgoingJournal(db, wire);
+                db.WireEvents.Add(Event(wire.Id, "Posted",
+                    $"{wire.Amount:C} posted against the sending bank's master-account liquidity."));
+            }
         }
         else
         {
@@ -365,29 +373,41 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             Direction = WireDirection.Incoming, Amount = message.Amount, Status = WireStatus.Received,
             SenderName = outgoing.SenderName, ReceiverName = outgoing.ReceiverName,
             BeneficiaryAccountNumber = outgoing.BeneficiaryAccountNumber, Scenario = outgoing.Scenario,
-            Rail = outgoing.Rail,
+            Rail = outgoing.Rail, TransferType = outgoing.TransferType,
             ToAccountId = outgoing.ToAccountId, Imad = message.Imad, Omad = message.Omad,
-            IsoMessages = [new IsoMessage { MessageType = "pacs.008", Direction = MessageDirection.Inbound,
+            IsoMessages = [new IsoMessage { MessageType = PaymentMessageType(outgoing), Direction = MessageDirection.Inbound,
                 XmlPayload = message.XmlPayload }],
             Events = [Event(Guid.Empty, "ReceivedFromFed",
-                $"Original pacs.008 received from {outgoing.Rail}; reference {message.Imad}.")]
+                $"Original {PaymentMessageType(outgoing)} received from {outgoing.Rail}; reference {message.Imad}.")]
         };
-        var account = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
-            x.Customer.BankId == message.ReceiverBankId
-            && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
-        if (account is not null)
+        if (outgoing.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
         {
-            incoming.ToAccountId = account.Id;
-            account.Balance += incoming.Amount;
-            AddIncomingJournal(db, incoming, account);
+            AddInstitutionIncomingJournal(db, incoming);
             incoming.Status = WireStatus.Completed;
-            incoming.Events.Add(Event(Guid.Empty, "Posted", $"Funds posted to account ending {account.AccountNumber[^4..]}."));
-            incoming.Events.Add(Event(Guid.Empty, "Completed", "Incoming wire processing completed."));
+            incoming.Events.Add(Event(Guid.Empty, "Posted",
+                $"{incoming.Amount:C} credited to the receiving bank's master-account liquidity."));
+            incoming.Events.Add(Event(Guid.Empty, "Completed",
+                "Incoming financial institution credit transfer completed."));
+        }
+        else
+        {
+            var account = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
+                x.Customer.BankId == message.ReceiverBankId
+                && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
+            if (account is not null)
+            {
+                incoming.ToAccountId = account.Id;
+                account.Balance += incoming.Amount;
+                AddIncomingJournal(db, incoming, account);
+                incoming.Status = WireStatus.Completed;
+                incoming.Events.Add(Event(Guid.Empty, "Posted", $"Funds posted to account ending {account.AccountNumber[^4..]}."));
+                incoming.Events.Add(Event(Guid.Empty, "Completed", "Incoming wire processing completed."));
+            }
         }
         db.WireTransfers.Add(incoming);
         outgoing = await db.WireTransfers.SingleAsync(x => x.Id == message.WireId, token);
         db.WireEvents.Add(Event(outgoing.Id, "Delivered",
-            $"Original pacs.008 delivered to the receiving bank through {outgoing.Rail}."));
+            $"Original {PaymentMessageType(outgoing)} delivered to the receiving bank through {outgoing.Rail}."));
         if (outgoing.Rail == PaymentRail.SwiftCbprPlus)
             db.WireEvents.Add(Event(outgoing.Id, PaymentEventTypes.BeneficiaryBankReceived,
                 "The beneficiary bank received the routed payment instruction."));
@@ -432,6 +452,32 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
                 0, wire.Amount, "Credit beneficiary deposit liability"));
     }
+
+    private static void AddInstitutionOutgoingJournal(BankingDbContext db, WireTransfer wire)
+    {
+        var journal = Guid.NewGuid();
+        db.LedgerEntries.AddRange(
+            Entry(journal, wire.Id, $"FI_CLEARING:{wire.ReceiverBankId:N}",
+                "Financial institution transfer clearing", wire.Amount, 0,
+                "Debit outgoing institution transfer clearing"),
+            Entry(journal, wire.Id, $"FEDMASTER:{wire.SenderBankId:N}", "Fed master account",
+                0, wire.Amount, "Credit master-account liquidity sent"));
+    }
+
+    private static void AddInstitutionIncomingJournal(BankingDbContext db, WireTransfer wire)
+    {
+        var journal = Guid.NewGuid();
+        db.LedgerEntries.AddRange(
+            Entry(journal, wire.Id, $"FEDMASTER:{wire.ReceiverBankId:N}", "Fed master account",
+                wire.Amount, 0, "Debit master-account liquidity received"),
+            Entry(journal, wire.Id, $"FI_CLEARING:{wire.SenderBankId:N}",
+                "Financial institution transfer clearing", 0, wire.Amount,
+                "Credit incoming institution transfer clearing"));
+    }
+
+    private static string PaymentMessageType(WireTransfer wire) =>
+        wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+            ? "pacs.009" : "pacs.008";
 
     private static LedgerEntry Entry(Guid journal, Guid wireId, string code, string name,
         decimal debit, decimal credit, string description) => new()

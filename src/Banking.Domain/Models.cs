@@ -7,6 +7,11 @@ public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFe
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
 public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
+public enum WireTransferType
+{
+    [Display(Name = "Customer credit transfer (pacs.008)")] CustomerCreditTransfer,
+    [Display(Name = "Financial institution credit transfer (pacs.009)")] FinancialInstitutionCreditTransfer
+}
 public enum WireCaseType { ReturnRequest, Investigation }
 public enum WireCaseStatus { Submitted, Resolved, ReturnCompleted, Rejected }
 public enum PaymentRail
@@ -75,6 +80,7 @@ public sealed class WireTransfer
     [MaxLength(34)] public required string BeneficiaryAccountNumber { get; set; }
     public ProcessingScenario Scenario { get; set; }
     public PaymentRail Rail { get; set; }
+    public WireTransferType TransferType { get; set; }
     [MaxLength(35)] public string? Imad { get; set; }
     [MaxLength(35)] public string? Omad { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;

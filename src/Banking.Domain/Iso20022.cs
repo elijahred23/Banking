@@ -15,9 +15,13 @@ public interface IIsoMessageService
         string debtorAccount, string creditorAccount);
     string CreateCbprPlusPacs008(WireTransfer wire, Bank senderBank, Bank receiverBank,
         string debtorAccount, string creditorAccount);
-    string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad);
+    string CreatePacs009(WireTransfer wire, Bank senderBank, Bank receiverBank);
+    string CreateFedNowPacs009(WireTransfer wire, Bank senderBank, Bank receiverBank);
+    string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad,
+        string originalMessageDefinitionId = "pacs.008.001.08");
     string CreateFedNowPacs002(Guid correlationId, string statusCode, string reason,
-        string networkReference, string from, string to);
+        string networkReference, string from, string to,
+        string originalMessageDefinitionId = "pacs.008.001.08");
     string CreateCbprPlusPacs002(Guid correlationId, string statusCode, string reason,
         string networkReference, string fromBic, string toBic);
     string CreateMessage(string messageType, string from, string to, XElement businessMessage,
@@ -32,11 +36,13 @@ public sealed class IsoMessageService : IIsoMessageService
 {
     private const string IsoNamespacePrefix = "urn:iso:std:iso:20022:tech:xsd:";
     public const string Pacs008Namespace = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08";
+    public const string Pacs009Namespace = "urn:iso:std:iso:20022:tech:xsd:pacs.009.001.08";
     public const string Pacs002Namespace = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.10";
     public const string HeaderNamespace = "urn:iso:std:iso:20022:tech:xsd:head.001.001.02";
     public const string EnvelopeNamespace = "urn:fedwire-lab:message-envelope:v1";
 
     private static readonly XNamespace Pacs008 = Pacs008Namespace;
+    private static readonly XNamespace Pacs009 = Pacs009Namespace;
     private static readonly XNamespace Pacs002 = Pacs002Namespace;
     private static readonly XNamespace Head = HeaderNamespace;
     private static readonly XNamespace Envelope = EnvelopeNamespace;
@@ -111,14 +117,47 @@ public sealed class IsoMessageService : IIsoMessageService
             messageId, "pacs.008.001.08", businessService), document);
     }
 
-    public string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad)
+    public string CreatePacs009(WireTransfer wire, Bank senderBank, Bank receiverBank) =>
+        CreatePacs009(wire, senderBank, receiverBank, "fedwire-lab");
+
+    public string CreateFedNowPacs009(WireTransfer wire, Bank senderBank, Bank receiverBank) =>
+        CreatePacs009(wire, senderBank, receiverBank, FedNowProfile.BusinessService);
+
+    private static string CreatePacs009(WireTransfer wire, Bank senderBank, Bank receiverBank,
+        string businessService)
+    {
+        var messageId = wire.CorrelationId.ToString("N");
+        var document = new XElement(Pacs009 + "Document",
+            new XElement(Pacs009 + "FICdtTrf",
+                new XElement(Pacs009 + "GrpHdr",
+                    new XElement(Pacs009 + "MsgId", messageId),
+                    new XElement(Pacs009 + "CreDtTm", wire.CreatedDate.UtcDateTime.ToString("O")),
+                    new XElement(Pacs009 + "NbOfTxs", 1),
+                    new XElement(Pacs009 + "SttlmInf", new XElement(Pacs009 + "SttlmMtd", "CLRG"))),
+                new XElement(Pacs009 + "CdtTrfTxInf",
+                    new XElement(Pacs009 + "PmtId",
+                        new XElement(Pacs009 + "InstrId", messageId),
+                        new XElement(Pacs009 + "EndToEndId", messageId),
+                        new XElement(Pacs009 + "UETR", wire.CorrelationId.ToString().ToLowerInvariant())),
+                    new XElement(Pacs009 + "IntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
+                        wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    new XElement(Pacs009 + "IntrBkSttlmDt", DateTime.UtcNow.ToString("yyyy-MM-dd")),
+                    FinancialInstitution(Pacs009, "Dbtr", senderBank),
+                    FinancialInstitution(Pacs009, "Cdtr", receiverBank))));
+        return EnvelopeMessage(Header(senderBank.RoutingNumber, receiverBank.RoutingNumber,
+            messageId, "pacs.009.001.08", businessService), document);
+    }
+
+    public string CreatePacs002(Guid correlationId, string statusCode, string reason, string imad,
+        string originalMessageDefinitionId = "pacs.008.001.08")
         => CreatePacs002(correlationId, statusCode, reason, $"IMAD {imad}",
-            "FEDWIRE", "PARTICIPANT", "fedwire-lab");
+            "FEDWIRE", "PARTICIPANT", "fedwire-lab", originalMessageDefinitionId);
 
     public string CreateFedNowPacs002(Guid correlationId, string statusCode, string reason,
-        string networkReference, string from, string to)
+        string networkReference, string from, string to,
+        string originalMessageDefinitionId = "pacs.008.001.08")
         => CreatePacs002(correlationId, statusCode, reason, networkReference, from, to,
-            FedNowProfile.BusinessService);
+            FedNowProfile.BusinessService, originalMessageDefinitionId);
 
     public string CreateCbprPlusPacs002(Guid correlationId, string statusCode, string reason,
         string networkReference, string fromBic, string toBic)
@@ -144,7 +183,8 @@ public sealed class IsoMessageService : IIsoMessageService
     }
 
     private static string CreatePacs002(Guid correlationId, string statusCode, string reason,
-        string networkReference, string from, string to, string businessService)
+        string networkReference, string from, string to, string businessService,
+        string originalMessageDefinitionId)
     {
         var messageId = Guid.NewGuid().ToString("N");
         var document = new XElement(Pacs002 + "Document",
@@ -154,7 +194,7 @@ public sealed class IsoMessageService : IIsoMessageService
                     new XElement(Pacs002 + "CreDtTm", DateTime.UtcNow.ToString("O"))),
                 new XElement(Pacs002 + "OrgnlGrpInfAndSts",
                     new XElement(Pacs002 + "OrgnlMsgId", correlationId.ToString("N")),
-                    new XElement(Pacs002 + "OrgnlMsgNmId", "pacs.008.001.08")),
+                    new XElement(Pacs002 + "OrgnlMsgNmId", originalMessageDefinitionId)),
                 new XElement(Pacs002 + "TxInfAndSts",
                     new XElement(Pacs002 + "OrgnlInstrId", correlationId.ToString("N")),
                     new XElement(Pacs002 + "OrgnlUETR", correlationId.ToString().ToLowerInvariant()),
@@ -231,6 +271,7 @@ public sealed class IsoMessageService : IIsoMessageService
             errors.Add("Business header message definition does not match the document namespace.");
 
         if (messageType == "pacs.008") ValidatePacs008(document, errors);
+        if (messageType == "pacs.009") ValidatePacs009(document, errors);
         if (messageType == "pacs.002") ValidatePacs002(document, errors);
         return new(errors.Count == 0, messageType, errors);
     }
@@ -270,6 +311,25 @@ public sealed class IsoMessageService : IIsoMessageService
             errors.Add("Debtor and creditor names are required.");
     }
 
+    private static void ValidatePacs009(XElement document, List<string> errors)
+    {
+        var tx = document.Descendants(Pacs009 + "CdtTrfTxInf").SingleOrDefault();
+        if (tx is null) { errors.Add("Exactly one financial institution credit transfer is required."); return; }
+        var amount = tx.Element(Pacs009 + "IntrBkSttlmAmt");
+        var currency = amount?.Attribute("Ccy")?.Value;
+        if (currency is null || currency.Length != 3 || !currency.All(char.IsUpper)
+            || !decimal.TryParse(amount?.Value, NumberStyles.Number, CultureInfo.InvariantCulture,
+                out var value) || value <= 0)
+            errors.Add("Settlement amount must be positive and use a three-letter currency code.");
+        if (!Guid.TryParse(tx.Descendants(Pacs009 + "UETR").SingleOrDefault()?.Value, out _))
+            errors.Add("A UUID-formatted UETR is required.");
+        var institutions = new[] { "Dbtr", "Cdtr" }.Select(name =>
+            tx.Element(Pacs009 + name)?.Descendants(Pacs009 + "MmbId").SingleOrDefault()?.Value)
+            .ToList();
+        if (institutions.Any(x => x is null || x.Length != 9 || !x.All(char.IsDigit)))
+            errors.Add("Debtor and creditor institutions require nine-digit routing numbers.");
+    }
+
     private static void ValidatePacs002(XElement document, List<string> errors)
     {
         var status = document.Descendants(Pacs002 + "TxSts").SingleOrDefault()?.Value;
@@ -307,6 +367,11 @@ public sealed class IsoMessageService : IIsoMessageService
     private static XElement Agent(XNamespace ns, string name, string routing) => new(ns + name,
         new XElement(ns + "FinInstnId", new XElement(ns + "ClrSysMmbId",
             new XElement(ns + "MmbId", routing))));
+
+    private static XElement FinancialInstitution(XNamespace ns, string name, Bank bank) =>
+        new(ns + name, new XElement(ns + "FinInstnId",
+            new XElement(ns + "ClrSysMmbId", new XElement(ns + "MmbId", bank.RoutingNumber)),
+            new XElement(ns + "Nm", bank.Name)));
 
     private static XElement BicAgent(XNamespace ns, string name, string bic) => new(ns + name,
         new XElement(ns + "FinInstnId", new XElement(ns + "BICFI", bic)));

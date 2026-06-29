@@ -69,6 +69,9 @@ public static class ServiceRegistration
             IF COL_LENGTH(N'dbo.WireTransfers', N'Rail') IS NULL
                 ALTER TABLE dbo.WireTransfers ADD Rail nvarchar(max) NOT NULL
                     CONSTRAINT DF_WireTransfers_Rail DEFAULT (N'Fedwire');
+            IF COL_LENGTH(N'dbo.WireTransfers', N'TransferType') IS NULL
+                ALTER TABLE dbo.WireTransfers ADD TransferType nvarchar(max) NOT NULL
+                    CONSTRAINT DF_WireTransfers_TransferType DEFAULT (N'CustomerCreditTransfer');
             IF EXISTS (SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.Accounts') AND name = N'AccountNumber'
                     AND max_length < 68)

@@ -31,9 +31,9 @@ public sealed class Worker(
         var sender = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == payment.SenderBankId, token);
         var receiver = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == payment.ReceiverBankId, token);
         var outgoing = await db.WireTransfers.AsNoTracking().SingleAsync(x => x.Id == payment.WireId, token);
-        var receiverAccountExists = await db.Accounts.AnyAsync(x =>
-            x.Customer.BankId == payment.ReceiverBankId
-            && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
+        var receiverAccountExists = outgoing.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+            || await db.Accounts.AnyAsync(x => x.Customer.BankId == payment.ReceiverBankId
+                && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
 
         var validation = fedNow.Validate(payment.XmlPayload, payment.Amount);
         var rejection = FedNowPaymentDecision.RejectionReason(new FedNowPaymentContext(
@@ -116,8 +116,10 @@ public sealed class Worker(
     private async Task PublishStatusAsync(FedEnvelope payment, string statusCode, string reason,
         string networkReference, CancellationToken token)
     {
+        var originalDefinition = payment.XmlPayload.Contains("pacs.009.001.08", StringComparison.Ordinal)
+            ? "pacs.009.001.08" : "pacs.008.001.08";
         var statusXml = iso.CreateFedNowPacs002(payment.CorrelationId, statusCode, reason,
-            networkReference, "FEDNOW", "PARTICIPANT");
+            networkReference, "FEDNOW", "PARTICIPANT", originalDefinition);
         await bus.PublishAsync(Queues.FedNowInbound, payment with
         {
             Kind = FedMessageKind.Status,

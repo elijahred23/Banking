@@ -1,17 +1,41 @@
 @model CreateWireViewModel
 @{ ViewData["Title"] = "Create wire"; }
 <div class="row justify-content-center"><div class="col-lg-7">
-    <div class="mb-4"><div class="eyebrow">OUTGOING PAYMENT</div><h1>Create a bank payment</h1><p class="text-secondary">Send domestic payments or international USD wires over SWIFT CBPR+.</p></div>
-    <form method="post" class="surface form-surface">
+    <div class="mb-4"><div class="eyebrow">OUTGOING PAYMENT</div><h1>Create a bank payment</h1><p class="text-secondary">Send customer credit transfers or move financial-institution liquidity.</p></div>
+    <form method="post" class="surface form-surface" id="wire-create-form">
         <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+        <div class="mb-3"><label asp-for="TransferType" class="form-label">Payment type</label><select asp-for="TransferType" asp-items="Html.GetEnumSelectList<WireTransferType>()" class="form-select" id="transfer-type"></select><div class="form-text">Customer payments use pacs.008. Bank-to-bank liquidity transfers use pacs.009.</div></div>
         <div class="mb-3"><label asp-for="Rail" class="form-label">Payment rail</label><select asp-for="Rail" asp-items="Model.Rails" class="form-select"></select><span asp-validation-for="Rail" class="text-danger"></span><div class="form-text">Choose SWIFT international wire for a bank outside the sender's country. Use the ACH workspace for batch payments.</div></div>
-        <div class="mb-3"><label asp-for="FromAccountId" class="form-label">From account</label><select asp-for="FromAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select><span asp-validation-for="FromAccountId" class="text-danger"></span></div>
+        <div id="institution-source" class="alert alert-info" hidden><strong>@Model.SenderBankName master account</strong><br />Available settlement liquidity: @Model.SenderMasterAccountBalance.ToString("C"). No customer account is debited.</div>
+        <div class="mb-3 customer-field"><label asp-for="FromAccountId" class="form-label">From account</label><select asp-for="FromAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select><span asp-validation-for="FromAccountId" class="text-danger"></span></div>
         <div class="mb-3"><label asp-for="ReceiverBankId" class="form-label">Receiving bank</label><select asp-for="ReceiverBankId" asp-items="Model.Banks" class="form-select"><option value="">Select a bank</option></select><span asp-validation-for="ReceiverBankId" class="text-danger"></span></div>
-        <div class="mb-3"><label asp-for="ReceiverName" class="form-label">Beneficiary name</label><input asp-for="ReceiverName" class="form-control" placeholder="Mary Jones"><span asp-validation-for="ReceiverName" class="text-danger"></span></div>
-        <div class="mb-3"><label asp-for="BeneficiaryAccountNumber" class="form-label">Beneficiary account or IBAN</label><input asp-for="BeneficiaryAccountNumber" class="form-control" placeholder="DE89370400440532013000"><div class="form-text">International examples: Anna Müller DE89370400440532013000; James Wilson GB82WEST12345698765432.</div><span asp-validation-for="BeneficiaryAccountNumber" class="text-danger"></span></div>
+        <div class="mb-3 customer-field"><label asp-for="ReceiverName" class="form-label">Beneficiary name</label><input asp-for="ReceiverName" class="form-control" placeholder="Mary Jones"><span asp-validation-for="ReceiverName" class="text-danger"></span></div>
+        <div class="mb-3 customer-field"><label asp-for="BeneficiaryAccountNumber" class="form-label">Beneficiary account or IBAN</label><input asp-for="BeneficiaryAccountNumber" class="form-control" placeholder="DE89370400440532013000"><div class="form-text">International examples: Anna Müller DE89370400440532013000; James Wilson GB82WEST12345698765432.</div><span asp-validation-for="BeneficiaryAccountNumber" class="text-danger"></span></div>
         <div class="mb-3"><label asp-for="Amount" class="form-label">Amount (USD)</label><div class="input-group"><span class="input-group-text">$</span><input asp-for="Amount" class="form-control" inputmode="decimal" placeholder="10000.00"></div><span asp-validation-for="Amount" class="text-danger"></span></div>
         <div class="mb-4"><label asp-for="Scenario" class="form-label">Learning scenario</label><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<ProcessingScenario>()" class="form-select"></select><div class="form-text">Pending exercises an intermediate network status; rejection releases the funds hold; malformed ISO fails before transmission.</div></div>
         <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Submit payment</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>
     </form>
 </div></div>
-@section Scripts { <partial name="_ValidationScriptsPartial" /> }
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const type = document.getElementById('transfer-type');
+            const rail = document.getElementById('Rail');
+            const institutionSource = document.getElementById('institution-source');
+            const customerFields = document.querySelectorAll('.customer-field');
+            const institutionValue = '@((int)WireTransferType.FinancialInstitutionCreditTransfer)';
+            const swiftValue = '@((int)PaymentRail.SwiftCbprPlus)';
+            const update = () => {
+                const institution = type.value === institutionValue;
+                institutionSource.hidden = !institution;
+                customerFields.forEach(field => field.hidden = institution);
+                const swift = Array.from(rail.options).find(option => option.value === swiftValue);
+                if (swift) swift.disabled = institution;
+                if (institution && rail.value === swiftValue) rail.value = '@((int)PaymentRail.Fedwire)';
+            };
+            type.addEventListener('change', update);
+            update();
+        })();
+    </script>
+}
