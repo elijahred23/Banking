@@ -23,7 +23,8 @@ BEGIN TRY
         ('10000000-0000-0000-0000-000000000003', N'Community National Bank',  N'111901234', N'COMMUNITY', N'CNATUS44XXX', N'Tulsa',         N'US', 25000000.0000),
         ('10000000-0000-0000-0000-000000000004', N'Red River Bank',           N'111000753', N'REDRIVER',  N'RRBAUS44XXX', N'Tulsa',         N'US', 30000000.0000),
         ('10000000-0000-0000-0000-000000000005', N'Euro Demo Bank',           N'000000001', N'EURODEMO',  N'EUDMDEFFXXX', N'Frankfurt',     N'DE',        0.0000),
-        ('10000000-0000-0000-0000-000000000006', N'Britannia Demo Bank',      N'000000002', N'BRITDEMO',  N'BRDMGB2LXXX', N'London',        N'GB',        0.0000);
+        ('10000000-0000-0000-0000-000000000006', N'Britannia Demo Bank',      N'000000002', N'BRITDEMO',  N'BRDMGB2LXXX', N'London',        N'GB',        0.0000),
+        ('10000000-0000-0000-0000-000000000007', N'Big New York Correspondent Bank', N'000000003', N'BIGNEWYORK', N'BNYCUS33XXX', N'New York', N'US', 100000000.0000);
 
     INSERT INTO dbo.Banks (Id, Name, RoutingNumber, FedParticipantId, Bic, TownName, CountryCode, MasterAccountBalance)
     SELECT seed.Id, seed.Name, seed.RoutingNumber, seed.FedParticipantId, seed.Bic, seed.TownName,
@@ -97,6 +98,27 @@ BEGIN TRY
         FROM dbo.Accounts AS existing
         WHERE existing.AccountNumber = seed.AccountNumber
     );
+
+    DECLARE @BankersBankId uniqueidentifier = (SELECT Id FROM dbo.Banks WHERE Bic = N'BAKRUS44XXX');
+    DECLARE @FirstOklahomaBankId uniqueidentifier = (SELECT Id FROM dbo.Banks WHERE Bic = N'FIOKUS44XXX');
+    DECLARE @NewYorkBankId uniqueidentifier = (SELECT Id FROM dbo.Banks WHERE Bic = N'BNYCUS33XXX');
+    DECLARE @EuroBankId uniqueidentifier = (SELECT Id FROM dbo.Banks WHERE Bic = N'EUDMDEFFXXX');
+    DECLARE @BritanniaBankId uniqueidentifier = (SELECT Id FROM dbo.Banks WHERE Bic = N'BRDMGB2LXXX');
+
+    INSERT INTO dbo.CorrespondentRelationships
+        (Id, FromBankId, ToBankId, CurrencyCode, Rail, RelationshipType, IsActive, Priority, CreatedDate)
+    SELECT NEWID(), edge.FromBankId, edge.ToBankId, N'USD', N'SWIFT', edge.RelationshipType,
+        1, edge.Priority, SYSDATETIMEOFFSET()
+    FROM (VALUES
+        (@BankersBankId, @FirstOklahomaBankId, N'Direct', 1),
+        (@BankersBankId, @NewYorkBankId, N'Intermediary', 1),
+        (@NewYorkBankId, @EuroBankId, N'Direct', 1),
+        (@NewYorkBankId, @BritanniaBankId, N'Direct', 2)
+    ) AS edge(FromBankId, ToBankId, RelationshipType, Priority)
+    WHERE edge.FromBankId IS NOT NULL AND edge.ToBankId IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dbo.CorrespondentRelationships AS existing
+          WHERE existing.FromBankId = edge.FromBankId AND existing.ToBankId = edge.ToBankId
+            AND existing.CurrencyCode = N'USD' AND existing.Rail = N'SWIFT');
 
     COMMIT TRANSACTION;
 END TRY

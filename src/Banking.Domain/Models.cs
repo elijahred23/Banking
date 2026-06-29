@@ -78,6 +78,56 @@ public sealed class WireTransfer
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
     public List<IsoMessage> IsoMessages { get; set; } = [];
     public List<WireEvent> Events { get; set; } = [];
+    public PaymentRoute? PaymentRoute { get; set; }
+}
+
+public sealed class CorrespondentRelationship
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid FromBankId { get; set; }
+    public Bank FromBank { get; set; } = null!;
+    public Guid ToBankId { get; set; }
+    public Bank ToBank { get; set; } = null!;
+    [MaxLength(3)] public required string CurrencyCode { get; set; }
+    [MaxLength(30)] public required string Rail { get; set; }
+    [MaxLength(40)] public required string RelationshipType { get; set; }
+    public bool IsActive { get; set; } = true;
+    public int Priority { get; set; } = 100;
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class PaymentRoute
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid PaymentId { get; set; }
+    public WireTransfer Payment { get; set; } = null!;
+    [MaxLength(30)] public required string Rail { get; set; }
+    [MaxLength(3)] public required string CurrencyCode { get; set; }
+    public Guid OriginBankId { get; set; }
+    public Bank OriginBank { get; set; } = null!;
+    public Guid DestinationBankId { get; set; }
+    public Bank DestinationBank { get; set; } = null!;
+    [MaxLength(30)] public required string RouteStatus { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public List<PaymentRouteStep> Steps { get; set; } = [];
+}
+
+public sealed class PaymentRouteStep
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid PaymentRouteId { get; set; }
+    public PaymentRoute PaymentRoute { get; set; } = null!;
+    public int StepNumber { get; set; }
+    public Guid FromBankId { get; set; }
+    public Bank FromBank { get; set; } = null!;
+    public Guid ToBankId { get; set; }
+    public Bank ToBank { get; set; } = null!;
+    [MaxLength(40)] public required string StepType { get; set; }
+    [MaxLength(30)] public required string Status { get; set; }
+    [MaxLength(100)] public string? MessageId { get; set; }
+    public Guid? Uetr { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedDate { get; set; }
 }
 
 public sealed class LedgerEntry

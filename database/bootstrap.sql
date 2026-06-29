@@ -2,6 +2,7 @@
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
+SET QUOTED_IDENTIFIER ON;
 
 :r database/tables/001_Banks.sql
 :r database/tables/002_Customers.sql
@@ -12,6 +13,9 @@ SET XACT_ABORT ON;
 :r database/tables/007_MessageDeliveries.sql
 :r database/tables/008_FedSettlements.sql
 :r database/tables/009_LedgerEntries.sql
+:r database/tables/010_CorrespondentRelationships.sql
+:r database/tables/011_PaymentRoutes.sql
+:r database/tables/012_PaymentRouteSteps.sql
 :r database/tables/020_AchFiles.sql
 :r database/tables/021_AchBatches.sql
 :r database/tables/022_AchEntries.sql

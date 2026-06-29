@@ -138,6 +138,11 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == message.WireId, token);
         if (wire is null || wire.Status != WireStatus.ReadyForFed) return;
+        if (wire.Rail == PaymentRail.SwiftCbprPlus)
+        {
+            await SendNextSwiftRouteStepAsync(wire.Id, message.Pacs008Xml, message.Scenario, token);
+            return;
+        }
         wire.Status = WireStatus.SentToFed;
         var destination = DestinationFor(wire.Rail);
         db.WireEvents.Add(Event(wire.Id, "SentToFed",
@@ -167,6 +172,67 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         }
     }
 
+    private async Task SendNextSwiftRouteStepAsync(Guid wireId, string pacs008Xml,
+        ProcessingScenario scenario, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == wireId, token);
+        var route = await db.PaymentRoutes.Include(x => x.Steps)
+            .SingleOrDefaultAsync(x => x.PaymentId == wireId, token);
+        if (wire is null || route is null || route.RouteStatus is PaymentRouteStatuses.Completed
+            or PaymentRouteStatuses.Failed) return;
+        if (route.Steps.Any(x => x.Status is PaymentRouteStepStatuses.Sent
+            or PaymentRouteStepStatuses.Accepted)) return;
+
+        var step = route.Steps.OrderBy(x => x.StepNumber)
+            .FirstOrDefault(x => x.Status == PaymentRouteStepStatuses.Pending);
+        if (step is null) return;
+        var banks = await db.Banks.Where(x => x.Id == step.FromBankId || x.Id == step.ToBankId)
+            .ToDictionaryAsync(x => x.Id, token);
+        var messageId = Guid.NewGuid().ToString("N");
+        step.Status = PaymentRouteStepStatuses.Sent;
+        step.MessageId = messageId;
+        route.RouteStatus = PaymentRouteStatuses.InProgress;
+        wire.Status = WireStatus.SentToFed;
+        db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteStepStarted,
+            $"Route step {step.StepNumber}: {banks[step.FromBankId].Name} sent pacs.008 to " +
+            $"{banks[step.ToBankId].Name} (message {messageId[..8]})."));
+        var delivery = new MessageDelivery
+        {
+            WireTransferId = wire.Id,
+            Destination = $"{Queues.SwiftOutbound} step {step.StepNumber}",
+            Status = DeliveryStatus.Pending,
+            Attempts = 1
+        };
+        db.MessageDeliveries.Add(delivery);
+        await db.SaveChangesAsync(token);
+
+        try
+        {
+            await bus.PublishAsync(Queues.SwiftOutbound,
+                new FedEnvelope(FedMessageKind.Payment, wire.Id, wire.CorrelationId,
+                    step.FromBankId, step.ToBankId, wire.Amount, pacs008Xml,
+                    Scenario: scenario, Rail: wire.Rail, RouteStepId: step.Id,
+                    DeliveryMessageId: messageId), token);
+            delivery.Status = DeliveryStatus.Sent;
+            delivery.UpdatedDate = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(token);
+            await bus.PublishAsync(Queues.WireSent, new { wire.Id, wire.CorrelationId }, token);
+        }
+        catch (Exception ex)
+        {
+            delivery.Status = DeliveryStatus.Failed;
+            delivery.LastError = ex.Message[..Math.Min(ex.Message.Length, 500)];
+            delivery.UpdatedDate = DateTimeOffset.UtcNow;
+            step.Status = PaymentRouteStepStatuses.Pending;
+            step.MessageId = null;
+            route.RouteStatus = PaymentRouteStatuses.Selected;
+            wire.Status = WireStatus.ReadyForFed;
+            await db.SaveChangesAsync(token);
+            throw;
+        }
+    }
+
     private async Task ReceiveFromFedAsync(FedEnvelope message, CancellationToken token)
     {
         if (message.Kind == FedMessageKind.Status) await ApplyStatusAsync(message, token);
@@ -185,23 +251,63 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         wire.Omad = message.Omad;
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.002",
             Direction = MessageDirection.Inbound, XmlPayload = message.XmlPayload });
-        var destination = DestinationFor(wire.Rail);
         var delivery = await db.MessageDeliveries
             .OrderByDescending(x => x.UpdatedDate)
-            .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id && x.Destination == destination, token);
+            .FirstOrDefaultAsync(x => x.WireTransferId == wire.Id
+                && x.Status == DeliveryStatus.Sent, token);
         if (delivery is not null)
         {
             delivery.Status = DeliveryStatus.Delivered;
             delivery.UpdatedDate = DateTimeOffset.UtcNow;
         }
+        PaymentRoute? route = null;
+        PaymentRouteStep? routeStep = null;
+        if (wire.Rail == PaymentRail.SwiftCbprPlus && message.RouteStepId is Guid routeStepId)
+        {
+            route = await db.PaymentRoutes.Include(x => x.Steps)
+                .SingleAsync(x => x.PaymentId == wire.Id, token);
+            routeStep = route.Steps.SingleOrDefault(x => x.Id == routeStepId);
+            if (routeStep is null || routeStep.MessageId != message.DeliveryMessageId) return;
+        }
+
         if (message.StatusCode is "PDNG" or "ACTC" or "ACCP" or "ACWP" or "ACSP")
         {
             wire.Status = WireStatus.PendingAtFed;
-            db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
+            if (routeStep is not null)
+            {
+                routeStep.Status = PaymentRouteStepStatuses.Accepted;
+                db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteStepAccepted,
+                    $"Correspondent route step {routeStep.StepNumber} was accepted with {message.StatusCode}."));
+            }
+            else db.WireEvents.Add(Event(wire.Id, "PendingAtFed",
                 $"{wire.Rail} reported {message.StatusCode}. Customer funds remain held while processing continues."));
         }
         else if (message.StatusCode is "ACSC" or "ACCC")
         {
+            if (routeStep is not null && route is not null)
+            {
+                routeStep.Status = PaymentRouteStepStatuses.Completed;
+                routeStep.CompletedDate = DateTimeOffset.UtcNow;
+                var isFinal = routeStep.ToBankId == route.DestinationBankId
+                    && routeStep.StepNumber == route.Steps.Max(x => x.StepNumber);
+                if (!isFinal)
+                {
+                    wire.Status = WireStatus.PendingAtFed;
+                    db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.IntermediaryForwarded,
+                        $"Intermediary completed route step {routeStep.StepNumber}; the original UETR will continue to the next bank."));
+                }
+                else route.RouteStatus = PaymentRouteStatuses.Completed;
+                if (!isFinal)
+                {
+                    await db.SaveChangesAsync(token);
+                    await bus.PublishAsync(Queues.WireStatusReceived,
+                        new { wire.Id, message.StatusCode }, token);
+                    var original = wire.IsoMessages.First(x => x.MessageType == "pacs.008"
+                        && x.Direction == MessageDirection.Outbound).XmlPayload;
+                    await SendNextSwiftRouteStepAsync(wire.Id, original, wire.Scenario, token);
+                    return;
+                }
+            }
             wire.Status = WireStatus.Settled;
             var reference = wire.Rail == PaymentRail.Fedwire
                 ? $"IMAD {message.Imad}"
@@ -224,6 +330,13 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         else
         {
             wire.Status = WireStatus.Rejected;
+            if (routeStep is not null && route is not null)
+            {
+                routeStep.Status = PaymentRouteStepStatuses.Rejected;
+                route.RouteStatus = PaymentRouteStatuses.Failed;
+                db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteStepRejected,
+                    $"Correspondent route step {routeStep.StepNumber} was rejected."));
+            }
             db.WireEvents.Add(Event(wire.Id, "RejectedByFed", $"{wire.Rail} rejected the payment instruction."));
             if (wire.FromAccountId is Guid accountId)
             {
@@ -240,13 +353,15 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private async Task CreateIncomingWireAsync(FedEnvelope message, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
+        var outgoing = await db.WireTransfers.AsNoTracking().SingleAsync(x => x.Id == message.WireId, token);
+        if (outgoing.Rail == PaymentRail.SwiftCbprPlus
+            && message.ReceiverBankId != outgoing.ReceiverBankId) return;
         if (await db.WireTransfers.AnyAsync(x => x.BankId == message.ReceiverBankId
             && x.CorrelationId == message.CorrelationId && x.Direction == WireDirection.Incoming, token)) return;
-        var outgoing = await db.WireTransfers.AsNoTracking().SingleAsync(x => x.Id == message.WireId, token);
         var incoming = new WireTransfer
         {
             CorrelationId = message.CorrelationId, BankId = message.ReceiverBankId,
-            SenderBankId = message.SenderBankId, ReceiverBankId = message.ReceiverBankId,
+            SenderBankId = outgoing.SenderBankId, ReceiverBankId = message.ReceiverBankId,
             Direction = WireDirection.Incoming, Amount = message.Amount, Status = WireStatus.Received,
             SenderName = outgoing.SenderName, ReceiverName = outgoing.ReceiverName,
             BeneficiaryAccountNumber = outgoing.BeneficiaryAccountNumber, Scenario = outgoing.Scenario,
@@ -273,6 +388,9 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         outgoing = await db.WireTransfers.SingleAsync(x => x.Id == message.WireId, token);
         db.WireEvents.Add(Event(outgoing.Id, "Delivered",
             $"Original pacs.008 delivered to the receiving bank through {outgoing.Rail}."));
+        if (outgoing.Rail == PaymentRail.SwiftCbprPlus)
+            db.WireEvents.Add(Event(outgoing.Id, PaymentEventTypes.BeneficiaryBankReceived,
+                "The beneficiary bank received the routed payment instruction."));
         await db.SaveChangesAsync(token);
         await bus.PublishAsync(Queues.WireIncomingReceived, new { incoming.Id, incoming.CorrelationId }, token);
         logger.LogInformation("Created incoming wire {WireId} for correlation {CorrelationId}", incoming.Id,

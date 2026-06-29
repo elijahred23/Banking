@@ -61,7 +61,8 @@ public sealed record FedEnvelope(FedMessageKind Kind, Guid WireId, Guid Correlat
     Guid SenderBankId, Guid ReceiverBankId, decimal Amount, string XmlPayload,
     string? Imad = null, string? Omad = null, string? StatusCode = null,
     ProcessingScenario Scenario = ProcessingScenario.Standard,
-    PaymentRail Rail = PaymentRail.Fedwire);
+    PaymentRail Rail = PaymentRail.Fedwire, Guid? RouteStepId = null,
+    string? DeliveryMessageId = null);
 
 public interface IMessageBus
 {

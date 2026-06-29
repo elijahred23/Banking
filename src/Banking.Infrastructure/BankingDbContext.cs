@@ -14,6 +14,9 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
     public DbSet<FedSettlement> FedSettlements => Set<FedSettlement>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<CorrespondentRelationship> CorrespondentRelationships => Set<CorrespondentRelationship>();
+    public DbSet<PaymentRoute> PaymentRoutes => Set<PaymentRoute>();
+    public DbSet<PaymentRouteStep> PaymentRouteSteps => Set<PaymentRouteStep>();
     public DbSet<AchFile> AchFiles => Set<AchFile>();
     public DbSet<AchBatch> AchBatches => Set<AchBatch>();
     public DbSet<AchEntry> AchEntries => Set<AchEntry>();
@@ -52,6 +55,28 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<LedgerEntry>().HasIndex(x => x.JournalId);
         modelBuilder.Entity<WireTransfer>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId)
             .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CorrespondentRelationship>().HasIndex(x => new
+            { x.FromBankId, x.ToBankId, x.CurrencyCode, x.Rail }).IsUnique();
+        modelBuilder.Entity<CorrespondentRelationship>().HasOne(x => x.FromBank).WithMany()
+            .HasForeignKey(x => x.FromBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CorrespondentRelationship>().HasOne(x => x.ToBank).WithMany()
+            .HasForeignKey(x => x.ToBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRoute>().HasIndex(x => x.PaymentId).IsUnique();
+        modelBuilder.Entity<PaymentRoute>().HasOne(x => x.Payment).WithOne(x => x.PaymentRoute)
+            .HasForeignKey<PaymentRoute>(x => x.PaymentId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PaymentRoute>().HasOne(x => x.OriginBank).WithMany()
+            .HasForeignKey(x => x.OriginBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRoute>().HasOne(x => x.DestinationBank).WithMany()
+            .HasForeignKey(x => x.DestinationBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRouteStep>().HasIndex(x => new { x.PaymentRouteId, x.StepNumber }).IsUnique();
+        modelBuilder.Entity<PaymentRouteStep>().HasIndex(x => x.MessageId)
+            .HasFilter("[MessageId] IS NOT NULL");
+        modelBuilder.Entity<PaymentRouteStep>().HasOne(x => x.PaymentRoute).WithMany(x => x.Steps)
+            .HasForeignKey(x => x.PaymentRouteId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PaymentRouteStep>().HasOne(x => x.FromBank).WithMany()
+            .HasForeignKey(x => x.FromBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRouteStep>().HasOne(x => x.ToBank).WithMany()
+            .HasForeignKey(x => x.ToBankId).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<AchEntry>().Property(x => x.Amount).HasPrecision(19, 4);
         modelBuilder.Entity<AchEntry>().Property(x => x.SecCode).HasConversion<string>();

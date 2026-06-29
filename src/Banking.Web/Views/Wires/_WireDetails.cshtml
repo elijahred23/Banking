@@ -13,6 +13,38 @@
 
 <div class="row g-4">
     <div class="col-xl-7">
+        @if (Model.Route is { } route)
+        {
+            var orderedSteps = route.Steps.OrderBy(x => x.StepNumber).ToList();
+            <section class="surface section mb-4">
+                <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                    <div><h2 class="h5 mb-1">Correspondent route</h2><div class="section-help">The selected path for this USD SWIFT payment.</div></div>
+                    <span class="route-status route-@route.RouteStatus.ToLowerInvariant()">@route.RouteStatus</span>
+                </div>
+                <div class="route-map" aria-label="Correspondent bank route">
+                    @if (orderedSteps.Any())
+                    {
+                        <span class="route-bank">@orderedSteps[0].FromBank.Name</span>
+                        @foreach (var step in orderedSteps)
+                        {
+                            <span class="route-arrow" aria-hidden="true">→</span>
+                            <span class="route-bank">@step.ToBank.Name</span>
+                        }
+                    }
+                </div>
+                <div class="route-steps mt-3">
+                    @foreach (var step in orderedSteps)
+                    {
+                        <div class="route-step-row">
+                            <div><strong>Step @step.StepNumber</strong> · @step.FromBank.Name → @step.ToBank.Name</div>
+                            <div class="route-step-meta"><span>@step.StepType</span><span class="delivery-status delivery-@step.Status.ToLowerInvariant()">@step.Status</span></div>
+                            @if (!string.IsNullOrWhiteSpace(step.MessageId))
+                            { <small>Message <code>@step.MessageId</code> · UETR <code>@step.Uetr</code></small> }
+                        </div>
+                    }
+                </div>
+            </section>
+        }
         <section class="surface section mb-4">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
                 <div><h2 class="h5 mb-1">Lifecycle</h2><div class="section-help">Every persisted processing stage.</div></div>

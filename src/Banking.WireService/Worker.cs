@@ -9,6 +9,7 @@ public sealed class Worker(
     IDbContextFactory<BankingDbContext> dbFactory,
     IIsoMessageService iso,
     ICbprPlusMessageService cbpr,
+    IPaymentRouteResolver routeResolver,
     ILogger<Worker> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
@@ -38,6 +39,47 @@ public sealed class Worker(
             return;
         }
 
+        var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
+        var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
+        PaymentRoute? paymentRoute = null;
+        if (wire.Rail == PaymentRail.SwiftCbprPlus)
+        {
+            ResolvedPaymentRoute resolved;
+            try
+            {
+                resolved = await routeResolver.ResolveRouteAsync(wire.SenderBankId,
+                    wire.ReceiverBankId, "USD", CorrespondentRails.Swift, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                wire.Status = WireStatus.Rejected;
+                db.WireEvents.Add(Event(wire.Id, "Rejected", ex.Message));
+                await db.SaveChangesAsync(cancellationToken);
+                logger.LogWarning("Wire {WireId} rejected: {Reason}", wire.Id, ex.Message);
+                return;
+            }
+
+            var names = await db.Banks.Where(x => resolved.Steps.Select(y => y.FromBankId)
+                    .Concat(resolved.Steps.Select(y => y.ToBankId)).Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+            paymentRoute = new PaymentRoute
+            {
+                PaymentId = wire.Id, Rail = CorrespondentRails.Swift, CurrencyCode = "USD",
+                OriginBankId = wire.SenderBankId, DestinationBankId = wire.ReceiverBankId,
+                RouteStatus = PaymentRouteStatuses.Selected,
+                Steps = resolved.Steps.Select(x => new PaymentRouteStep
+                {
+                    StepNumber = x.StepNumber, FromBankId = x.FromBankId, ToBankId = x.ToBankId,
+                    StepType = x.StepType, Status = PaymentRouteStepStatuses.Pending,
+                    Uetr = wire.CorrelationId
+                }).ToList()
+            };
+            db.PaymentRoutes.Add(paymentRoute);
+            db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteSelected,
+                $"Correspondent route selected: {string.Join(" → ", resolved.Steps
+                    .Select(x => names[x.FromBankId]).Append(names[resolved.Steps[^1].ToBankId]))}."));
+        }
+
         account!.HeldBalance += wire.Amount;
         wire.Status = WireStatus.Validated;
         db.WireEvents.Add(Event(wire.Id, "Validated",
@@ -45,8 +87,6 @@ public sealed class Worker(
         await db.SaveChangesAsync(cancellationToken);
         await bus.PublishAsync(Queues.WireValidated, new { wire.Id, wire.CorrelationId }, cancellationToken);
 
-        var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
-        var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
         var receiverAccount = await db.Accounts.Include(x => x.Customer)
             .FirstOrDefaultAsync(x => x.Customer.BankId == receiver.Id
                 && x.AccountNumber == wire.BeneficiaryAccountNumber,
@@ -69,6 +109,7 @@ public sealed class Worker(
         {
             account.HeldBalance -= wire.Amount;
             wire.Status = WireStatus.Rejected;
+            if (paymentRoute is not null) paymentRoute.RouteStatus = PaymentRouteStatuses.Failed;
             db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.008",
                 Direction = MessageDirection.Outbound, XmlPayload = xml });
             db.WireEvents.Add(Event(wire.Id, "Rejected",

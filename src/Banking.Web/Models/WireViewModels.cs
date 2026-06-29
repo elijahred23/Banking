@@ -46,6 +46,7 @@ public sealed record WireInstructionDestinationViewModel(
 
 public sealed record WireDetailsViewModel(
     WireTransfer Wire,
+    PaymentRoute? Route,
     IReadOnlyList<MessageDelivery> Deliveries,
     IReadOnlyList<ProcessingStageViewModel> Stages,
     IReadOnlyList<IsoMessageViewModel> Messages,

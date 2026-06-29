@@ -24,7 +24,8 @@ Seed the lab data from the repository root:
 sqlcmd -S localhost,11433 -U sa -C -d BankingDb -i database/seed.sql
 ```
 
-The seed script is idempotent: rerunning it does not duplicate the four banks, customers, or accounts.
+The seed script is idempotent: rerunning it does not duplicate banks, customers, accounts, or
+correspondent relationships.
 
 ## Conventions
 
@@ -43,3 +44,6 @@ startup runs the same upgrade idempotently for the default local workflow.
 `202606282000_add_check_processing.sql` adds image cash letters, check deposits,
 front/back TIFF blobs, returns, event timelines, and balanced check journals. Web
 startup applies the equivalent idempotent upgrade to existing local databases.
+
+`202606282100_correspondent_routing.sql` adds configured SWIFT correspondent edges and the
+persisted route/route-step history used for direct and one-intermediary payment delivery.

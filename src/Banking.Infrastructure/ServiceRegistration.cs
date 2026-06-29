@@ -19,6 +19,7 @@ public static class ServiceRegistration
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
+        services.AddSingleton<IPaymentRouteResolver, PaymentRouteResolver>();
         services.AddSingleton<NachaFileWriter>();
         services.AddSingleton<NachaFileParser>();
         services.AddSingleton<X937CashLetterWriter>();
@@ -46,7 +47,11 @@ public static class ServiceRegistration
             db.Banks.AddRange(bankers, first, community, redRiver);
             await db.SaveChangesAsync(cancellationToken);
         }
-        if (seed) await EnsureInternationalBanksAsync(db, cancellationToken);
+        if (seed)
+        {
+            await EnsureInternationalBanksAsync(db, cancellationToken);
+            await EnsureCorrespondentRoutesAsync(db, cancellationToken);
+        }
     }
 
     private static Task<int> UpgradeLabSchemaAsync(BankingDbContext db, CancellationToken token) =>
@@ -345,6 +350,49 @@ public static class ServiceRegistration
                 );
                 CREATE INDEX IX_CheckEvents_CheckDepositId ON dbo.CheckEvents(CheckDepositId);
             END;
+            IF OBJECT_ID(N'dbo.CorrespondentRelationships', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CorrespondentRelationships (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_CorrespondentRelationships PRIMARY KEY,
+                    FromBankId uniqueidentifier NOT NULL, ToBankId uniqueidentifier NOT NULL,
+                    CurrencyCode nvarchar(3) NOT NULL, Rail nvarchar(30) NOT NULL,
+                    RelationshipType nvarchar(40) NOT NULL,
+                    IsActive bit NOT NULL CONSTRAINT DF_CorrespondentRelationships_IsActive DEFAULT (1),
+                    Priority int NOT NULL CONSTRAINT DF_CorrespondentRelationships_Priority DEFAULT (100),
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_CorrespondentRelationships_FromBank FOREIGN KEY (FromBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_CorrespondentRelationships_ToBank FOREIGN KEY (ToBankId) REFERENCES dbo.Banks(Id));
+                CREATE UNIQUE INDEX IX_CorrespondentRelationships_FromBankId_ToBankId_CurrencyCode_Rail
+                    ON dbo.CorrespondentRelationships(FromBankId, ToBankId, CurrencyCode, Rail);
+            END;
+            IF OBJECT_ID(N'dbo.PaymentRoutes', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.PaymentRoutes (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_PaymentRoutes PRIMARY KEY,
+                    PaymentId uniqueidentifier NOT NULL, Rail nvarchar(30) NOT NULL,
+                    CurrencyCode nvarchar(3) NOT NULL, OriginBankId uniqueidentifier NOT NULL,
+                    DestinationBankId uniqueidentifier NOT NULL, RouteStatus nvarchar(30) NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_PaymentRoutes_WireTransfers_PaymentId FOREIGN KEY (PaymentId) REFERENCES dbo.WireTransfers(Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_PaymentRoutes_OriginBank FOREIGN KEY (OriginBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_PaymentRoutes_DestinationBank FOREIGN KEY (DestinationBankId) REFERENCES dbo.Banks(Id));
+                CREATE UNIQUE INDEX IX_PaymentRoutes_PaymentId ON dbo.PaymentRoutes(PaymentId);
+            END;
+            IF OBJECT_ID(N'dbo.PaymentRouteSteps', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.PaymentRouteSteps (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_PaymentRouteSteps PRIMARY KEY,
+                    PaymentRouteId uniqueidentifier NOT NULL, StepNumber int NOT NULL,
+                    FromBankId uniqueidentifier NOT NULL, ToBankId uniqueidentifier NOT NULL,
+                    StepType nvarchar(40) NOT NULL, Status nvarchar(30) NOT NULL,
+                    MessageId nvarchar(100) NULL, Uetr uniqueidentifier NULL,
+                    CreatedDate datetimeoffset NOT NULL, CompletedDate datetimeoffset NULL,
+                    CONSTRAINT FK_PaymentRouteSteps_Route FOREIGN KEY (PaymentRouteId) REFERENCES dbo.PaymentRoutes(Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_PaymentRouteSteps_FromBank FOREIGN KEY (FromBankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_PaymentRouteSteps_ToBank FOREIGN KEY (ToBankId) REFERENCES dbo.Banks(Id));
+                CREATE UNIQUE INDEX IX_PaymentRouteSteps_PaymentRouteId_StepNumber ON dbo.PaymentRouteSteps(PaymentRouteId, StepNumber);
+                CREATE INDEX IX_PaymentRouteSteps_MessageId ON dbo.PaymentRouteSteps(MessageId) WHERE MessageId IS NOT NULL;
+            END;
             """, token);
 
     private static async Task EnsureInternationalBanksAsync(BankingDbContext db,
@@ -360,8 +408,47 @@ public static class ServiceRegistration
             banks.Add(InternationalBank("Britannia Demo Bank", "000000002", "BRITDEMO",
                 "BRDMGB2LXXX", "London", "GB", "James Wilson",
                 "GB82WEST12345698765432", 60_000m));
+        if (!existingBics.Contains("BNYCUS33XXX"))
+            banks.Add(new Bank
+            {
+                Name = "Big New York Correspondent Bank", RoutingNumber = "000000003",
+                FedParticipantId = "BIGNEWYORK", Bic = "BNYCUS33XXX", TownName = "New York",
+                CountryCode = "US", MasterAccountBalance = 100_000_000m, SwiftEnabled = true
+            });
         if (banks.Count == 0) return;
         db.Banks.AddRange(banks);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureCorrespondentRoutesAsync(BankingDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var banks = await db.Banks.Where(x => x.Bic == "BAKRUS44XXX" || x.Bic == "FIOKUS44XXX"
+                || x.Bic == "BNYCUS33XXX" || x.Bic == "EUDMDEFFXXX" || x.Bic == "BRDMGB2LXXX")
+            .ToDictionaryAsync(x => x.Bic, x => x.Id, cancellationToken);
+        if (!banks.TryGetValue("BAKRUS44XXX", out var bankers)
+            || !banks.TryGetValue("BNYCUS33XXX", out var newYork)) return;
+
+        var desired = new List<(Guid From, Guid To, string Type, int Priority)>();
+        if (banks.TryGetValue("FIOKUS44XXX", out var first))
+            desired.Add((bankers, first, "Direct", 1));
+        if (banks.TryGetValue("EUDMDEFFXXX", out var euro))
+            desired.Add((newYork, euro, "Direct", 1));
+        if (banks.TryGetValue("BRDMGB2LXXX", out var britannia))
+            desired.Add((newYork, britannia, "Direct", 2));
+        desired.Add((bankers, newYork, "Intermediary", 1));
+
+        var existing = await db.CorrespondentRelationships
+            .Where(x => x.CurrencyCode == "USD" && x.Rail == CorrespondentRails.Swift)
+            .Select(x => new { x.FromBankId, x.ToBankId }).ToListAsync(cancellationToken);
+        foreach (var edge in desired.Where(edge => !existing.Any(x =>
+                     x.FromBankId == edge.From && x.ToBankId == edge.To)))
+            db.CorrespondentRelationships.Add(new CorrespondentRelationship
+            {
+                FromBankId = edge.From, ToBankId = edge.To, CurrencyCode = "USD",
+                Rail = CorrespondentRails.Swift, RelationshipType = edge.Type,
+                Priority = edge.Priority
+            });
         await db.SaveChangesAsync(cancellationToken);
     }
 

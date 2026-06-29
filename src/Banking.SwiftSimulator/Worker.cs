@@ -26,7 +26,8 @@ public sealed class Worker(
         var sender = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == payment.SenderBankId, token);
         var receiver = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == payment.ReceiverBankId, token);
         var outgoing = await db.WireTransfers.AsNoTracking().SingleAsync(x => x.Id == payment.WireId, token);
-        var beneficiaryExists = await db.Accounts.AnyAsync(x =>
+        var isFinalLeg = payment.ReceiverBankId == outgoing.ReceiverBankId;
+        var beneficiaryExists = !isFinalLeg || await db.Accounts.AnyAsync(x =>
             x.Customer.BankId == payment.ReceiverBankId
             && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
         var validation = cbpr.ValidateCustomerCreditTransfer(payment.XmlPayload);
@@ -37,7 +38,8 @@ public sealed class Worker(
             : payment.Scenario == ProcessingScenario.FedRejects ? "Network rejection learning scenario."
             : null;
 
-        var reference = $"SWIFT-{DateTime.UtcNow:yyyyMMdd}-{payment.CorrelationId:N}"[..35];
+        var suffix = payment.DeliveryMessageId ?? payment.CorrelationId.ToString("N");
+        var reference = $"SWIFT-{DateTime.UtcNow:yyyyMMdd}-{suffix}"[..35];
         if (rejection is not null)
         {
             await PublishStatusAsync(payment, sender, receiver, "RJCT", rejection, reference, token);
@@ -47,7 +49,8 @@ public sealed class Worker(
         await PublishStatusAsync(payment, sender, receiver, "ACSP",
             "Accepted for serial correspondent processing", reference, token);
         await PublishStatusAsync(payment, sender, receiver, "ACCC",
-            "Beneficiary account credited after correspondent settlement simulation", reference, token);
+            isFinalLeg ? "Beneficiary account credited after correspondent settlement simulation"
+                : "Intermediary accepted the instruction for onward forwarding", reference, token);
         await bus.PublishAsync(Queues.SwiftInbound, payment with
         {
             Kind = FedMessageKind.Payment,

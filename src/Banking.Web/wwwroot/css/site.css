@@ -14,6 +14,15 @@ code { color:#345765;font-size:.78em; } a { color:var(--blue); } @media(max-widt
 .section-help { color:var(--muted);font-size:.82rem; }
 .duration-pill,.compare-hint { color:#3d5964;background:#edf2f3;border-radius:999px;padding:.3rem .6rem;font-size:.75rem;font-weight:650;white-space:nowrap; }
 .timeline-heading { display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;margin-bottom:.15rem; }
+.route-map { display:flex;align-items:center;gap:.6rem;overflow-x:auto;padding:.35rem 0 .65rem; }
+.route-bank { flex:0 0 auto;padding:.55rem .75rem;border:1px solid #bfd2d9;border-radius:8px;background:#f6fafb;font-weight:650;font-size:.88rem; }
+.route-arrow { color:var(--blue);font-size:1.25rem;font-weight:800; }
+.route-steps { display:grid;gap:.65rem; }
+.route-step-row { border-top:1px solid var(--line);padding-top:.7rem; }
+.route-step-row small { display:block;color:var(--muted);overflow-wrap:anywhere;margin-top:.3rem; }
+.route-step-meta { display:flex;align-items:center;justify-content:space-between;gap:1rem;color:var(--muted);font-size:.82rem;margin-top:.2rem; }
+.route-status { border-radius:999px;padding:.3rem .65rem;background:#edf2f4;color:#46616b;font-size:.75rem;font-weight:750; }
+.route-completed { background:#e5f5ec;color:#237044; }.route-failed { background:#fce9e8;color:#a3322b; }.route-inprogress { background:#e6f1fb;color:#245f91; }
 .service-badge { color:#315f73;background:#e7f0f3;border-radius:5px;padding:.12rem .38rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.68rem; }
 .diagnostics-table { font-size:.85rem; }
 .delivery-status { display:inline-block;border-radius:999px;padding:.2rem .48rem;font-size:.72rem;font-weight:700;background:#e9eef0;color:#485a62; }

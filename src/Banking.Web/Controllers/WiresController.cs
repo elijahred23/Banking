@@ -174,6 +174,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
         var deliveries = await db.MessageDeliveries.Where(x => x.WireTransferId == id)
             .OrderBy(x => x.UpdatedDate).AsNoTracking().ToListAsync(token);
+        var route = await db.PaymentRoutes.Include(x => x.Steps).ThenInclude(x => x.FromBank)
+            .Include(x => x.Steps).ThenInclude(x => x.ToBank).AsSplitQuery().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.PaymentId == id, token);
         var events = wire.Events.OrderBy(x => x.CreatedDate).ToList();
         var stages = events.Select((item, index) => new ProcessingStageViewModel(
             item,
@@ -191,7 +194,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             wire.IsoMessages.OrderBy(x => x.CreatedDate).LastOrDefault()?.CreatedDate ?? wire.CreatedDate,
             deliveries.LastOrDefault()?.UpdatedDate ?? wire.CreatedDate
         }.Max();
-        return new WireDetailsViewModel(wire, deliveries, stages, messages, ledgerEntries, failure,
+        return new WireDetailsViewModel(wire, route, deliveries, stages, messages, ledgerEntries, failure,
             lastActivity - wire.CreatedDate);
     }
 
@@ -220,7 +223,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     private static string ServiceFor(string eventType) => eventType switch
     {
         "Created" => "Banking.Web",
-        "Validated" or "Rejected" or "IsoGenerated" => "Banking.WireService",
+        "Validated" or "Rejected" or "IsoGenerated" or PaymentEventTypes.RouteSelected => "Banking.WireService",
+        PaymentEventTypes.RouteStepStarted or PaymentEventTypes.RouteStepAccepted
+            or PaymentEventTypes.RouteStepRejected or PaymentEventTypes.IntermediaryForwarded
+            or PaymentEventTypes.BeneficiaryBankReceived => "Banking.MessageManager",
         "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Payment-network simulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",

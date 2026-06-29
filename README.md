@@ -44,7 +44,7 @@ Version-controlled table definitions and the location for future migration scrip
 - `Banking.MessageManager`: outbound delivery tracking plus inbound status/payment routing.
 - `Banking.FedwireSimulator`: idempotent master-account settlement, IMAD/OMAD assignment, `pacs.002`, and forwarding of the original `pacs.008`.
 - `Banking.FedNowSimulator`: independent instant-payment processing, participation/availability and beneficiary checks, receiver confirmation, idempotent settlement, FedNow `pacs.002` statuses, and delivery of the settled `pacs.008`.
-- `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, payment statuses, and delivery of the original `pacs.008`.
+- `Banking.SwiftSimulator`: learning-only FINplus transport and serial-correspondent processing, CBPR+ validation, per-leg payment statuses, and delivery of the original `pacs.008`.
 - `Banking.FedAchSimulator`: NACHA file validation plus simulated settlement, returns, and notifications of change.
 - `Banking.Domain` and `Banking.Infrastructure`: contracts, ISO translation, EF Core, and messaging.
 
@@ -91,6 +91,12 @@ or Federal Reserve/Treasury certification.
 The included profile is a deliberately narrow USD customer-credit-transfer teaching subset. It generates `pacs.008.001.08`, models the serial method, validates IBANs using ISO 13616 mod-97, routes institutions by BIC, and requires town and country in structured addresses. Seeded German and UK institutions let operators send cross-border wires in either direction and inspect the receiving-bank view.
 
 SWIFT is a messaging network, not the settlement system. The simulator therefore labels balance movement as simulated correspondent positions. It is not production CBPR+ conformance: the private MyStandards usage guidelines, FINplus connectivity, PKI/signing, sanctions controls, correspondent account configuration, currency/FX handling, cover payments, and Vendor Readiness testing are not implemented. See Swift's [CBPR+ readiness requirements](https://www.swift.com/cbpr-self-attestation) and [structured-address timeline](https://www.swift.com/standards/iso-20022/removal-unstructured-address).
+
+For USD SWIFT wires, active `CorrespondentRelationships` are resolved direct-first and then
+through at most one intermediary. The selected `PaymentRoute` and its ordered steps are retained
+with the payment. Message Manager advances a single original `pacs.008` and UETR across those
+steps, recording a separate delivery message ID and status for each leg. The seeded Bankers Bank
+route to Euro Demo Bank is `Bankers Bank → Big New York Correspondent Bank → Euro Demo Bank`.
 
 ## FedNow message scope
 
