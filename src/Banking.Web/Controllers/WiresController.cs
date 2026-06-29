@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
+using System.Globalization;
 using System.Xml.Linq;
 
 namespace Banking.Web.Controllers;
@@ -164,10 +166,91 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return model is null ? NotFound() : PartialView("_WireDetails", model);
     }
 
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> OpenCase(Guid id, WireCaseType type, string reason,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var normalizedReason = reason?.Trim() ?? string.Empty;
+        if (!Enum.IsDefined(type) || normalizedReason.Length is < 10 or > 500)
+        {
+            TempData["Error"] = "Provide a case reason between 10 and 500 characters.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var caseId = Guid.NewGuid();
+        var strategy = db.Database.CreateExecutionStrategy();
+        var outcome = await strategy.ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable, token);
+            var wire = await db.WireTransfers.Include(x => x.Cases)
+                .SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
+            if (wire is null) return OpenCaseOutcome.Missing();
+            var existing = wire.Cases.SingleOrDefault(x => x.Id == caseId);
+            if (existing is not null)
+                return OpenCaseOutcome.Succeeded(
+                    $"{CaseLabel(type)} {caseId.ToString()[..8]} processed with status {existing.Status}.");
+            var eligible = type == WireCaseType.ReturnRequest
+                ? WireCasePolicy.CanRequestReturn(wire)
+                : WireCasePolicy.CanInvestigate(wire);
+            if (!eligible)
+                return OpenCaseOutcome.Failed(type == WireCaseType.ReturnRequest
+                    ? "Only a settled outgoing payment can have a return requested."
+                    : "This outgoing payment has not reached a stage that can be investigated.");
+            if (wire.Cases.Any(x => x.Type == type && x.Status == WireCaseStatus.Submitted))
+                return OpenCaseOutcome.Failed(
+                    $"An open {CaseLabel(type).ToLowerInvariant()} already exists for this wire.");
+
+            var banks = await db.Banks
+                .Where(x => x.Id == wire.SenderBankId || x.Id == wire.ReceiverBankId)
+                .ToDictionaryAsync(x => x.Id, token);
+            var sender = banks[wire.SenderBankId];
+            var receiver = banks[wire.ReceiverBankId];
+            var wireCase = new WireCase
+            {
+                Id = caseId,
+                WireTransferId = wire.Id,
+                RequestedByBankId = bankId,
+                Type = type,
+                Reason = normalizedReason,
+                RequestMessageType = WireCasePolicy.RequestMessageType(type, wire.Rail)
+            };
+            db.WireCases.Add(wireCase);
+            db.IsoMessages.Add(new IsoMessage
+            {
+                WireTransferId = wire.Id,
+                MessageType = wireCase.RequestMessageType,
+                Direction = MessageDirection.Outbound,
+                XmlPayload = CreateCaseRequest(wire, wireCase, sender, receiver)
+            });
+            db.WireEvents.Add(CaseEvent(wire.Id, "CaseSubmitted",
+                $"{CaseLabel(type)} {wireCase.Id.ToString()[..8]} submitted using {wireCase.RequestMessageType}: {normalizedReason}"));
+
+            if (type == WireCaseType.Investigation)
+                ResolveInvestigation(db, wire, wireCase, sender, receiver);
+            else
+                await ResolveReturnRequestAsync(db, wire, wireCase, sender, receiver, token);
+
+            await db.SaveChangesAsync(token);
+            await transaction.CommitAsync(token);
+            return OpenCaseOutcome.Succeeded(
+                $"{CaseLabel(type)} {wireCase.Id.ToString()[..8]} processed with status {wireCase.Status}.");
+        });
+
+        if (outcome.NotFound) return NotFound();
+        if (outcome.Error is not null) TempData["Error"] = outcome.Error;
+        else TempData["Notice"] = outcome.Notice;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
     private async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
         BankingDbContext db, CancellationToken token)
     {
         var wire = await db.WireTransfers.Include(x => x.Bank).Include(x => x.Events)
+            .Include(x => x.Cases)
             .Include(x => x.IsoMessages).AsSplitQuery().AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
         if (wire is null) return null;
@@ -194,7 +277,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             wire.IsoMessages.OrderBy(x => x.CreatedDate).LastOrDefault()?.CreatedDate ?? wire.CreatedDate,
             deliveries.LastOrDefault()?.UpdatedDate ?? wire.CreatedDate
         }.Max();
-        return new WireDetailsViewModel(wire, route, deliveries, stages, messages, ledgerEntries, failure,
+        return new WireDetailsViewModel(wire, route, deliveries, stages, messages, ledgerEntries,
+            wire.Cases.OrderByDescending(x => x.CreatedDate).ToList(),
+            WireCasePolicy.CanRequestReturn(wire), WireCasePolicy.CanInvestigate(wire), failure,
             lastActivity - wire.CreatedDate);
     }
 
@@ -230,8 +315,183 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Payment-network simulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",
+        "CaseSubmitted" or "CaseResolved" or "ReturnCompleted" or "ReturnRejected" => "Wire case workflow",
         _ => "Unknown"
     };
+
+    private string CreateCaseRequest(WireTransfer wire, WireCase wireCase, Bank sender, Bank receiver)
+    {
+        var root = wireCase.RequestMessageType switch
+        {
+            "camt.056" => new XElement("FIToFIPmtCxlReq",
+                Assignment(wireCase, sender, receiver),
+                new XElement("Undrlyg",
+                    OriginalPayment(wire),
+                    new XElement("CxlRsnInf", new XElement("Rsn", new XElement("Prtry", "CUST")),
+                        new XElement("AddtlInf", wireCase.Reason)))),
+            "pacs.028" => new XElement("FIToFIPmtStsReq",
+                new XElement("GrpHdr", new XElement("MsgId", wireCase.Id.ToString("N")),
+                    new XElement("CreDtTm", wireCase.CreatedDate.UtcDateTime.ToString("O"))),
+                new XElement("TxInf", OriginalPayment(wire), new XElement("StsReqRsn", wireCase.Reason))),
+            _ => new XElement("ClmNonRct",
+                Assignment(wireCase, sender, receiver),
+                new XElement("Undrlyg", OriginalPayment(wire), new XElement("AddtlInf", wireCase.Reason)))
+        };
+        return iso.CreateMessage(wireCase.RequestMessageType, Endpoint(sender, wire.Rail),
+            Endpoint(receiver, wire.Rail), root, wireCase.Id.ToString("N"), BusinessService(wire.Rail));
+    }
+
+    private void ResolveInvestigation(BankingDbContext db, WireTransfer wire, WireCase wireCase,
+        Bank sender, Bank receiver)
+    {
+        wireCase.Status = WireCaseStatus.Resolved;
+        wireCase.ResponseMessageType = WireCasePolicy.ResponseMessageType(wireCase.Type, wire.Rail);
+        wireCase.Resolution = $"The simulated receiving institution confirmed the payment status is {wire.Status}; " +
+            $"network reference {wire.Imad ?? wire.Omad ?? "not assigned"}.";
+        wireCase.UpdatedDate = DateTimeOffset.UtcNow;
+        var response = wireCase.ResponseMessageType == "pacs.002"
+            ? iso.CreateFedNowPacs002(wire.CorrelationId, StatusCode(wire.Status), wireCase.Resolution,
+                wire.Imad ?? wire.CorrelationId.ToString("N"), receiver.RoutingNumber, sender.RoutingNumber)
+            : CreateCamt029(wire, wireCase, receiver, sender, true);
+        db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id,
+            MessageType = wireCase.ResponseMessageType, Direction = MessageDirection.Inbound,
+            XmlPayload = response });
+        db.WireEvents.Add(CaseEvent(wire.Id, "CaseResolved", wireCase.Resolution));
+    }
+
+    private async Task ResolveReturnRequestAsync(BankingDbContext db, WireTransfer wire,
+        WireCase wireCase, Bank sender, Bank receiver, CancellationToken token)
+    {
+        var incoming = await db.WireTransfers.SingleOrDefaultAsync(x =>
+            x.CorrelationId == wire.CorrelationId && x.Direction == WireDirection.Incoming
+            && x.BankId == wire.ReceiverBankId, token);
+        var origin = wire.FromAccountId is Guid fromId
+            ? await db.Accounts.SingleOrDefaultAsync(x => x.Id == fromId, token) : null;
+        var beneficiary = incoming?.ToAccountId is Guid toId
+            ? await db.Accounts.SingleOrDefaultAsync(x => x.Id == toId, token) : null;
+        var canReturn = WireReturnPosting.CanComplete(wire, incoming, origin, beneficiary, receiver);
+
+        wireCase.ResponseMessageType = "camt.029";
+        wireCase.UpdatedDate = DateTimeOffset.UtcNow;
+        if (!canReturn)
+        {
+            wireCase.Status = WireCaseStatus.Rejected;
+            wireCase.Resolution = "The simulated receiving institution rejected the request because the original payment or sufficient beneficiary funds were unavailable.";
+            db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "camt.029",
+                Direction = MessageDirection.Inbound,
+                XmlPayload = CreateCamt029(wire, wireCase, receiver, sender, false) });
+            db.WireEvents.Add(CaseEvent(wire.Id, "ReturnRejected", wireCase.Resolution));
+            return;
+        }
+
+        WireReturnPosting.Complete(wire, incoming!, origin!, beneficiary!, sender, receiver);
+        wireCase.Status = WireCaseStatus.ReturnCompleted;
+        wireCase.Resolution = "The receiving institution accepted the request and returned the full payment amount.";
+        var response = CreateCamt029(wire, wireCase, receiver, sender, true);
+        var paymentReturn = CreatePaymentReturn(wire, wireCase, receiver, sender);
+        db.IsoMessages.AddRange(
+            new IsoMessage { WireTransferId = wire.Id, MessageType = "camt.029",
+                Direction = MessageDirection.Inbound, XmlPayload = response },
+            new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.004",
+                Direction = MessageDirection.Inbound, XmlPayload = paymentReturn },
+            new IsoMessage { WireTransferId = incoming.Id, MessageType = "pacs.004",
+                Direction = MessageDirection.Outbound, XmlPayload = paymentReturn });
+        AddReturnJournals(db, wire, incoming, origin, beneficiary);
+        db.WireEvents.Add(CaseEvent(wire.Id, "ReturnCompleted",
+            $"{wire.Amount:C} was returned and re-credited to the originating customer account."));
+        db.WireEvents.Add(CaseEvent(incoming.Id, "ReturnCompleted",
+            $"{wire.Amount:C} was debited from the beneficiary account and returned to the sending bank."));
+    }
+
+    private string CreateCamt029(WireTransfer wire, WireCase wireCase, Bank from, Bank to,
+        bool accepted) => iso.CreateMessage("camt.029", Endpoint(from, wire.Rail), Endpoint(to, wire.Rail),
+        new XElement("RsltnOfInvstgtn",
+            Assignment(wireCase, from, to),
+            new XElement("Sts", new XElement("Conf", accepted ? "ACCP" : "RJCR")),
+            new XElement("CxlDtls", OriginalPayment(wire),
+                new XElement("RsltnRltdInf", wireCase.Resolution))),
+        Guid.NewGuid().ToString("N"), BusinessService(wire.Rail));
+
+    private string CreatePaymentReturn(WireTransfer wire, WireCase wireCase, Bank from, Bank to) =>
+        iso.CreateMessage("pacs.004", Endpoint(from, wire.Rail), Endpoint(to, wire.Rail),
+            new XElement("PmtRtr",
+                new XElement("GrpHdr", new XElement("MsgId", Guid.NewGuid().ToString("N")),
+                    new XElement("CreDtTm", DateTime.UtcNow.ToString("O")), new XElement("NbOfTxs", 1)),
+                new XElement("TxInf",
+                    new XElement("RtrId", wireCase.Id.ToString("N")), OriginalPayment(wire),
+                    new XElement("RtrdIntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
+                        wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    new XElement("RtrRsnInf", new XElement("Rsn", new XElement("Prtry", "CUST")),
+                        new XElement("AddtlInf", wireCase.Reason)))),
+            Guid.NewGuid().ToString("N"), BusinessService(wire.Rail));
+
+    private static XElement Assignment(WireCase wireCase, Bank from, Bank to) =>
+        new("Assgnmt", new XElement("Id", wireCase.Id.ToString("N")),
+            new XElement("Assgnr", from.Name), new XElement("Assgne", to.Name),
+            new XElement("CreDtTm", wireCase.CreatedDate.UtcDateTime.ToString("O")));
+
+    private static XElement OriginalPayment(WireTransfer wire) =>
+        new("OrgnlTxRef", new XElement("OrgnlInstrId", wire.CorrelationId.ToString("N")),
+            new XElement("OrgnlUETR", wire.CorrelationId.ToString().ToLowerInvariant()),
+            new XElement("OrgnlIntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
+                wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)));
+
+    private static string Endpoint(Bank bank, PaymentRail rail) =>
+        rail == PaymentRail.SwiftCbprPlus ? bank.Bic : bank.RoutingNumber;
+
+    private static string BusinessService(PaymentRail rail) => rail switch
+    {
+        PaymentRail.FedNow => FedNowProfile.BusinessService,
+        PaymentRail.SwiftCbprPlus => CbprPlusProfile.BusinessService,
+        _ => "fedwire-lab"
+    };
+
+    private static string StatusCode(WireStatus status) => status switch
+    {
+        WireStatus.Rejected => "RJCT",
+        WireStatus.PendingAtFed => "PDNG",
+        _ => "ACSC"
+    };
+
+    private static string CaseLabel(WireCaseType type) =>
+        type == WireCaseType.ReturnRequest ? "Return request" : "Investigation";
+
+    private static WireEvent CaseEvent(Guid wireId, string type, string description) =>
+        new() { WireTransferId = wireId, EventType = type, Description = description };
+
+    private static void AddReturnJournals(BankingDbContext db, WireTransfer outgoing,
+        WireTransfer incoming, Account origin, Account beneficiary)
+    {
+        var outgoingJournal = Guid.NewGuid();
+        var incomingJournal = Guid.NewGuid();
+        var outgoingSettlement = outgoing.Rail == PaymentRail.SwiftCbprPlus
+            ? $"CORRESPONDENT:{outgoing.SenderBankId:N}" : $"FEDMASTER:{outgoing.SenderBankId:N}";
+        var incomingSettlement = incoming.Rail == PaymentRail.SwiftCbprPlus
+            ? $"CORRESPONDENT:{incoming.ReceiverBankId:N}" : $"FEDMASTER:{incoming.ReceiverBankId:N}";
+        db.LedgerEntries.AddRange(
+            ReturnEntry(outgoingJournal, outgoing.Id, outgoingSettlement, "Settlement cash",
+                outgoing.Amount, 0, "Debit cash received for returned payment"),
+            ReturnEntry(outgoingJournal, outgoing.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits",
+                0, outgoing.Amount, "Credit originating customer for returned payment"),
+            ReturnEntry(incomingJournal, incoming.Id, $"CUSTOMER:{beneficiary.AccountNumber}", "Customer deposits",
+                incoming.Amount, 0, "Debit beneficiary for returned payment"),
+            ReturnEntry(incomingJournal, incoming.Id, incomingSettlement, "Settlement cash",
+                0, incoming.Amount, "Credit cash sent for returned payment"));
+    }
+
+    private static LedgerEntry ReturnEntry(Guid journal, Guid wireId, string code, string name,
+        decimal debit, decimal credit, string description) => new()
+    {
+        JournalId = journal, WireTransferId = wireId, AccountCode = code, AccountName = name,
+        Debit = debit, Credit = credit, Description = description
+    };
+
+    private sealed record OpenCaseOutcome(bool NotFound, string? Error, string? Notice)
+    {
+        public static OpenCaseOutcome Missing() => new(true, null, null);
+        public static OpenCaseOutcome Failed(string error) => new(false, error, null);
+        public static OpenCaseOutcome Succeeded(string notice) => new(false, null, notice);
+    }
 
     private static async Task<CreateWireViewModel> PopulateAsync(CreateWireViewModel model, Guid bankId,
         BankingDbContext db, CancellationToken token)

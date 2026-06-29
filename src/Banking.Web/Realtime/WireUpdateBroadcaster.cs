@@ -64,6 +64,9 @@ public sealed class WireUpdateBroadcaster(
         var deliveryVersion = await db.MessageDeliveries.Where(x => x.WireTransferId == wireId)
             .GroupBy(_ => 1).Select(x => new { Count = x.Count(), Latest = x.Max(y => y.UpdatedDate) })
             .SingleOrDefaultAsync(token);
-        return $"{wire.Status}|{wire.Imad}|{wire.Omad}|{eventVersion}|{messageVersion}|{deliveryVersion}";
+        var caseVersion = await db.WireCases.Where(x => x.WireTransferId == wireId)
+            .GroupBy(_ => 1).Select(x => new { Count = x.Count(), Latest = x.Max(y => y.UpdatedDate) })
+            .SingleOrDefaultAsync(token);
+        return $"{wire.Status}|{wire.Imad}|{wire.Omad}|{eventVersion}|{messageVersion}|{deliveryVersion}|{caseVersion}";
     }
 }

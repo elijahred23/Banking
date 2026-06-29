@@ -11,6 +11,25 @@
     </div>
 </div>
 
+<div class="modal fade" id="iso-message-preview" tabindex="-1" aria-labelledby="iso-message-preview-title" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content iso-preview-modal">
+            <div class="modal-header">
+                <div>
+                    <div class="eyebrow mb-1">ISO 20022 message preview</div>
+                    <h2 class="modal-title h5 mb-0" id="iso-message-preview-title">Message values</h2>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="iso-message-preview-body"></div>
+            <div class="modal-footer">
+                <span class="iso-preview-help me-auto"><span class="field-help-icon" aria-hidden="true">?</span> Hover or focus a help icon to learn what a field means.</span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <script src="~/lib/signalr/signalr.min.js"></script>
     <script src="~/js/wire-details.js" asp-append-version="true"></script>

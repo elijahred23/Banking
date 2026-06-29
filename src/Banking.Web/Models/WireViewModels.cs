@@ -51,6 +51,9 @@ public sealed record WireDetailsViewModel(
     IReadOnlyList<ProcessingStageViewModel> Stages,
     IReadOnlyList<IsoMessageViewModel> Messages,
     IReadOnlyList<LedgerEntry> LedgerEntries,
+    IReadOnlyList<WireCase> Cases,
+    bool CanRequestReturn,
+    bool CanInvestigate,
     string? FailureReason,
     TimeSpan ProcessingDuration);
 

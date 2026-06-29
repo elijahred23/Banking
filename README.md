@@ -38,6 +38,7 @@ Version-controlled table definitions and the location for future migration scrip
 ## Projects
 
 - `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, ISO history, and the cross-rail Operations dashboard.
+- Settled outgoing wires support return requests, while network-submitted outgoing wires support investigations. The wire detail workflow persists each case, generates rail-appropriate ISO 20022 requests and responses, and records accepted `pacs.004` returns with balanced customer and settlement journals.
 - `Banking.WireService`: funds/OFAC/sanctions simulation and `pacs.008` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.

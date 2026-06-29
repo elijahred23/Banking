@@ -59,6 +59,7 @@
 </header>
 <main class="container py-4 py-lg-5">
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
+    @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
     @RenderBody()
 </main>
 <footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, ACH, and check processing learning environment · All balances and messages are simulated.</footer>

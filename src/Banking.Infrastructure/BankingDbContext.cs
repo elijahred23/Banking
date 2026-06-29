@@ -11,6 +11,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<WireTransfer> WireTransfers => Set<WireTransfer>();
     public DbSet<IsoMessage> IsoMessages => Set<IsoMessage>();
     public DbSet<WireEvent> WireEvents => Set<WireEvent>();
+    public DbSet<WireCase> WireCases => Set<WireCase>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
     public DbSet<FedSettlement> FedSettlements => Set<FedSettlement>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
@@ -49,6 +50,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<MessageDelivery>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Scenario).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Rail).HasConversion<string>();
+        modelBuilder.Entity<WireCase>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<WireCase>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<WireCase>().HasIndex(x => new { x.WireTransferId, x.CreatedDate });
+        modelBuilder.Entity<WireCase>().HasOne(x => x.WireTransfer).WithMany(x => x.Cases)
+            .HasForeignKey(x => x.WireTransferId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<WireCase>().HasOne<Bank>().WithMany()
+            .HasForeignKey(x => x.RequestedByBankId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<LedgerEntry>().Property(x => x.Debit).HasPrecision(19, 4);
         modelBuilder.Entity<LedgerEntry>().Property(x => x.Credit).HasPrecision(19, 4);
         modelBuilder.Entity<LedgerEntry>().HasIndex(x => x.WireTransferId);

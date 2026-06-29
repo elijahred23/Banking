@@ -103,6 +103,51 @@
     </div>
 
     <div class="col-xl-5">
+        @if (Model.CanRequestReturn || Model.CanInvestigate || Model.Cases.Any())
+        {
+            <section class="surface section mb-4">
+                <div class="mb-3">
+                    <h2 class="h5 mb-1">Wire servicing</h2>
+                    <div class="section-help">Submit a non-value request against the original payment. Return recovery is not assumed until a response and payment return are received.</div>
+                </div>
+                @if (Model.CanRequestReturn || Model.CanInvestigate)
+                {
+                    <form asp-controller="Wires" asp-action="OpenCase" method="post" class="mb-4">
+                        <input type="hidden" name="id" value="@wire.Id" />
+                        <label for="case-reason-@wire.Id" class="form-label">Case reason</label>
+                        <textarea id="case-reason-@wire.Id" name="reason" class="form-control mb-2" rows="3" minlength="10" maxlength="500" required placeholder="Explain why the payment should be returned or investigated."></textarea>
+                        <div class="d-flex flex-wrap gap-2">
+                            @if (Model.CanRequestReturn)
+                            {
+                                <button class="btn btn-danger" name="type" value="ReturnRequest" onclick="return confirm('Submit this return request? In the standard simulation, available beneficiary funds will be returned immediately.')">Request return</button>
+                            }
+                            @if (Model.CanInvestigate)
+                            {
+                                <button class="btn btn-outline-primary" name="type" value="Investigation">Open investigation</button>
+                            }
+                        </div>
+                    </form>
+                }
+                @if (Model.Cases.Any())
+                {
+                    <div class="case-list">
+                        @foreach (var item in Model.Cases)
+                        {
+                            <article class="border rounded p-3 mb-2">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <strong>@(item.Type == WireCaseType.ReturnRequest ? "Return request" : "Investigation")</strong>
+                                    <span class="badge text-bg-light">@item.Status</span>
+                                </div>
+                                <small class="text-secondary">@item.Id.ToString()[..8] · @item.RequestMessageType@(item.ResponseMessageType is null ? "" : $" → {item.ResponseMessageType}") · @item.CreatedDate.ToLocalTime().ToString("g")</small>
+                                <div class="mt-2">@item.Reason</div>
+                                @if (item.Resolution is not null)
+                                { <div class="mt-2 text-secondary"><strong>Resolution:</strong> @item.Resolution</div> }
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        }
         <section class="surface section mb-4">
             <h2 class="h5">Identifiers</h2>
             <dl class="detail-grid">
@@ -151,6 +196,7 @@
                     <header class="iso-message-header">
                         <div><strong>@item.Message.MessageType</strong><div>@item.Message.Direction · @item.Message.CreatedDate.ToLocalTime().ToString("HH:mm:ss.fff")</div></div>
                         <div class="message-actions">
+                            <button type="button" class="btn btn-sm btn-primary preview-xml">Preview</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary copy-xml">Copy</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary download-xml">Download</button>
                         </div>

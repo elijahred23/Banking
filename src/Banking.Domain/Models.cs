@@ -3,10 +3,12 @@ using System.ComponentModel.DataAnnotations;
 namespace Banking.Domain;
 
 public enum WireDirection { Outgoing, Incoming }
-public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected }
+public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected, Returned }
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
 public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
+public enum WireCaseType { ReturnRequest, Investigation }
+public enum WireCaseStatus { Submitted, Resolved, ReturnCompleted, Rejected }
 public enum PaymentRail
 {
     Fedwire,
@@ -78,7 +80,24 @@ public sealed class WireTransfer
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
     public List<IsoMessage> IsoMessages { get; set; } = [];
     public List<WireEvent> Events { get; set; } = [];
+    public List<WireCase> Cases { get; set; } = [];
     public PaymentRoute? PaymentRoute { get; set; }
+}
+
+public sealed class WireCase
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WireTransferId { get; set; }
+    public WireTransfer WireTransfer { get; set; } = null!;
+    public Guid RequestedByBankId { get; set; }
+    public WireCaseType Type { get; set; }
+    public WireCaseStatus Status { get; set; } = WireCaseStatus.Submitted;
+    [MaxLength(500)] public required string Reason { get; set; }
+    [MaxLength(20)] public required string RequestMessageType { get; set; }
+    [MaxLength(20)] public string? ResponseMessageType { get; set; }
+    [MaxLength(500)] public string? Resolution { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class CorrespondentRelationship

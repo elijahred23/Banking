@@ -41,7 +41,7 @@ public sealed class OperationsController(
             wireStatuses.Count(x => x is WireStatus.Settled or WireStatus.Completed)
                 + achStatuses.Count(x => x is AchEntryStatus.Settled or AchEntryStatus.Posted)
                 + checkStatuses.Count(x => x == CheckDepositStatus.Settled),
-            wireStatuses.Count(x => x == WireStatus.Rejected)
+            wireStatuses.Count(x => x is WireStatus.Rejected or WireStatus.Returned)
                 + achStatuses.Count(x => x == AchEntryStatus.Returned)
                 + checkStatuses.Count(x => x is CheckDepositStatus.Returned or CheckDepositStatus.Rejected));
 
@@ -62,7 +62,7 @@ public sealed class OperationsController(
     {
         var wireItems = await db.WireTransfers.AsNoTracking()
             .Where(x => x.BankId == bankId && (x.Scenario == ProcessingScenario.MalformedIso
-                || x.Status == WireStatus.Rejected))
+                || x.Status == WireStatus.Rejected || x.Status == WireStatus.Returned))
             .OrderByDescending(x => x.CreatedDate).Take(10)
             .Select(x => new { x.CorrelationId, x.Scenario, x.Status, x.CreatedDate }).ToListAsync(token);
         var achItems = await db.AchEntries.AsNoTracking()
@@ -80,7 +80,8 @@ public sealed class OperationsController(
 
         var items = new List<OperationsExceptionViewModel>();
         items.AddRange(wireItems.Select(x => new OperationsExceptionViewModel("ISO 20022",
-            x.Scenario == ProcessingScenario.MalformedIso ? "Malformed ISO" : "Payment rejected",
+            x.Scenario == ProcessingScenario.MalformedIso ? "Malformed ISO"
+                : x.Status == WireStatus.Returned ? "Payment returned" : "Payment rejected",
             x.CorrelationId.ToString("N")[..8], $"{x.Scenario} · {x.Status}", x.CreatedDate)));
         items.AddRange(achItems.Select(x => new OperationsExceptionViewModel("ACH / NACHA",
             x.Scenario == AchProcessingScenario.InsufficientFunds ? "Insufficient funds" : "NACHA exception",

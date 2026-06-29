@@ -1,0 +1,6 @@
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+:r database/tables/013_WireCases.sql
+
+COMMIT TRANSACTION;

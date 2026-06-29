@@ -394,6 +394,23 @@ public static class ServiceRegistration
                 CREATE UNIQUE INDEX IX_PaymentRouteSteps_PaymentRouteId_StepNumber ON dbo.PaymentRouteSteps(PaymentRouteId, StepNumber);
                 CREATE INDEX IX_PaymentRouteSteps_MessageId ON dbo.PaymentRouteSteps(MessageId) WHERE MessageId IS NOT NULL;
             END;
+            IF OBJECT_ID(N'dbo.WireCases', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.WireCases (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_WireCases PRIMARY KEY,
+                    WireTransferId uniqueidentifier NOT NULL,
+                    RequestedByBankId uniqueidentifier NOT NULL,
+                    Type nvarchar(max) NOT NULL, Status nvarchar(max) NOT NULL,
+                    Reason nvarchar(500) NOT NULL, RequestMessageType nvarchar(20) NOT NULL,
+                    ResponseMessageType nvarchar(20) NULL, Resolution nvarchar(500) NULL,
+                    CreatedDate datetimeoffset NOT NULL, UpdatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_WireCases_WireTransfers_WireTransferId FOREIGN KEY (WireTransferId)
+                        REFERENCES dbo.WireTransfers(Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_WireCases_Banks_RequestedByBankId FOREIGN KEY (RequestedByBankId)
+                        REFERENCES dbo.Banks(Id));
+                CREATE INDEX IX_WireCases_WireTransferId_CreatedDate
+                    ON dbo.WireCases(WireTransferId, CreatedDate);
+            END;
             """, token);
 
     private static async Task EnsureInternationalBanksAsync(BankingDbContext db,
