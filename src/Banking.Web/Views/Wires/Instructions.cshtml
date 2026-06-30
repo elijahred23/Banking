@@ -7,8 +7,8 @@
 <div class="instructions-hero mb-4">
     <div>
         <div class="eyebrow">PAYMENT GUIDE</div>
-        <h1 class="mb-2">How to create wires and servicing cases</h1>
-        <p class="text-secondary mb-0">Follow these steps using the current data for <strong>@Model.Bank.Name</strong>. Accounts, institutions, and routing details shown below are read from the lab database.</p>
+        <h1 class="mb-2">How to create wires and ISO 20022 messages</h1>
+        <p class="text-secondary mb-0">Follow these end-to-end steps using the current data for <strong>@Model.Bank.Name</strong>. Accounts, institutions, routing details, servicing cases, and supporting messages are connected to live lab records.</p>
     </div>
     <a class="btn btn-primary" asp-action="Create">Create a payment</a>
 </div>
@@ -19,6 +19,7 @@
     <a href="#fednow">FedNow</a>
     <a href="#swift">SWIFT CBPR+</a>
     <a href="#pacs009">pacs.009</a>
+    <a href="#iso-messages">ISO messages</a>
     <a href="#return-request">Return request</a>
     <a href="#investigation">Investigation</a>
 </nav>
@@ -104,6 +105,43 @@
         </ol>
     </section>
 
+    <section id="iso-messages" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("ISO 20022 message workbench", "Create all supported wire messages end to end", "An existing wire is required", true)' />
+        <ol class="instruction-steps">
+            <li><div><strong>Create the original wire.</strong><span>Use Customer credit transfer for pacs.008 or Financial institution credit transfer for pacs.009, then submit it over the required rail.</span></div></li>
+            <li><div><strong>Open the wire detail page.</strong><span>The original payment supplies the UETR, amount, parties, accounts, institutions, rail endpoints, and business service used by supporting messages.</span></div></li>
+            <li><div><strong>Find ISO 20022 messages.</strong><span>In the message workbench, select one of the supported message types below and optionally enter a scenario narrative of up to 500 characters.</span></div></li>
+            <li><div><strong>Select Generate.</strong><span>The lab builds a rail-aware business application header and structured payload, applies the correct inbound or outbound direction, validates the result, and saves it against the wire.</span></div></li>
+            <li><div><strong>Verify the end-to-end result.</strong><span>Confirm the MessageGenerated lifecycle event, validation result, direction, original UETR correlation, formatted XML preview, copy action, and download action on the same page.</span></div></li>
+        </ol>
+
+        <h3 class="h5 mt-4 mb-1">Message-specific creation paths</h3>
+        <p class="section-help">Native paths exercise payment or servicing behavior. Workbench paths let you generate the same message directly for learning and inspection.</p>
+        <div class="table-responsive mt-3">
+            <table class="table diagnostics-table instruction-message-table mb-0">
+                <thead><tr><th>Message</th><th>Direction</th><th>How to create it</th><th>End-to-end result</th></tr></thead>
+                <tbody>
+                    <tr><td><code>pacs.008</code></td><td>Outbound</td><td>Create a Customer credit transfer, or select it in the workbench.</td><td>Validates the customer payment, transmits it, settles it, and creates the receiving wire and postings.</td></tr>
+                    <tr><td><code>pacs.009</code></td><td>Outbound</td><td>Create a Financial institution credit transfer, or select it in the workbench.</td><td>Moves bank liquidity through Fedwire or FedNow and records institution settlement journals.</td></tr>
+                    <tr><td><code>pacs.004</code></td><td>Inbound</td><td>Request return on a settled outgoing wire, or select it in the workbench.</td><td>Records the returned payment; the native path reverses balances and marks both wires Returned.</td></tr>
+                    <tr><td><code>pain.013</code></td><td>Outbound</td><td>Select Drawdown request in the workbench.</td><td>Creates a creditor payment activation request correlated to the original wire.</td></tr>
+                    <tr><td><code>pain.014</code></td><td>Inbound</td><td>Select Drawdown response in the workbench.</td><td>Creates and persists the response to the related pain.013 request.</td></tr>
+                    <tr><td><code>camt.110</code></td><td>Outbound</td><td>Open an investigation on a Fedwire payment, or select it in the workbench.</td><td>Sends the Fedwire investigation with original payment data and records its resolution.</td></tr>
+                    <tr><td><code>pacs.028</code></td><td>Outbound</td><td>Open an investigation on a FedNow payment, or select it in the workbench.</td><td>Requests the current payment status and links the resulting status response.</td></tr>
+                    <tr><td><code>camt.056</code></td><td>Outbound</td><td>Request return on a settled wire, or select it in the workbench.</td><td>Creates the cancellation request and proceeds through decision and return handling.</td></tr>
+                    <tr><td><code>camt.029</code></td><td>Inbound</td><td>Complete a return or investigation case, or select it in the workbench.</td><td>Persists the investigation or cancellation resolution against the wire.</td></tr>
+                    <tr><td><code>admi.007</code></td><td>Inbound</td><td>Select Receipt acknowledgement in the workbench.</td><td>Acknowledges receipt using the original wire correlation.</td></tr>
+                    <tr><td><code>pacs.002</code></td><td>Inbound</td><td>Process a payment or FedNow investigation, or select it in the workbench.</td><td>Records a validated payment status containing the original message definition and UETR.</td></tr>
+                    <tr><td><code>admi.002</code></td><td>Inbound</td><td>Select Message rejection in the workbench.</td><td>Persists a technical or business rejection linked to the original message.</td></tr>
+                    <tr><td><code>camt.052</code></td><td>Inbound</td><td>Select Account report in the workbench.</td><td>Returns an account balance/activity report correlated to the wire context.</td></tr>
+                    <tr><td><code>camt.060</code></td><td>Outbound</td><td>Select Account reporting request in the workbench.</td><td>Requests a camt.052 report for the wire's beneficiary account context.</td></tr>
+                    <tr><td><code>admi.004</code></td><td>Outbound</td><td>Select System event notification in the workbench.</td><td>Creates a system event or connection-check message for the rail endpoint.</td></tr>
+                    <tr><td><code>admi.011</code></td><td>Inbound</td><td>Select System event acknowledgement in the workbench.</td><td>Records the correlated response to the system event.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     <section id="return-request" class="surface instruction-card">
         <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Return request", "Request recovery of a completed payment", "Settled outgoing wires only", true)' />
         <ol class="instruction-steps">
@@ -121,7 +159,7 @@
             <li><div><strong>Open an outgoing wire that reached the network.</strong><span>An investigation is available after submission for wires in SentToFed, PendingAtFed, Settled, Rejected, or Returned status.</span></div></li>
             <li><div><strong>Find Wire servicing on the detail page.</strong><span>The Open investigation button appears when the payment is eligible and no other investigation is currently open.</span></div></li>
             <li><div><strong>Enter a case reason.</strong><span>Provide between 10 and 500 characters describing the status, delivery, or processing issue to investigate.</span></div></li>
-            <li><div><strong>Select Open investigation.</strong><span>FedNow uses a pacs.028 status request; Fedwire and SWIFT CBPR+ use camt.027.</span></div></li>
+            <li><div><strong>Select Open investigation.</strong><span>FedNow uses a pacs.028 status request, Fedwire uses camt.110, and SWIFT CBPR+ uses camt.027.</span></div></li>
             <li><div><strong>Inspect the resolution.</strong><span>The lab records the response as pacs.002 for FedNow or camt.029 for Fedwire and SWIFT CBPR+, then shows the resolution in the servicing case and message history.</span></div></li>
         </ol>
     </section>

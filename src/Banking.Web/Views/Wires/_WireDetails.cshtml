@@ -193,6 +193,32 @@
         @if (Model.Messages.Count > 1)
         { <span class="compare-hint">Side-by-side comparison</span> }
     </div>
+    <form asp-controller="Wires" asp-action="GenerateIsoMessage" method="post" class="border rounded p-3 mb-4">
+        <input type="hidden" name="id" value="@wire.Id" />
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label for="iso-message-type-@wire.Id" class="form-label">Message type</label>
+                <select id="iso-message-type-@wire.Id" name="messageType" class="form-select" required>
+                    @foreach (var definition in Model.SupportedMessages)
+                    {
+                        if ((definition.MessageType != "pacs.008" || wire.TransferType == WireTransferType.CustomerCreditTransfer)
+                            && (definition.MessageType != "pacs.009" || wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer))
+                        {
+                            <option value="@definition.MessageType">@definition.MessageType · @definition.Purpose</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="iso-message-details-@wire.Id" class="form-label">Scenario details</label>
+                <input id="iso-message-details-@wire.Id" name="details" class="form-control" maxlength="500" placeholder="Optional narrative carried in the message" />
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-outline-primary" type="submit">Generate</button>
+            </div>
+        </div>
+        <div class="form-text">Creates a wire-correlated message with the rail's business header, validates it, and persists it to this timeline.</div>
+    </form>
     @if (Model.Messages.Any())
     {
         <div class="message-grid @(Model.Messages.Count > 1 ? "message-grid-compare" : "")">

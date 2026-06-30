@@ -51,7 +51,8 @@ public static partial class IsoMessageCatalog
             new("camt.057", "camt.057.001.06", "Notification to receive"),
             new("camt.058", "camt.058.001.07", "Notification to receive cancellation"),
             new("camt.060", "camt.060.001.05", "Account reporting request"),
-            new("camt.087", "camt.087.001.07", "Account reporting response")
+            new("camt.087", "camt.087.001.07", "Account reporting response"),
+            new("camt.110", "camt.110.001.01", "Investigation request")
         }.ToDictionary(x => x.MessageType, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyCollection<IsoMessageDefinition> All { get; } = Definitions.Values.ToArray();

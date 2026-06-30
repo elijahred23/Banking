@@ -18,6 +18,7 @@ public static class ServiceRegistration
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
         services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
+        services.AddSingleton<IWireIsoMessageService, WireIsoMessageService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
         services.AddSingleton<IPaymentRouteResolver, PaymentRouteResolver>();

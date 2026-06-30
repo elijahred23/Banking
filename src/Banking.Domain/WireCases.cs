@@ -14,6 +14,7 @@ public static class WireCasePolicy
     {
         WireCaseType.ReturnRequest => "camt.056",
         WireCaseType.Investigation when rail == PaymentRail.FedNow => "pacs.028",
+        WireCaseType.Investigation when rail == PaymentRail.Fedwire => "camt.110",
         WireCaseType.Investigation => "camt.027",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };

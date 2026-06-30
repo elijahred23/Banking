@@ -58,7 +58,8 @@ public sealed record WireDetailsViewModel(
     bool CanRequestReturn,
     bool CanInvestigate,
     string? FailureReason,
-    TimeSpan ProcessingDuration);
+    TimeSpan ProcessingDuration,
+    IReadOnlyList<WireIsoMessageDefinition> SupportedMessages);
 
 public sealed record ProcessingStageViewModel(
     WireEvent Event,

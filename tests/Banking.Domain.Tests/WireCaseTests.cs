@@ -35,7 +35,7 @@ public sealed class WireCaseTests
     [InlineData(WireCaseType.ReturnRequest, PaymentRail.Fedwire, "camt.056", "camt.029")]
     [InlineData(WireCaseType.ReturnRequest, PaymentRail.FedNow, "camt.056", "camt.029")]
     [InlineData(WireCaseType.Investigation, PaymentRail.FedNow, "pacs.028", "pacs.002")]
-    [InlineData(WireCaseType.Investigation, PaymentRail.Fedwire, "camt.027", "camt.029")]
+    [InlineData(WireCaseType.Investigation, PaymentRail.Fedwire, "camt.110", "camt.029")]
     [InlineData(WireCaseType.Investigation, PaymentRail.SwiftCbprPlus, "camt.027", "camt.029")]
     public void Case_types_map_to_rail_specific_iso_messages(WireCaseType type, PaymentRail rail,
         string request, string response)

@@ -13,7 +13,8 @@ namespace Banking.Web.Controllers;
 
 [Authorize]
 public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus,
-    IIsoMessageService iso, ICbprPlusMessageService cbpr) : Controller
+    IIsoMessageService iso, ICbprPlusMessageService cbpr,
+    IWireIsoMessageService wireMessages) : Controller
 {
     public async Task<IActionResult> Index(WireDirection? direction, CancellationToken token)
     {
@@ -264,6 +265,50 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> GenerateIsoMessage(Guid id, string messageType, string? details,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var wire = await db.WireTransfers.SingleOrDefaultAsync(
+            x => x.Id == id && x.BankId == bankId, token);
+        if (wire is null) return NotFound();
+        if (details?.Length > 500)
+        {
+            TempData["Error"] = "Message details cannot exceed 500 characters.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var banks = await db.Banks.Where(x => x.Id == wire.SenderBankId || x.Id == wire.ReceiverBankId)
+            .ToDictionaryAsync(x => x.Id, token);
+        var debtorAccount = wire.FromAccountId is Guid accountId
+            ? await db.Accounts.Where(x => x.Id == accountId).Select(x => x.AccountNumber)
+                .SingleOrDefaultAsync(token)
+            : null;
+        try
+        {
+            var created = wireMessages.Create(messageType, wire, banks[wire.SenderBankId],
+                banks[wire.ReceiverBankId], debtorAccount, details);
+            db.IsoMessages.Add(new IsoMessage
+            {
+                WireTransferId = wire.Id,
+                MessageType = created.MessageType,
+                Direction = created.Direction,
+                XmlPayload = created.XmlPayload
+            });
+            db.WireEvents.Add(CaseEvent(wire.Id, "MessageGenerated",
+                $"{created.MessageType} {created.Direction.ToString().ToLowerInvariant()} message generated, validated, and persisted."));
+            await db.SaveChangesAsync(token);
+            TempData["Notice"] = $"{created.MessageType} generated and added to this wire.";
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
     private async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
         BankingDbContext db, CancellationToken token)
     {
@@ -298,7 +343,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return new WireDetailsViewModel(wire, route, deliveries, stages, messages, ledgerEntries,
             wire.Cases.OrderByDescending(x => x.CreatedDate).ToList(),
             WireCasePolicy.CanRequestReturn(wire), WireCasePolicy.CanInvestigate(wire), failure,
-            lastActivity - wire.CreatedDate);
+            lastActivity - wire.CreatedDate, wireMessages.SupportedMessages);
     }
 
     private IsoMessageViewModel BuildMessage(IsoMessage message, PaymentRail rail)
@@ -333,12 +378,16 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         "PendingAtFed" or "AcceptedByFed" or "RejectedByFed" => "Payment-network simulator → MessageManager",
         "SentToFed" or "Settled" or "Delivered" or "ReceivedFromFed" or "Posted" or "HoldReleased" or "Completed"
             => "Banking.MessageManager",
-        "CaseSubmitted" or "CaseResolved" or "ReturnCompleted" or "ReturnRejected" => "Wire case workflow",
+        "CaseSubmitted" or "CaseResolved" or "ReturnCompleted" or "ReturnRejected"
+            or "MessageGenerated" => "Wire case workflow",
         _ => "Unknown"
     };
 
     private string CreateCaseRequest(WireTransfer wire, WireCase wireCase, Bank sender, Bank receiver)
     {
+        if (wireCase.RequestMessageType == "camt.110")
+            return wireMessages.Create("camt.110", wire, sender, receiver, null,
+                wireCase.Reason).XmlPayload;
         var root = wireCase.RequestMessageType switch
         {
             "camt.056" => new XElement("FIToFIPmtCxlReq",

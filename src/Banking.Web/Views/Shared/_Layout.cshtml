@@ -2,6 +2,8 @@
 @{
     var banks = new List<Bank>();
     Guid activeBankId = default;
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
+    var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
     if (User.Identity?.IsAuthenticated == true)
     {
         await using var layoutDb = await DbFactory.CreateDbContextAsync();
@@ -19,31 +21,32 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <header class="topbar">
-    <nav class="navbar navbar-expand-lg navbar-dark container py-3">
+    <nav class="navbar navbar-expand-xl navbar-dark container py-3" aria-label="Primary navigation">
         <a class="navbar-brand fw-semibold" asp-controller="Home" asp-action="Index"><span class="brand-mark">B</span> Bank Payments Lab</a>
         @if (User.Identity?.IsAuthenticated == true)
         {
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
             <div id="nav" class="collapse navbar-collapse">
-                <ul class="navbar-nav ms-4 me-auto">
-                    <li class="nav-item"><a class="nav-link" asp-controller="Home" asp-action="Index">Overview</a></li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Operations" asp-action="Index">Operations</a></li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index">All wires</a></li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
+                <ul class="navbar-nav ms-xl-4 me-auto">
+                    <li class="nav-item"><a class="nav-link @(currentController == "Home" ? "active" : "")" asp-controller="Home" asp-action="Index">Overview</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Operations" ? "active" : "")" asp-controller="Operations" asp-action="Index">Operations</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && currentAction == "Index" && !Context.Request.Query.ContainsKey("direction") ? "active" : "")" asp-controller="Wires" asp-action="Index">All wires</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Outgoing" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Incoming" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
+                        <a class="nav-link dropdown-toggle @(currentAction == "Instructions" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" asp-controller="Wires" asp-action="Instructions">Wires</a></li>
                             <li><a class="dropdown-item" asp-controller="Ach" asp-action="Instructions">ACH</a></li>
                             <li><a class="dropdown-item" asp-controller="Check" asp-action="Instructions">Checks</a></li>
                         </ul>
                     </li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Ach" asp-action="Index">ACH</a></li>
-                    <li class="nav-item"><a class="nav-link" asp-controller="Check" asp-action="Index">Checks</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Ach" && currentAction != "Instructions" ? "active" : "")" asp-controller="Ach" asp-action="Index">ACH</a></li>
+                    <li class="nav-item"><a class="nav-link @(currentController == "Check" && currentAction != "Instructions" ? "active" : "")" asp-controller="Check" asp-action="Index">Checks</a></li>
                 </ul>
-                <form asp-controller="BankContext" asp-action="Switch" method="post" class="d-flex bank-switcher me-3">
+                <form asp-controller="BankContext" asp-action="Switch" method="post" class="d-flex bank-switcher me-xl-3">
                     <input type="hidden" name="returnUrl" value="@Context.Request.Path@Context.Request.QueryString" />
                     <select name="bankId" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Current bank">
                         @foreach (var bank in banks)
@@ -57,12 +60,12 @@
         }
     </nav>
 </header>
-<main class="container py-4 py-lg-5">
+<main id="main-content" class="container app-main py-4 py-lg-5" tabindex="-1">
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success">@notice</div> }
     @if (TempData["Error"] is string error) { <div class="alert alert-danger">@error</div> }
     @RenderBody()
 </main>
-<footer class="container py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, ACH, and check processing learning environment · All balances and messages are simulated.</footer>
+<footer class="container app-footer py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, ACH, and check processing learning environment · All balances and messages are simulated.</footer>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

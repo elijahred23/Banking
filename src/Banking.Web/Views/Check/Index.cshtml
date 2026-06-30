@@ -1,13 +1,13 @@
 @model CheckIndexViewModel
 @{ ViewData["Title"] = "Check processing"; }
 
-<div class="d-flex justify-content-between align-items-start mb-4">
+<div class="page-heading align-items-start mb-4">
     <div><h1>Check processing</h1><p class="text-secondary mb-0">Active bank: <strong>@Model.Bank.Name</strong></p></div>
-    <div class="d-flex gap-2"><a class="btn btn-outline-secondary" asp-action="Instructions">How to create</a><a class="btn btn-outline-primary" asp-action="Generator">TIFF generator</a><a class="btn btn-primary" asp-action="Create">Capture check deposit</a></div>
+    <div class="page-actions"><a class="btn btn-outline-secondary" asp-action="Instructions">How to create</a><a class="btn btn-outline-primary" asp-action="Generator">TIFF generator</a><a class="btn btn-primary" asp-action="Create">Capture check deposit</a></div>
 </div>
 
-<div class="table-responsive">
-<table class="table align-middle">
+<div class="surface table-responsive">
+<table class="table align-middle mb-0">
     <thead><tr><th>Created</th><th>Depositor</th><th>MICR routing / account</th><th>Check #</th><th>Amount</th><th>Status</th><th>Images</th><th></th></tr></thead>
     <tbody>
     @foreach (var item in Model.Deposits)

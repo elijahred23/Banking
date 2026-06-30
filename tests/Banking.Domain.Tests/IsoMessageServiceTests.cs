@@ -96,7 +96,7 @@ public sealed class IsoMessageServiceTests
             "pacs.010", "pacs.028", "pain.001", "pain.002", "pain.007", "pain.008",
             "pain.013", "pain.014", "camt.026", "camt.027", "camt.028", "camt.029",
             "camt.052", "camt.053", "camt.054", "camt.055", "camt.056", "camt.057",
-            "camt.058", "camt.060", "camt.087"
+            "camt.058", "camt.060", "camt.087", "camt.110"
         ];
 
         Assert.Equal(expected.Order(), IsoMessageCatalog.All.Select(x => x.MessageType).Order());
@@ -116,6 +116,35 @@ public sealed class IsoMessageServiceTests
                 $"{definition.MessageType}: {string.Join(Environment.NewLine, result.Errors)}");
             Assert.Equal(definition.MessageType, result.MessageType);
             Assert.Contains(definition.DefaultMessageDefinitionId, xml);
+        }
+    }
+
+    [Fact]
+    public void Wire_workflow_generates_and_validates_every_required_message_type()
+    {
+        string[] expected =
+        [
+            "pacs.008", "pacs.009", "pacs.004", "pain.013", "pain.014", "camt.110",
+            "pacs.028", "camt.056", "camt.029", "admi.007", "pacs.002", "admi.002",
+            "camt.052", "camt.060", "admi.004", "admi.011"
+        ];
+        var workflow = new WireIsoMessageService(_service);
+
+        Assert.Equal(expected, workflow.SupportedMessages.Select(x => x.MessageType));
+        foreach (var definition in workflow.SupportedMessages)
+        {
+            var wire = Wire();
+            if (definition.MessageType == "pacs.009")
+                wire.TransferType = WireTransferType.FinancialInstitutionCreditTransfer;
+            var created = workflow.Create(definition.MessageType, wire, Bank("101000019"),
+                Bank("103000648"), "123456", "end-to-end workflow test");
+
+            var validation = _service.Validate(created.XmlPayload);
+            Assert.True(validation.IsValid,
+                $"{definition.MessageType}: {string.Join(Environment.NewLine, validation.Errors)}");
+            Assert.Equal(definition.MessageType, validation.MessageType);
+            Assert.Contains(wire.CorrelationId.ToString(), created.XmlPayload,
+                StringComparison.OrdinalIgnoreCase);
         }
     }
 
