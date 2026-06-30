@@ -149,6 +149,44 @@ public sealed class IsoMessageServiceTests
     }
 
     [Fact]
+    public void Request_for_payment_uses_delivery_acknowledgement_or_pain014_rejection()
+    {
+        var workflow = new NonValueMessageWorkflowService(_service);
+        var sender = Bank("101000019");
+        var receiver = Bank("103000648");
+
+        var delivered = workflow.CreateRequestForPayment(Guid.NewGuid(), sender, receiver,
+            "Creditor", "123456", "Debtor", "654321", 125.50m, "Invoice 1048",
+            PaymentRail.Fedwire, false);
+        var rejected = workflow.CreateRequestForPayment(Guid.NewGuid(), sender, receiver,
+            "Creditor", "123456", "Debtor", "654321", 125.50m, "Invoice 1048",
+            PaymentRail.Fedwire, true);
+
+        Assert.Equal(["pain.013", "admi.007"], delivered.Select(x => x.MessageType));
+        Assert.Equal(["pain.013", "pain.014"], rejected.Select(x => x.MessageType));
+        Assert.All(delivered.Concat(rejected), message =>
+            Assert.True(_service.Validate(message.XmlPayload).IsValid, message.MessageType));
+    }
+
+    [Fact]
+    public void Reporting_and_system_event_workflows_create_correlated_responses()
+    {
+        var workflow = new NonValueMessageWorkflowService(_service);
+        var sender = Bank("101000019");
+        var receiver = Bank("103000648");
+
+        var report = workflow.CreateAccountReport(Guid.NewGuid(), sender, "Account balance",
+            DateOnly.FromDateTime(DateTime.Today), 1_000_000m, PaymentRail.FedNow);
+        var broadcast = workflow.CreateSystemEvent(Guid.NewGuid(), sender, receiver,
+            "PARTICIPANT_NOTICE", "Scheduled participant maintenance window.");
+
+        Assert.Equal(["camt.060", "camt.052"], report.Select(x => x.MessageType));
+        Assert.Equal(["admi.004", "admi.011"], broadcast.Select(x => x.MessageType));
+        Assert.All(report.Concat(broadcast), message =>
+            Assert.True(_service.Validate(message.XmlPayload).IsValid, message.MessageType));
+    }
+
+    [Fact]
     public void Versioned_supported_message_identifier_is_preserved()
     {
         var xml = _service.CreateMessage("pacs.008.001.14", "SENDER", "RECEIVER",

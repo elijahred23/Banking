@@ -17,6 +17,7 @@ SET QUOTED_IDENTIFIER ON;
 :r database/tables/011_PaymentRoutes.sql
 :r database/tables/012_PaymentRouteSteps.sql
 :r database/tables/013_WireCases.sql
+:r database/tables/014_MessageExchanges.sql
 :r database/tables/020_AchFiles.sql
 :r database/tables/021_AchBatches.sql
 :r database/tables/022_AchEntries.sql

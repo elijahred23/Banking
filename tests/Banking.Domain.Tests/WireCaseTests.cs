@@ -59,6 +59,20 @@ public sealed class WireCaseTests
     }
 
     [Fact]
+    public void SqlServer_model_supports_iso_messages_owned_by_nonvalue_exchanges()
+    {
+        var options = new DbContextOptionsBuilder<BankingDbContext>()
+            .UseSqlServer("Server=localhost;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        using var db = new BankingDbContext(options);
+        var script = db.Database.GenerateCreateScript();
+
+        Assert.Contains("CREATE TABLE [MessageExchanges]", script);
+        Assert.Contains("[MessageExchangeId] uniqueidentifier NULL", script);
+        Assert.Contains("[WireTransferId] uniqueidentifier NULL", script);
+    }
+
+    [Fact]
     public void Completing_domestic_return_reverses_customer_and_master_account_balances()
     {
         var outgoing = Wire(WireStatus.Settled, WireDirection.Outgoing);

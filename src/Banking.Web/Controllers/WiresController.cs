@@ -14,7 +14,7 @@ namespace Banking.Web.Controllers;
 [Authorize]
 public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus,
     IIsoMessageService iso, ICbprPlusMessageService cbpr,
-    IWireIsoMessageService wireMessages) : Controller
+    IWireIsoMessageService wireMessages, INonValueMessageWorkflowService nonValueMessages) : Controller
 {
     public async Task<IActionResult> Index(WireDirection? direction, CancellationToken token)
     {
@@ -74,6 +74,122 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 x.RoutingNumber, x.Bic, x.CountryCode)).ToList();
 
         return View(new WireInstructionsViewModel(bank, sourceAccounts, domestic, fedNow, international));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MessageWorkflows(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        return View(await LoadMessageWorkflowsAsync(bankId, db, token));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateRequestForPayment(RequestForPaymentViewModel model,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var account = await db.Accounts.Include(x => x.Customer).ThenInclude(x => x.Bank)
+            .SingleOrDefaultAsync(x => x.Id == model.CreditorAccountId
+                && x.Customer.BankId == bankId, token);
+        var debtorBank = await db.Banks.SingleOrDefaultAsync(x => x.Id == model.DebtorBankId
+            && x.Id != bankId, token);
+        if (account is null) ModelState.AddModelError(nameof(model.CreditorAccountId),
+            "Select an account owned by the active bank.");
+        if (debtorBank is null) ModelState.AddModelError(nameof(model.DebtorBankId),
+            "Select a different debtor bank.");
+        if (model.Rail is not (PaymentRail.Fedwire or PaymentRail.FedNow))
+            ModelState.AddModelError(nameof(model.Rail), "Select Fedwire or FedNow.");
+        if (model.Rail == PaymentRail.FedNow && debtorBank is not null && account is not null
+            && (!account.Customer.Bank.FedNowRequestForPaymentEnabled
+                || !debtorBank.FedNowReceiveEnabled || !debtorBank.FedNowOnline))
+            ModelState.AddModelError(nameof(model.DebtorBankId),
+                "Both institutions must be enabled and online for this FedNow request.");
+        if (!ModelState.IsValid)
+        {
+            TempData["Error"] = string.Join(" ", ModelState.Values.SelectMany(x => x.Errors)
+                .Select(x => x.ErrorMessage));
+            return RedirectToAction(nameof(MessageWorkflows));
+        }
+
+        var exchange = new MessageExchange
+        {
+            BankId = bankId, CounterpartyBankId = debtorBank!.Id,
+            Type = MessageExchangeType.RequestForPayment,
+            Status = model.SimulateBusinessRejection
+                ? MessageExchangeStatus.Rejected : MessageExchangeStatus.Responded,
+            Rail = model.Rail, Subject = $"Request {model.Amount:C} from {model.DebtorName}",
+            Details = model.Remittance.Trim(), AccountNumber = account!.AccountNumber,
+            Amount = model.Amount
+        };
+        AddExchangeMessages(exchange, nonValueMessages.CreateRequestForPayment(exchange.Id,
+            account.Customer.Bank, debtorBank, account.Customer.Name, account.AccountNumber,
+            model.DebtorName.Trim(), model.DebtorAccount.Trim(), model.Amount,
+            model.Remittance.Trim(), model.Rail, model.SimulateBusinessRejection));
+        db.MessageExchanges.Add(exchange);
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = model.SimulateBusinessRejection
+            ? "Drawdown request created; the simulated receiver returned pain.014 rejection."
+            : "Drawdown request delivered and acknowledged; no payment is created until the debtor sends one.";
+        return RedirectToAction(nameof(MessageWorkflows));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateAccountReport(AccountReportRequestViewModel model,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var bank = await db.Banks.SingleAsync(x => x.Id == bankId, token);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (model.BusinessDate != today || model.Rail is not (PaymentRail.Fedwire or PaymentRail.FedNow)
+            || model.ReportType is not ("Account balance" or "Activity totals" or "Activity details"))
+        {
+            TempData["Error"] = "Select a supported report and today's business date.";
+            return RedirectToAction(nameof(MessageWorkflows));
+        }
+        var exchange = new MessageExchange
+        {
+            BankId = bankId, Type = MessageExchangeType.AccountReport,
+            Status = MessageExchangeStatus.Responded, Rail = model.Rail,
+            Subject = model.ReportType, Details = $"{model.ReportType} for {model.BusinessDate:yyyy-MM-dd}",
+            AccountNumber = bank.FedParticipantId
+        };
+        AddExchangeMessages(exchange, nonValueMessages.CreateAccountReport(exchange.Id, bank,
+            model.ReportType, model.BusinessDate, bank.MasterAccountBalance, model.Rail));
+        db.MessageExchanges.Add(exchange);
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = "Account report requested with camt.060 and returned with camt.052.";
+        return RedirectToAction(nameof(MessageWorkflows));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateSystemEvent(SystemEventViewModel model,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var sender = await db.Banks.SingleAsync(x => x.Id == bankId, token);
+        var recipient = await db.Banks.SingleOrDefaultAsync(x => x.Id == model.RecipientBankId
+            && x.Id != bankId && x.FedNowEnabled, token);
+        if (!ModelState.IsValid || recipient is null)
+        {
+            TempData["Error"] = "Select a FedNow participant and provide an event code and details.";
+            return RedirectToAction(nameof(MessageWorkflows));
+        }
+        var exchange = new MessageExchange
+        {
+            BankId = bankId, CounterpartyBankId = recipient.Id,
+            Type = MessageExchangeType.SystemEvent, Status = MessageExchangeStatus.Responded,
+            Rail = PaymentRail.FedNow, Subject = model.EventCode.Trim(), Details = model.Details.Trim()
+        };
+        AddExchangeMessages(exchange, nonValueMessages.CreateSystemEvent(exchange.Id, sender,
+            recipient, model.EventCode.Trim(), model.Details.Trim()));
+        db.MessageExchanges.Add(exchange);
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = "Participant broadcast sent with admi.004 and acknowledged with admi.011.";
+        return RedirectToAction(nameof(MessageWorkflows));
     }
 
     [HttpGet]
@@ -605,5 +721,41 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         model.SenderBankName = sender.Name;
         model.SenderMasterAccountBalance = sender.MasterAccountBalance;
         return model;
+    }
+
+    private static void AddExchangeMessages(MessageExchange exchange,
+        IReadOnlyList<CreatedWireIsoMessage> messages)
+    {
+        exchange.Messages = messages.Select(x => new IsoMessage
+        {
+            MessageExchangeId = exchange.Id, MessageType = x.MessageType,
+            Direction = x.Direction, XmlPayload = x.XmlPayload
+        }).ToList();
+    }
+
+    private static async Task<MessageWorkflowsViewModel> LoadMessageWorkflowsAsync(Guid bankId,
+        BankingDbContext db, CancellationToken token)
+    {
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        var accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
+            .OrderBy(x => x.Customer.Name)
+            .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber}", x.Id.ToString()))
+            .AsNoTracking().ToListAsync(token);
+        var banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
+            .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
+            .AsNoTracking().ToListAsync(token);
+        var fedNowBanks = await db.Banks.Where(x => x.Id != bankId && x.FedNowEnabled && x.FedNowOnline)
+            .OrderBy(x => x.Name)
+            .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
+            .AsNoTracking().ToListAsync(token);
+        var exchanges = await db.MessageExchanges.Where(x => x.BankId == bankId)
+            .Include(x => x.CounterpartyBank).Include(x => x.Messages)
+            .OrderByDescending(x => x.CreatedDate).AsSplitQuery().AsNoTracking()
+            .Take(30).ToListAsync(token);
+        return new MessageWorkflowsViewModel
+        {
+            Bank = bank, Accounts = accounts, Banks = banks, FedNowBanks = fedNowBanks,
+            Exchanges = exchanges
+        };
     }
 }

@@ -72,3 +72,41 @@ public sealed record IsoMessageViewModel(
     bool IsWellFormed,
     bool HasExpectedNamespace,
     string ValidationMessage);
+
+public sealed class MessageWorkflowsViewModel
+{
+    public required Bank Bank { get; init; }
+    public RequestForPaymentViewModel RequestForPayment { get; init; } = new();
+    public AccountReportRequestViewModel AccountReport { get; init; } = new();
+    public SystemEventViewModel SystemEvent { get; init; } = new();
+    public List<SelectListItem> Accounts { get; init; } = [];
+    public List<SelectListItem> Banks { get; init; } = [];
+    public List<SelectListItem> FedNowBanks { get; init; } = [];
+    public IReadOnlyList<MessageExchange> Exchanges { get; init; } = [];
+}
+
+public sealed class RequestForPaymentViewModel
+{
+    [Required] public Guid CreditorAccountId { get; set; }
+    [Required] public Guid DebtorBankId { get; set; }
+    [Required, StringLength(120)] public string DebtorName { get; set; } = "";
+    [Required, StringLength(34, MinimumLength = 4)] public string DebtorAccount { get; set; } = "";
+    [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
+    [Required, StringLength(140)] public string Remittance { get; set; } = "";
+    public PaymentRail Rail { get; set; } = PaymentRail.Fedwire;
+    public bool SimulateBusinessRejection { get; set; }
+}
+
+public sealed class AccountReportRequestViewModel
+{
+    public PaymentRail Rail { get; set; } = PaymentRail.FedNow;
+    [Required] public string ReportType { get; set; } = "Account balance";
+    public DateOnly BusinessDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+}
+
+public sealed class SystemEventViewModel
+{
+    [Required] public Guid RecipientBankId { get; set; }
+    [Required, StringLength(35)] public string EventCode { get; set; } = "PARTICIPANT_NOTICE";
+    [Required, StringLength(500, MinimumLength = 10)] public string Details { get; set; } = "";
+}

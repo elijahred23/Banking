@@ -14,6 +14,8 @@ public enum WireTransferType
 }
 public enum WireCaseType { ReturnRequest, Investigation }
 public enum WireCaseStatus { Submitted, Resolved, ReturnCompleted, Rejected }
+public enum MessageExchangeType { RequestForPayment, AccountReport, SystemEvent }
+public enum MessageExchangeStatus { Submitted, Responded, Rejected }
 public enum PaymentRail
 {
     Fedwire,
@@ -172,12 +174,33 @@ public sealed class LedgerEntry
 public sealed class IsoMessage
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid WireTransferId { get; set; }
-    public WireTransfer WireTransfer { get; set; } = null!;
+    public Guid? WireTransferId { get; set; }
+    public WireTransfer? WireTransfer { get; set; }
+    public Guid? MessageExchangeId { get; set; }
+    public MessageExchange? MessageExchange { get; set; }
     [MaxLength(20)] public required string MessageType { get; set; }
     public MessageDirection Direction { get; set; }
     public required string XmlPayload { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class MessageExchange
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid BankId { get; set; }
+    public Bank Bank { get; set; } = null!;
+    public Guid? CounterpartyBankId { get; set; }
+    public Bank? CounterpartyBank { get; set; }
+    public MessageExchangeType Type { get; set; }
+    public MessageExchangeStatus Status { get; set; }
+    public PaymentRail Rail { get; set; }
+    [MaxLength(120)] public required string Subject { get; set; }
+    [MaxLength(500)] public required string Details { get; set; }
+    [MaxLength(34)] public string? AccountNumber { get; set; }
+    public decimal? Amount { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public List<IsoMessage> Messages { get; set; } = [];
 }
 
 public sealed class WireEvent

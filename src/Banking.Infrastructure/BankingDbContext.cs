@@ -10,6 +10,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<WireTransfer> WireTransfers => Set<WireTransfer>();
     public DbSet<IsoMessage> IsoMessages => Set<IsoMessage>();
+    public DbSet<MessageExchange> MessageExchanges => Set<MessageExchange>();
     public DbSet<WireEvent> WireEvents => Set<WireEvent>();
     public DbSet<WireCase> WireCases => Set<WireCase>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
@@ -47,6 +48,19 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<WireTransfer>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<IsoMessage>().Property(x => x.Direction).HasConversion<string>();
+        modelBuilder.Entity<IsoMessage>().HasOne(x => x.WireTransfer).WithMany(x => x.IsoMessages)
+            .HasForeignKey(x => x.WireTransferId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<IsoMessage>().HasOne(x => x.MessageExchange).WithMany(x => x.Messages)
+            .HasForeignKey(x => x.MessageExchangeId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<MessageExchange>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<MessageExchange>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<MessageExchange>().Property(x => x.Rail).HasConversion<string>();
+        modelBuilder.Entity<MessageExchange>().Property(x => x.Amount).HasPrecision(19, 4);
+        modelBuilder.Entity<MessageExchange>().HasIndex(x => new { x.BankId, x.CreatedDate });
+        modelBuilder.Entity<MessageExchange>().HasOne(x => x.Bank).WithMany()
+            .HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<MessageExchange>().HasOne(x => x.CounterpartyBank).WithMany()
+            .HasForeignKey(x => x.CounterpartyBankId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<MessageDelivery>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Scenario).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Rail).HasConversion<string>();

@@ -36,9 +36,10 @@
                     <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Outgoing" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
                     <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Incoming" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle @(currentAction == "Instructions" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
+                        <a class="nav-link dropdown-toggle @(currentAction is "Instructions" or "MessageWorkflows" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" asp-controller="Wires" asp-action="Instructions">Wires</a></li>
+                            <li><a class="dropdown-item" asp-controller="Wires" asp-action="MessageWorkflows">Non-value messages</a></li>
                             <li><a class="dropdown-item" asp-controller="Ach" asp-action="Instructions">ACH</a></li>
                             <li><a class="dropdown-item" asp-controller="Check" asp-action="Instructions">Checks</a></li>
                         </ul>

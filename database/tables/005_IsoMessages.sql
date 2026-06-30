@@ -3,7 +3,8 @@ BEGIN
     CREATE TABLE dbo.IsoMessages
     (
         Id uniqueidentifier NOT NULL,
-        WireTransferId uniqueidentifier NOT NULL,
+        WireTransferId uniqueidentifier NULL,
+        MessageExchangeId uniqueidentifier NULL,
         MessageType nvarchar(20) NOT NULL,
         Direction nvarchar(max) NOT NULL,
         XmlPayload nvarchar(max) NOT NULL,

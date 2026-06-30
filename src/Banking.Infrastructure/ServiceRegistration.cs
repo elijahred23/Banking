@@ -19,6 +19,7 @@ public static class ServiceRegistration
         services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IWireIsoMessageService, WireIsoMessageService>();
+        services.AddSingleton<INonValueMessageWorkflowService, NonValueMessageWorkflowService>();
         services.AddSingleton<IFedNowMessageService, FedNowMessageService>();
         services.AddSingleton<ICbprPlusMessageService, CbprPlusMessageService>();
         services.AddSingleton<IPaymentRouteResolver, PaymentRouteResolver>();
@@ -415,6 +416,33 @@ public static class ServiceRegistration
                 CREATE INDEX IX_WireCases_WireTransferId_CreatedDate
                     ON dbo.WireCases(WireTransferId, CreatedDate);
             END;
+            IF OBJECT_ID(N'dbo.MessageExchanges', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.MessageExchanges (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_MessageExchanges PRIMARY KEY,
+                    BankId uniqueidentifier NOT NULL, CounterpartyBankId uniqueidentifier NULL,
+                    Type nvarchar(max) NOT NULL, Status nvarchar(max) NOT NULL,
+                    Rail nvarchar(max) NOT NULL, Subject nvarchar(120) NOT NULL,
+                    Details nvarchar(500) NOT NULL, AccountNumber nvarchar(34) NULL,
+                    Amount decimal(19,4) NULL, CreatedDate datetimeoffset NOT NULL,
+                    UpdatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_MessageExchanges_Bank FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id),
+                    CONSTRAINT FK_MessageExchanges_Counterparty FOREIGN KEY (CounterpartyBankId) REFERENCES dbo.Banks(Id));
+                CREATE INDEX IX_MessageExchanges_BankId_CreatedDate
+                    ON dbo.MessageExchanges(BankId, CreatedDate);
+            END;
+            IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.IsoMessages')
+                AND name = N'WireTransferId' AND is_nullable = 0)
+                ALTER TABLE dbo.IsoMessages ALTER COLUMN WireTransferId uniqueidentifier NULL;
+            IF COL_LENGTH(N'dbo.IsoMessages', N'MessageExchangeId') IS NULL
+                ALTER TABLE dbo.IsoMessages ADD MessageExchangeId uniqueidentifier NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys
+                WHERE name = N'FK_IsoMessages_MessageExchanges_MessageExchangeId')
+                ALTER TABLE dbo.IsoMessages ADD CONSTRAINT FK_IsoMessages_MessageExchanges_MessageExchangeId
+                    FOREIGN KEY (MessageExchangeId) REFERENCES dbo.MessageExchanges(Id) ON DELETE CASCADE;
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.IsoMessages')
+                AND name = N'IX_IsoMessages_MessageExchangeId')
+                CREATE INDEX IX_IsoMessages_MessageExchangeId ON dbo.IsoMessages(MessageExchangeId);
             """, token);
 
     private static async Task EnsureInternationalBanksAsync(BankingDbContext db,

@@ -19,7 +19,8 @@
     <a href="#fednow">FedNow</a>
     <a href="#swift">SWIFT CBPR+</a>
     <a href="#pacs009">pacs.009</a>
-    <a href="#iso-messages">ISO messages</a>
+    <a href="#message-workflows">Message workflows</a>
+    <a href="#iso-messages">Wire messages</a>
     <a href="#return-request">Return request</a>
     <a href="#investigation">Investigation</a>
 </nav>
@@ -105,12 +106,22 @@
         </ol>
     </section>
 
+    <section id="message-workflows" class="surface instruction-card">
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Non-value message workflows", "Create business-led ISO conversations", "No existing wire required", true)' />
+        <div class="row g-3 mt-2">
+            <div class="col-lg-4"><div class="workflow-guide"><code>pain.013 → admi.007 / pain.014</code><h3 class="h5">Request a payment</h3><p>Select your creditor account, the debtor institution and account, amount, rail, and remittance purpose. The normal path records delivery acknowledgement; the rejection scenario returns pain.014. It does not pretend the request itself moved funds.</p></div></div>
+            <div class="col-lg-4"><div class="workflow-guide"><code>camt.060 → camt.052</code><h3 class="h5">Request an account report</h3><p>Choose a balance or activity report for the current business day. The service returns a report using the active bank's actual simulated master-account balance.</p></div></div>
+            <div class="col-lg-4"><div class="workflow-guide"><code>admi.004 → admi.011</code><h3 class="h5">Send a participant broadcast</h3><p>Select the receiving FedNow participant, event code, and operational details. The recipient returns a correlated system-event acknowledgement.</p></div></div>
+        </div>
+        <a class="btn btn-primary mt-3" asp-action="MessageWorkflows">Open non-value workflows</a>
+    </section>
+
     <section id="iso-messages" class="surface instruction-card">
-        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("ISO 20022 message workbench", "Create all supported wire messages end to end", "An existing wire is required", true)' />
+        <partial name="_InstructionHeading" model='new WireInstructionHeadingViewModel("Wire-scoped message workbench", "Create messages about an existing payment", "An existing wire is required", true)' />
         <ol class="instruction-steps">
             <li><div><strong>Create the original wire.</strong><span>Use Customer credit transfer for pacs.008 or Financial institution credit transfer for pacs.009, then submit it over the required rail.</span></div></li>
             <li><div><strong>Open the wire detail page.</strong><span>The original payment supplies the UETR, amount, parties, accounts, institutions, rail endpoints, and business service used by supporting messages.</span></div></li>
-            <li><div><strong>Find ISO 20022 messages.</strong><span>In the message workbench, select one of the supported message types below and optionally enter a scenario narrative of up to 500 characters.</span></div></li>
+            <li><div><strong>Find ISO 20022 messages.</strong><span>Select a payment or servicing message that legitimately references the existing wire, then optionally enter a scenario narrative of up to 500 characters.</span></div></li>
             <li><div><strong>Select Generate.</strong><span>The lab builds a rail-aware business application header and structured payload, applies the correct inbound or outbound direction, validates the result, and saves it against the wire.</span></div></li>
             <li><div><strong>Verify the end-to-end result.</strong><span>Confirm the MessageGenerated lifecycle event, validation result, direction, original UETR correlation, formatted XML preview, copy action, and download action on the same page.</span></div></li>
         </ol>
@@ -124,8 +135,8 @@
                     <tr><td><code>pacs.008</code></td><td>Outbound</td><td>Create a Customer credit transfer, or select it in the workbench.</td><td>Validates the customer payment, transmits it, settles it, and creates the receiving wire and postings.</td></tr>
                     <tr><td><code>pacs.009</code></td><td>Outbound</td><td>Create a Financial institution credit transfer, or select it in the workbench.</td><td>Moves bank liquidity through Fedwire or FedNow and records institution settlement journals.</td></tr>
                     <tr><td><code>pacs.004</code></td><td>Inbound</td><td>Request return on a settled outgoing wire, or select it in the workbench.</td><td>Records the returned payment; the native path reverses balances and marks both wires Returned.</td></tr>
-                    <tr><td><code>pain.013</code></td><td>Outbound</td><td>Select Drawdown request in the workbench.</td><td>Creates a creditor payment activation request correlated to the original wire.</td></tr>
-                    <tr><td><code>pain.014</code></td><td>Inbound</td><td>Select Drawdown response in the workbench.</td><td>Creates and persists the response to the related pain.013 request.</td></tr>
+                    <tr><td><code>pain.013</code></td><td>Outbound</td><td>Use Request a payment under Non-value message workflows.</td><td>Creates a standalone drawdown request before any resulting payment exists.</td></tr>
+                    <tr><td><code>pain.014</code></td><td>Inbound</td><td>Select Simulate rejection on the request-for-payment form.</td><td>Records that the drawdown request was not delivered because of a simulated business error.</td></tr>
                     <tr><td><code>camt.110</code></td><td>Outbound</td><td>Open an investigation on a Fedwire payment, or select it in the workbench.</td><td>Sends the Fedwire investigation with original payment data and records its resolution.</td></tr>
                     <tr><td><code>pacs.028</code></td><td>Outbound</td><td>Open an investigation on a FedNow payment, or select it in the workbench.</td><td>Requests the current payment status and links the resulting status response.</td></tr>
                     <tr><td><code>camt.056</code></td><td>Outbound</td><td>Request return on a settled wire, or select it in the workbench.</td><td>Creates the cancellation request and proceeds through decision and return handling.</td></tr>
@@ -133,10 +144,10 @@
                     <tr><td><code>admi.007</code></td><td>Inbound</td><td>Select Receipt acknowledgement in the workbench.</td><td>Acknowledges receipt using the original wire correlation.</td></tr>
                     <tr><td><code>pacs.002</code></td><td>Inbound</td><td>Process a payment or FedNow investigation, or select it in the workbench.</td><td>Records a validated payment status containing the original message definition and UETR.</td></tr>
                     <tr><td><code>admi.002</code></td><td>Inbound</td><td>Select Message rejection in the workbench.</td><td>Persists a technical or business rejection linked to the original message.</td></tr>
-                    <tr><td><code>camt.052</code></td><td>Inbound</td><td>Select Account report in the workbench.</td><td>Returns an account balance/activity report correlated to the wire context.</td></tr>
-                    <tr><td><code>camt.060</code></td><td>Outbound</td><td>Select Account reporting request in the workbench.</td><td>Requests a camt.052 report for the wire's beneficiary account context.</td></tr>
-                    <tr><td><code>admi.004</code></td><td>Outbound</td><td>Select System event notification in the workbench.</td><td>Creates a system event or connection-check message for the rail endpoint.</td></tr>
-                    <tr><td><code>admi.011</code></td><td>Inbound</td><td>Select System event acknowledgement in the workbench.</td><td>Records the correlated response to the system event.</td></tr>
+                    <tr><td><code>camt.052</code></td><td>Inbound</td><td>Submit an account report request under Non-value message workflows.</td><td>Returns the requested balance or activity report for the active institution.</td></tr>
+                    <tr><td><code>camt.060</code></td><td>Outbound</td><td>Use Request an account report under Non-value message workflows.</td><td>Requests a current-business-day report from the selected rail service.</td></tr>
+                    <tr><td><code>admi.004</code></td><td>Outbound</td><td>Use Send a system event under Non-value message workflows.</td><td>Sends a participant broadcast with an event code, recipient, and operational narrative.</td></tr>
+                    <tr><td><code>admi.011</code></td><td>Inbound</td><td>Generated as the response to the participant broadcast.</td><td>Records the correlated system-event acknowledgement.</td></tr>
                 </tbody>
             </table>
         </div>

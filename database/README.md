@@ -51,3 +51,6 @@ persisted route/route-step history used for direct and one-intermediary payment 
 `202606282300_pacs009_institution_transfers.sql` distinguishes customer `pacs.008` wires from
 financial institution `pacs.009` liquidity transfers. Web startup applies the same column
 upgrade idempotently for existing local databases.
+
+`202606291900_nonvalue_message_workflows.sql` adds independently owned ISO message exchanges
+for request-for-payment, account-reporting, and system-event conversations.

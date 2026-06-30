@@ -2,6 +2,6 @@
 @{ ViewData["Title"] = Model.Direction is null ? "All wires" : $"{Model.Direction} wires"; }
 <div class="page-heading mb-4">
     <div><div class="eyebrow">@Model.Bank.Name</div><h1>@ViewData["Title"]</h1></div>
-    <a class="btn btn-primary" asp-action="Create">Create outgoing payment</a>
+    <div class="page-actions"><a class="btn btn-outline-primary" asp-action="MessageWorkflows">Non-value messages</a><a class="btn btn-primary" asp-action="Create">Create outgoing payment</a></div>
 </div>
 <partial name="_WireTable" model="Model.Wires" />

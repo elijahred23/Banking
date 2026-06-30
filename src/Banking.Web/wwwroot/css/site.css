@@ -170,6 +170,19 @@ textarea.form-control { min-height:auto; }
 .instruction-message-table { min-width:900px!important; }
 .destination-block,.iso-message,.iso-preview-section { box-shadow:0 3px 12px #1f333b08; }
 .login-card { box-shadow:0 20px 60px #102d3b1a; }
+.workflow-heading,.exchange-summary { display:flex;align-items:flex-start;justify-content:space-between;gap:1rem; }
+.exchange-list { display:grid;gap:1rem; }
+.exchange-card { padding:1.25rem 1.4rem; }
+.exchange-card>p { color:var(--muted); }
+.exchange-messages { display:grid;gap:.55rem; }
+.exchange-message { overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#fafbfb; }
+.exchange-message summary { display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem .85rem;cursor:pointer;font-size:.82rem;font-weight:650; }
+.exchange-message summary::marker { color:var(--blue); }
+.exchange-message summary span:last-child { color:var(--blue);font-size:.75rem; }
+.exchange-message .xml-viewer { max-height:380px;border-top:1px solid var(--line); }
+.workflow-guide { height:100%;padding:1rem;border:1px solid var(--line);border-radius:10px;background:#f8fafb; }
+.workflow-guide code { display:block;margin-bottom:.55rem;color:var(--blue);font-weight:750; }
+.workflow-guide p { margin:0;color:var(--muted);font-size:.86rem; }
 
 @media(max-width:1199px) {
     .navbar-collapse { margin-top:.8rem;padding:.8rem;border-top:1px solid #ffffff1a;background:#ffffff08;border-radius:10px; }
@@ -192,6 +205,7 @@ textarea.form-control { min-height:auto; }
     .instruction-steps li { grid-template-columns:28px 1fr;gap:.7rem; }
     .instruction-steps li::before { width:27px;height:27px; }
     .route-step-meta { align-items:flex-start;flex-direction:column;gap:.3rem; }
+    .workflow-heading,.exchange-summary { flex-direction:column; }
     .app-footer { padding-left:1rem;padding-right:1rem; }
 }
 @media(max-width:575px) {

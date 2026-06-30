@@ -1,0 +1,77 @@
+@model MessageWorkflowsViewModel
+@{ ViewData["Title"] = "Non-value message workflows"; }
+
+<div class="page-heading align-items-start mb-4">
+    <div><div class="eyebrow">ISO 20022 CONVERSATIONS</div><h1>Non-value message workflows</h1><p class="text-secondary mb-0">Create business-led exchanges for @Model.Bank.Name without attaching system and reporting messages to an unrelated wire.</p></div>
+    <a class="btn btn-outline-secondary" asp-action="Instructions" asp-fragment="message-workflows">View instructions</a>
+</div>
+
+<div class="row g-4 mb-5">
+    <div class="col-xl-7">
+        <section class="surface section h-100">
+            <div class="workflow-heading"><div><div class="eyebrow">DRAWdown REQUEST</div><h2 class="h4 mb-1">Request a payment</h2><p class="section-help mb-0"><code>pain.013</code> is delivered to the debtor institution. Delivery is acknowledged; a simulated business failure returns <code>pain.014</code>.</p></div><span class="direction outgoing">Outbound</span></div>
+            <form asp-action="CreateRequestForPayment" method="post" class="row g-3 mt-1">
+                <div class="col-md-6"><label class="form-label" for="rfp-account">Creditor account</label><select id="rfp-account" name="CreditorAccountId" asp-items="Model.Accounts" class="form-select" required><option value="">Select your receiving account</option></select></div>
+                <div class="col-md-6"><label class="form-label" for="rfp-bank">Debtor bank</label><select id="rfp-bank" name="DebtorBankId" asp-items="Model.Banks" class="form-select" required><option value="">Select the debtor bank</option></select></div>
+                <div class="col-md-6"><label class="form-label" for="rfp-name">Debtor name</label><input id="rfp-name" name="DebtorName" class="form-control" maxlength="120" required /></div>
+                <div class="col-md-6"><label class="form-label" for="rfp-debtor-account">Debtor account</label><input id="rfp-debtor-account" name="DebtorAccount" class="form-control" maxlength="34" required /></div>
+                <div class="col-md-4"><label class="form-label" for="rfp-amount">Requested amount</label><div class="input-group"><span class="input-group-text">$</span><input id="rfp-amount" name="Amount" type="number" min="0.01" step="0.01" class="form-control" required /></div></div>
+                <div class="col-md-4"><label class="form-label" for="rfp-rail">Rail</label><select id="rfp-rail" name="Rail" class="form-select"><option value="Fedwire">Fedwire</option><option value="FedNow">FedNow</option></select></div>
+                <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input id="rfp-reject" name="SimulateBusinessRejection" value="true" class="form-check-input" type="checkbox" /><label class="form-check-label" for="rfp-reject">Simulate rejection</label></div></div>
+                <div class="col-12"><label class="form-label" for="rfp-remittance">Remittance purpose</label><input id="rfp-remittance" name="Remittance" class="form-control" maxlength="140" placeholder="Invoice 1048" required /></div>
+                <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Send pain.013 request</button></div>
+            </form>
+        </section>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="d-grid gap-4">
+            <section class="surface section">
+                <div class="workflow-heading"><div><div class="eyebrow">RECONCILIATION</div><h2 class="h4 mb-1">Request an account report</h2><p class="section-help mb-0"><code>camt.060</code> request → <code>camt.052</code> report.</p></div></div>
+                <form asp-action="CreateAccountReport" method="post" class="row g-3 mt-1">
+                    <div class="col-sm-6"><label class="form-label" for="report-type">Report</label><select id="report-type" name="ReportType" class="form-select"><option>Account balance</option><option>Activity totals</option><option>Activity details</option></select></div>
+                    <div class="col-sm-6"><label class="form-label" for="report-rail">Rail</label><select id="report-rail" name="Rail" class="form-select"><option value="FedNow">FedNow</option><option value="Fedwire">Fedwire</option></select></div>
+                    <div class="col-12"><label class="form-label" for="report-date">Business date</label><input id="report-date" name="BusinessDate" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" class="form-control" required /><div class="form-text">The lab follows the current-business-day request rule.</div></div>
+                    <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Request report</button></div>
+                </form>
+            </section>
+
+            <section class="surface section">
+                <div class="workflow-heading"><div><div class="eyebrow">PARTICIPANT BROADCAST</div><h2 class="h4 mb-1">Send a system event</h2><p class="section-help mb-0"><code>admi.004</code> notification → <code>admi.011</code> acknowledgement.</p></div></div>
+                <form asp-action="CreateSystemEvent" method="post" class="row g-3 mt-1">
+                    <div class="col-12"><label class="form-label" for="event-recipient">Receiving participant</label><select id="event-recipient" name="RecipientBankId" asp-items="Model.FedNowBanks" class="form-select" required><option value="">Select an online FedNow participant</option></select></div>
+                    <div class="col-12"><label class="form-label" for="event-code">Event code</label><input id="event-code" name="EventCode" value="PARTICIPANT_NOTICE" maxlength="35" class="form-control" required /></div>
+                    <div class="col-12"><label class="form-label" for="event-details">Event details</label><textarea id="event-details" name="Details" rows="3" minlength="10" maxlength="500" class="form-control" required></textarea></div>
+                    <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Send broadcast</button></div>
+                </form>
+            </section>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-end gap-3 mb-3"><div><div class="eyebrow">EXCHANGE HISTORY</div><h2 class="h4 mb-0">Recent conversations</h2></div><span class="text-secondary small">@Model.Exchanges.Count shown</span></div>
+@if (Model.Exchanges.Count == 0)
+{
+    <div class="surface empty">No non-value message exchanges have been created for this bank.</div>
+}
+else
+{
+    <div class="exchange-list">
+    @foreach (var exchange in Model.Exchanges)
+    {
+        <article class="surface exchange-card">
+            <div class="exchange-summary">
+                <div><div class="eyebrow">@exchange.Type.ToString().ToUpperInvariant()</div><h3 class="h5 mb-1">@exchange.Subject</h3><div class="text-secondary small">@exchange.Rail · @(exchange.CounterpartyBank?.Name ?? "Federal Reserve service") · @exchange.CreatedDate.ToLocalTime().ToString("g")</div></div>
+                <span class="status status-@(exchange.Status == MessageExchangeStatus.Rejected ? "rejected" : "completed")">@exchange.Status</span>
+            </div>
+            <p class="mb-3">@exchange.Details</p>
+            <div class="exchange-messages">
+            @foreach (var message in exchange.Messages.OrderBy(x => x.CreatedDate))
+            {
+                <details class="exchange-message"><summary><span><code>@message.MessageType</code> · @message.Direction</span><span>View XML</span></summary><pre class="xml-viewer"><code>@message.XmlPayload</code></pre></details>
+            }
+            </div>
+        </article>
+    }
+    </div>
+}

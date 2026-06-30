@@ -3,6 +3,7 @@
     var wire = Model.Wire;
     var paymentMessageType = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
         ? "pacs.009" : "pacs.008";
+    string[] dedicatedWorkflowTypes = ["pain.013", "pain.014", "camt.052", "camt.060", "admi.004", "admi.011"];
 }
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
@@ -201,7 +202,8 @@
                 <select id="iso-message-type-@wire.Id" name="messageType" class="form-select" required>
                     @foreach (var definition in Model.SupportedMessages)
                     {
-                        if ((definition.MessageType != "pacs.008" || wire.TransferType == WireTransferType.CustomerCreditTransfer)
+                        if (!dedicatedWorkflowTypes.Contains(definition.MessageType)
+                            && (definition.MessageType != "pacs.008" || wire.TransferType == WireTransferType.CustomerCreditTransfer)
                             && (definition.MessageType != "pacs.009" || wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer))
                         {
                             <option value="@definition.MessageType">@definition.MessageType · @definition.Purpose</option>
@@ -217,7 +219,7 @@
                 <button class="btn btn-outline-primary" type="submit">Generate</button>
             </div>
         </div>
-        <div class="form-text">Creates a wire-correlated message with the rail's business header, validates it, and persists it to this timeline.</div>
+        <div class="form-text">Creates a wire-correlated message with the rail's business header, validates it, and persists it to this timeline. Drawdown, reporting, and system-event messages use <a asp-action="MessageWorkflows">dedicated workflows</a>.</div>
     </form>
     @if (Model.Messages.Any())
     {

@@ -39,7 +39,8 @@ Version-controlled table definitions and the location for future migration scrip
 
 - `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, ISO history, and the cross-rail Operations dashboard.
 - Settled outgoing wires support return requests, while network-submitted outgoing wires support investigations. The wire detail workflow persists each case, generates rail-appropriate ISO 20022 requests and responses, and records accepted `pacs.004` returns with balanced customer and settlement journals.
-- Each wire detail page includes an ISO message workbench for generating, validating, correlating, and persisting `pacs.008`, `pacs.009`, `pacs.004`, `pain.013`, `pain.014`, `camt.110`, `pacs.028`, `camt.056`, `camt.029`, `admi.007`, `pacs.002`, `admi.002`, `camt.052`, `camt.060`, `admi.004`, and `admi.011` messages end to end.
+- The wires feature generates, validates, correlates, and persists `pacs.008`, `pacs.009`, `pacs.004`, `pain.013`, `pain.014`, `camt.110`, `pacs.028`, `camt.056`, `camt.029`, `admi.007`, `pacs.002`, `admi.002`, `camt.052`, `camt.060`, `admi.004`, and `admi.011` messages through payment, servicing, or non-value workflows.
+- Drawdown requests, account reporting, and participant broadcasts use standalone persisted conversations rather than an unrelated wire: `pain.013` produces delivery acknowledgement or a simulated `pain.014` business rejection, `camt.060` returns `camt.052`, and `admi.004` returns `admi.011`.
 - `Banking.WireService`: customer-funds or master-account-liquidity validation plus `pacs.008` and `pacs.009` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.
