@@ -10,6 +10,7 @@ public sealed class Worker(
     IIsoMessageService iso,
     ICbprPlusMessageService cbpr,
     IPaymentRouteResolver routeResolver,
+    IWireComplianceService compliance,
     ILogger<Worker> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
@@ -26,10 +27,20 @@ public sealed class Worker(
         var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, cancellationToken);
         var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, cancellationToken);
         var institutionTransfer = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer;
-        var blocked = wire.SenderName.Contains("blocked", StringComparison.OrdinalIgnoreCase)
-            || wire.ReceiverName.Contains("blocked", StringComparison.OrdinalIgnoreCase);
-        var rejection = blocked ? "OFAC simulation matched a blocked name."
-            : wire.Amount <= 0 ? "Amount must be positive."
+        var screening = wire.ComplianceStatus == "ClearedByOfficer"
+            ? new WireScreeningResult(false, null)
+            : compliance.Screen(wire, sender, receiver);
+        if (screening.RequiresReview)
+        {
+            wire.Status = WireStatus.PendingComplianceReview;
+            wire.ComplianceStatus = "ReviewRequired";
+            wire.ComplianceReason = screening.Reason;
+            db.WireEvents.Add(Event(wire.Id, "ComplianceReviewRequired", screening.Reason!));
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+        wire.ComplianceStatus ??= "Cleared";
+        var rejection = wire.Amount <= 0 ? "Amount must be positive."
             : institutionTransfer && wire.Rail == PaymentRail.SwiftCbprPlus
                 ? "pacs.009 is supported over Fedwire and FedNow only."
             : institutionTransfer && sender.MasterAccountBalance < wire.Amount

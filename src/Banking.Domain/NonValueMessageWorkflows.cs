@@ -7,7 +7,9 @@ public interface INonValueMessageWorkflowService
 {
     IReadOnlyList<CreatedWireIsoMessage> CreateRequestForPayment(Guid exchangeId, Bank creditorBank,
         Bank debtorBank, string creditorName, string creditorAccount, string debtorName,
-        string debtorAccount, decimal amount, string remittance, PaymentRail rail, bool reject);
+        string debtorAccount, decimal amount, string remittance, PaymentRail rail);
+    CreatedWireIsoMessage CreateRequestForPaymentResponse(Guid exchangeId, Bank creditorBank,
+        Bank debtorBank, PaymentRail rail, bool accepted, string? reason = null);
     IReadOnlyList<CreatedWireIsoMessage> CreateAccountReport(Guid exchangeId, Bank bank,
         string reportType, DateOnly businessDate, decimal balance, PaymentRail rail);
     IReadOnlyList<CreatedWireIsoMessage> CreateSystemEvent(Guid exchangeId, Bank sender,
@@ -20,7 +22,7 @@ public sealed class NonValueMessageWorkflowService(IIsoMessageService iso)
     public IReadOnlyList<CreatedWireIsoMessage> CreateRequestForPayment(Guid exchangeId,
         Bank creditorBank, Bank debtorBank, string creditorName, string creditorAccount,
         string debtorName, string debtorAccount, decimal amount, string remittance,
-        PaymentRail rail, bool reject)
+        PaymentRail rail)
     {
         var id = exchangeId.ToString("N");
         var request = new XElement("CdtrPmtActvtnReq",
@@ -39,21 +41,35 @@ public sealed class NonValueMessageWorkflowService(IIsoMessageService iso)
         var requestXml = iso.CreateMessage("pain.013", Endpoint(creditorBank, rail),
             Endpoint(debtorBank, rail), request, id, BusinessService(rail));
 
-        var responseType = reject ? "pain.014" : "admi.007";
-        var response = reject
-            ? new XElement("CdtrPmtActvtnReqStsRpt", Header(Guid.NewGuid().ToString("N")),
-                new XElement("OrgnlGrpInfAndSts", new XElement("OrgnlMsgId", id),
-                    new XElement("OrgnlMsgNmId", "pain.013.001.07"),
-                    new XElement("GrpSts", "RJCT"), new XElement("StsRsnInf",
-                        new XElement("Rsn", new XElement("Prtry", "SIMULATED")),
-                        new XElement("AddtlInf", "The receiving participant rejected the drawdown request."))))
-            : ReceiptAcknowledgement(id);
-        var responseXml = iso.CreateMessage(responseType, Endpoint(debtorBank, rail),
-            Endpoint(creditorBank, rail), response, Guid.NewGuid().ToString("N"), BusinessService(rail));
+        var responseXml = iso.CreateMessage("admi.007", Endpoint(debtorBank, rail),
+            Endpoint(creditorBank, rail), ReceiptAcknowledgement(id),
+            Guid.NewGuid().ToString("N"), BusinessService(rail));
         return Validate([
             new("pain.013", MessageDirection.Outbound, requestXml),
-            new(responseType, MessageDirection.Inbound, responseXml)
+            new("admi.007", MessageDirection.Inbound, responseXml)
         ]);
+    }
+
+    public CreatedWireIsoMessage CreateRequestForPaymentResponse(Guid exchangeId,
+        Bank creditorBank, Bank debtorBank, PaymentRail rail, bool accepted, string? reason = null)
+    {
+        var originalId = exchangeId.ToString("N");
+        var status = accepted ? "ACCP" : "RJCT";
+        var response = new XElement("CdtrPmtActvtnReqStsRpt",
+            Header(Guid.NewGuid().ToString("N")),
+            new XElement("OrgnlGrpInfAndSts",
+                new XElement("OrgnlMsgId", originalId),
+                new XElement("OrgnlMsgNmId", "pain.013.001.07"),
+                new XElement("GrpSts", status),
+                accepted ? null : new XElement("StsRsnInf",
+                    new XElement("Rsn", new XElement("Prtry", "DECLINED")),
+                    new XElement("AddtlInf", string.IsNullOrWhiteSpace(reason)
+                        ? "The debtor declined the request for payment."
+                        : reason.Trim()))));
+        var xml = iso.CreateMessage("pain.014", Endpoint(debtorBank, rail),
+            Endpoint(creditorBank, rail), response, Guid.NewGuid().ToString("N"),
+            BusinessService(rail));
+        return Validate([new("pain.014", MessageDirection.Inbound, xml)])[0];
     }
 
     public IReadOnlyList<CreatedWireIsoMessage> CreateAccountReport(Guid exchangeId, Bank bank,

@@ -14,6 +14,60 @@
     <span class="status status-@wire.Status.ToString().ToLowerInvariant() status-large">@wire.Status</span>
 </div>
 
+@if (wire.Direction == WireDirection.Outgoing && wire.Status == WireStatus.PendingApproval)
+{
+    <section class="surface section mb-4">
+        <div class="eyebrow">DUAL CONTROL</div>
+        <h2 class="h5">Payment approval required</h2>
+        <p class="text-secondary">Created by <strong>@(wire.CreatedBy ?? "legacy user")</strong>. No ISO message has been sent and no funds have been held.</p>
+        @if (User.IsInRole(BankSecurity.PaymentApprover))
+        {
+            <div class="d-flex flex-wrap gap-2">
+                <form asp-action="DecideApproval" method="post">
+                    <input type="hidden" name="id" value="@wire.Id" />
+                    <input type="hidden" name="approve" value="true" />
+                    <button class="btn btn-primary" type="submit">Approve and release</button>
+                </form>
+                <form asp-action="DecideApproval" method="post" class="d-flex gap-2 flex-grow-1">
+                    <input type="hidden" name="id" value="@wire.Id" />
+                    <input type="hidden" name="approve" value="false" />
+                    <input class="form-control" name="reason" maxlength="500" placeholder="Rejection reason" />
+                    <button class="btn btn-outline-danger" type="submit">Reject</button>
+                </form>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-warning mb-0">Sign in as a different bank approver to release or reject this payment.</div>
+        }
+    </section>
+}
+
+@if (wire.Direction == WireDirection.Outgoing && wire.Status == WireStatus.PendingComplianceReview)
+{
+    <section class="surface section mb-4">
+        <div class="eyebrow">COMPLIANCE REVIEW</div>
+        <h2 class="h5">Human disposition required</h2>
+        <p>@wire.ComplianceReason</p>
+        @if (User.IsInRole(BankSecurity.ComplianceOfficer))
+        {
+            <div class="d-flex flex-wrap gap-2">
+                <form asp-action="DecideCompliance" method="post" class="d-flex gap-2 flex-grow-1">
+                    <input type="hidden" name="id" value="@wire.Id" /><input type="hidden" name="clear" value="true" />
+                    <input class="form-control" name="reason" maxlength="500" placeholder="Document the false-positive rationale" required />
+                    <button class="btn btn-primary" type="submit">Clear and re-queue</button>
+                </form>
+                <form asp-action="DecideCompliance" method="post" class="d-flex gap-2 flex-grow-1">
+                    <input type="hidden" name="id" value="@wire.Id" /><input type="hidden" name="clear" value="false" />
+                    <input class="form-control" name="reason" maxlength="500" placeholder="Document the rejection rationale" required />
+                    <button class="btn btn-outline-danger" type="submit">Reject</button>
+                </form>
+            </div>
+        }
+        else { <div class="alert alert-warning mb-0">A bank compliance officer must disposition this hit.</div> }
+    </section>
+}
+
 <div class="row g-4">
     <div class="col-xl-7">
         @if (Model.Route is { } route)

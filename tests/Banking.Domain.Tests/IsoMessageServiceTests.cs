@@ -149,23 +149,56 @@ public sealed class IsoMessageServiceTests
     }
 
     [Fact]
-    public void Request_for_payment_uses_delivery_acknowledgement_or_pain014_rejection()
+    public void Request_for_payment_is_acknowledged_then_explicitly_accepted_or_rejected()
     {
         var workflow = new NonValueMessageWorkflowService(_service);
         var sender = Bank("101000019");
         var receiver = Bank("103000648");
 
-        var delivered = workflow.CreateRequestForPayment(Guid.NewGuid(), sender, receiver,
+        var exchangeId = Guid.NewGuid();
+        var delivered = workflow.CreateRequestForPayment(exchangeId, sender, receiver,
             "Creditor", "123456", "Debtor", "654321", 125.50m, "Invoice 1048",
-            PaymentRail.Fedwire, false);
-        var rejected = workflow.CreateRequestForPayment(Guid.NewGuid(), sender, receiver,
-            "Creditor", "123456", "Debtor", "654321", 125.50m, "Invoice 1048",
+            PaymentRail.Fedwire);
+        var accepted = workflow.CreateRequestForPaymentResponse(exchangeId, sender, receiver,
             PaymentRail.Fedwire, true);
+        var rejected = workflow.CreateRequestForPaymentResponse(exchangeId, sender, receiver,
+            PaymentRail.Fedwire, false, "Customer declined the request.");
 
         Assert.Equal(["pain.013", "admi.007"], delivered.Select(x => x.MessageType));
-        Assert.Equal(["pain.013", "pain.014"], rejected.Select(x => x.MessageType));
-        Assert.All(delivered.Concat(rejected), message =>
+        Assert.Equal("pain.014", accepted.MessageType);
+        Assert.Contains("ACCP", accepted.XmlPayload);
+        Assert.Contains("RJCT", rejected.XmlPayload);
+        Assert.Contains("Customer declined the request.", rejected.XmlPayload);
+        Assert.All(delivered.Append(accepted).Append(rejected), message =>
             Assert.True(_service.Validate(message.XmlPayload).IsValid, message.MessageType));
+    }
+
+    [Fact]
+    public void Customer_reference_is_preserved_as_end_to_end_id()
+    {
+        var wire = Wire();
+        wire.Rail = PaymentRail.Fedwire;
+        wire.CustomerReference = "INVOICE-1048";
+
+        var xml = _service.CreatePacs008(wire, Bank("101000019"), Bank("103000648"),
+            "123456", "654321");
+
+        Assert.Contains("<EndToEndId>INVOICE-1048</EndToEndId>", xml);
+        Assert.True(_service.Validate(xml).IsValid);
+    }
+
+    [Fact]
+    public void Compliance_screening_routes_potential_hits_to_human_review()
+    {
+        var service = new WireComplianceService();
+        var sender = Bank("101000019");
+        var receiver = Bank("103000648");
+        var clean = Wire();
+        var hit = Wire();
+        hit.ReceiverName = "Watchlist Trading Company";
+
+        Assert.False(service.Screen(clean, sender, receiver).RequiresReview);
+        Assert.True(service.Screen(hit, sender, receiver).RequiresReview);
     }
 
     [Fact]

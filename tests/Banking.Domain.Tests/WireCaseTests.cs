@@ -73,6 +73,21 @@ public sealed class WireCaseTests
     }
 
     [Fact]
+    public void SqlServer_model_contains_dual_control_duplicate_and_outbox_controls()
+    {
+        var options = new DbContextOptionsBuilder<BankingDbContext>()
+            .UseSqlServer("Server=localhost;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        using var db = new BankingDbContext(options);
+        var script = db.Database.GenerateCreateScript();
+
+        Assert.Contains("[CustomerReference] nvarchar(35) NULL", script);
+        Assert.Contains("IX_WireTransfers_BankId_CustomerReference", script);
+        Assert.Contains("CREATE TABLE [OutboxMessages]", script);
+        Assert.Contains("[ComplianceReviewedBy] nvarchar(120) NULL", script);
+    }
+
+    [Fact]
     public void Completing_domestic_return_reverses_customer_and_master_account_balances()
     {
         var outgoing = Wire(WireStatus.Settled, WireDirection.Outgoing);

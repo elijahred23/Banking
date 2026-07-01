@@ -71,7 +71,7 @@ public sealed class IsoMessageService : IIsoMessageService
                 new XElement(Pacs008 + "CdtTrfTxInf",
                     new XElement(Pacs008 + "PmtId",
                         new XElement(Pacs008 + "InstrId", messageId),
-                        new XElement(Pacs008 + "EndToEndId", messageId),
+                        new XElement(Pacs008 + "EndToEndId", wire.CustomerReference ?? messageId),
                         new XElement(Pacs008 + "UETR", wire.CorrelationId.ToString().ToLowerInvariant())),
                     new XElement(Pacs008 + "IntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
                         wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
@@ -101,7 +101,7 @@ public sealed class IsoMessageService : IIsoMessageService
                 new XElement(Pacs008 + "CdtTrfTxInf",
                     new XElement(Pacs008 + "PmtId",
                         new XElement(Pacs008 + "InstrId", messageId),
-                        new XElement(Pacs008 + "EndToEndId", messageId),
+                        new XElement(Pacs008 + "EndToEndId", wire.CustomerReference ?? messageId),
                         new XElement(Pacs008 + "UETR", wire.CorrelationId.ToString().ToLowerInvariant())),
                     new XElement(Pacs008 + "IntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
                         wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
@@ -137,7 +137,7 @@ public sealed class IsoMessageService : IIsoMessageService
                 new XElement(Pacs009 + "CdtTrfTxInf",
                     new XElement(Pacs009 + "PmtId",
                         new XElement(Pacs009 + "InstrId", messageId),
-                        new XElement(Pacs009 + "EndToEndId", messageId),
+                        new XElement(Pacs009 + "EndToEndId", wire.CustomerReference ?? messageId),
                         new XElement(Pacs009 + "UETR", wire.CorrelationId.ToString().ToLowerInvariant())),
                     new XElement(Pacs009 + "IntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
                         wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
@@ -269,6 +269,13 @@ public sealed class IsoMessageService : IIsoMessageService
         if (messageType != "unknown" && !string.Equals(headerType, definitionId,
                 StringComparison.Ordinal))
             errors.Add("Business header message definition does not match the document namespace.");
+        if (header is not null)
+        {
+            foreach (var field in new[] { "Fr", "To", "BizMsgIdr", "MsgDefIdr", "BizSvc", "CreDt" })
+                if (!header.Descendants().Any(x => x.Name.LocalName == field
+                    && !string.IsNullOrWhiteSpace(x.Value)))
+                    errors.Add($"Business header {field} is required.");
+        }
 
         if (messageType == "pacs.008") ValidatePacs008(document, errors);
         if (messageType == "pacs.009") ValidatePacs009(document, errors);
@@ -287,6 +294,16 @@ public sealed class IsoMessageService : IIsoMessageService
     {
         var tx = document.Descendants(Pacs008 + "CdtTrfTxInf").SingleOrDefault();
         if (tx is null) { errors.Add("Exactly one credit transfer transaction is required."); return; }
+        var profileMessage = document.Descendants(Pacs008 + "GrpHdr").Any();
+        if (profileMessage)
+        {
+            if (document.Descendants(Pacs008 + "CdtTrfTxInf").Count() != 1
+                || document.Descendants(Pacs008 + "NbOfTxs").SingleOrDefault()?.Value != "1")
+                errors.Add("The wire profile requires exactly one transaction and NbOfTxs equal to 1.");
+            var settlementMethod = document.Descendants(Pacs008 + "SttlmMtd").SingleOrDefault()?.Value;
+            if (settlementMethod is not ("CLRG" or "INDA"))
+                errors.Add("Settlement method must be CLRG or INDA for a supported wire profile.");
+        }
         var amount = tx.Element(Pacs008 + "IntrBkSttlmAmt");
         var currency = amount?.Attribute("Ccy")?.Value;
         if (currency is null || currency.Length != 3 || !currency.All(char.IsUpper)
@@ -295,6 +312,11 @@ public sealed class IsoMessageService : IIsoMessageService
             errors.Add("Settlement amount must be positive and use a three-letter currency code.");
         var uetr = tx.Descendants(Pacs008 + "UETR").SingleOrDefault()?.Value;
         if (!Guid.TryParse(uetr, out _)) errors.Add("A UUID-formatted UETR is required.");
+        var endToEndId = tx.Descendants(Pacs008 + "EndToEndId").SingleOrDefault()?.Value;
+        if (profileMessage && (string.IsNullOrWhiteSpace(endToEndId) || endToEndId.Length > 35))
+            errors.Add("EndToEndId is required and cannot exceed 35 characters.");
+        if (profileMessage && !DateOnly.TryParse(tx.Element(Pacs008 + "IntrBkSttlmDt")?.Value, out _))
+            errors.Add("A valid interbank settlement date is required.");
         var routes = tx.Descendants(Pacs008 + "MmbId").Select(x => x.Value).ToList();
         var bics = tx.Descendants(Pacs008 + "BICFI").Select(x => x.Value).ToList();
         if ((routes.Count != 2 || routes.Any(x => x.Length != 9 || !x.All(char.IsDigit)))
@@ -315,6 +337,15 @@ public sealed class IsoMessageService : IIsoMessageService
     {
         var tx = document.Descendants(Pacs009 + "CdtTrfTxInf").SingleOrDefault();
         if (tx is null) { errors.Add("Exactly one financial institution credit transfer is required."); return; }
+        var profileMessage = document.Descendants(Pacs009 + "GrpHdr").Any();
+        if (profileMessage)
+        {
+            if (document.Descendants(Pacs009 + "CdtTrfTxInf").Count() != 1
+                || document.Descendants(Pacs009 + "NbOfTxs").SingleOrDefault()?.Value != "1")
+                errors.Add("The wire profile requires exactly one transaction and NbOfTxs equal to 1.");
+            if (document.Descendants(Pacs009 + "SttlmMtd").SingleOrDefault()?.Value != "CLRG")
+                errors.Add("Financial-institution transfers require settlement method CLRG.");
+        }
         var amount = tx.Element(Pacs009 + "IntrBkSttlmAmt");
         var currency = amount?.Attribute("Ccy")?.Value;
         if (currency is null || currency.Length != 3 || !currency.All(char.IsUpper)
@@ -323,6 +354,11 @@ public sealed class IsoMessageService : IIsoMessageService
             errors.Add("Settlement amount must be positive and use a three-letter currency code.");
         if (!Guid.TryParse(tx.Descendants(Pacs009 + "UETR").SingleOrDefault()?.Value, out _))
             errors.Add("A UUID-formatted UETR is required.");
+        var endToEndId = tx.Descendants(Pacs009 + "EndToEndId").SingleOrDefault()?.Value;
+        if (profileMessage && (string.IsNullOrWhiteSpace(endToEndId) || endToEndId.Length > 35))
+            errors.Add("EndToEndId is required and cannot exceed 35 characters.");
+        if (profileMessage && !DateOnly.TryParse(tx.Element(Pacs009 + "IntrBkSttlmDt")?.Value, out _))
+            errors.Add("A valid interbank settlement date is required.");
         var institutions = new[] { "Dbtr", "Cdtr" }.Select(name =>
             tx.Element(Pacs009 + name)?.Descendants(Pacs009 + "MmbId").SingleOrDefault()?.Value)
             .ToList();

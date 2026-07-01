@@ -14,6 +14,8 @@ public sealed class CreateWireViewModel
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     public PaymentRail Rail { get; set; }
     public ProcessingScenario Scenario { get; set; }
+    [Required, StringLength(35, MinimumLength = 3)] public string CustomerReference { get; set; }
+        = $"PAY-{Guid.NewGuid():N}"[..20];
     public List<SelectListItem> Accounts { get; set; } = [];
     public List<SelectListItem> Banks { get; set; } = [];
     public List<SelectListItem> Rails { get; set; } = [];
@@ -94,7 +96,6 @@ public sealed class RequestForPaymentViewModel
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     [Required, StringLength(140)] public string Remittance { get; set; } = "";
     public PaymentRail Rail { get; set; } = PaymentRail.Fedwire;
-    public bool SimulateBusinessRejection { get; set; }
 }
 
 public sealed class AccountReportRequestViewModel

@@ -1,5 +1,13 @@
-@model string
+@model LoginViewModel
 @{ ViewData["Title"] = "Sign in"; }
-<div class="login-wrap"><div class="surface login-card"><div class="brand-mark mb-4">F</div><h1 class="h3">Wire operations</h1><p class="text-secondary">Sign in to the correspondent banking lab.</p>
-<form method="post"><input type="hidden" name="returnUrl" value="@Model"><div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div><div class="mb-3"><label class="form-label">Username</label><input class="form-control" name="username" value="operator" autocomplete="username"></div><div class="mb-4"><label class="form-label">Password</label><input class="form-control" type="password" name="password" value="fedwire-lab" autocomplete="current-password"></div><button class="btn btn-primary w-100">Sign in</button></form>
+<div class="login-wrap"><div class="surface login-card login-card-wide"><div class="brand-mark mb-4">F</div><h1 class="h3">Bank Payments Lab</h1><p class="text-secondary">Choose a bank and a user role. This is a learning environment; each role shows a different part of the payment workflow.</p>
+<form method="post"><input type="hidden" asp-for="ReturnUrl"><div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+<div class="mb-3"><label asp-for="BankId" class="form-label">Bank</label><select asp-for="BankId" asp-items="Model.Banks" class="form-select"></select></div>
+<div class="mb-4"><label class="form-label">Lab password</label><input class="form-control" type="password" name="password" value="fedwire-lab" autocomplete="current-password"><div class="form-text">The shared password is prefilled for this learning tool.</div></div>
+<div class="persona-grid">
+<button class="persona-option" type="submit" name="Role" value="maker"><strong>Maker</strong><span>Create payments and submit them for approval.</span></button>
+<button class="persona-option" type="submit" name="Role" value="approver"><strong>Approver</strong><span>Approve or reject payments and payment requests.</span></button>
+<button class="persona-option" type="submit" name="Role" value="compliance"><strong>Compliance</strong><span>Review and disposition potential screening hits.</span></button>
+<button class="persona-option" type="submit" name="Role" value="operations"><strong>Operations</strong><span>Monitor queues, exceptions, settlement, and balances.</span></button>
+</div></form>
 </div></div>

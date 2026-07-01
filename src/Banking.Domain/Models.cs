@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Banking.Domain;
 
 public enum WireDirection { Outgoing, Incoming }
-public enum WireStatus { Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected, Returned }
+public enum WireStatus { PendingApproval, PendingComplianceReview, Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected, Returned }
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
 public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
@@ -83,6 +83,14 @@ public sealed class WireTransfer
     public ProcessingScenario Scenario { get; set; }
     public PaymentRail Rail { get; set; }
     public WireTransferType TransferType { get; set; }
+    [MaxLength(35)] public string? CustomerReference { get; set; }
+    [MaxLength(120)] public string? CreatedBy { get; set; }
+    [MaxLength(120)] public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedDate { get; set; }
+    [MaxLength(30)] public string? ComplianceStatus { get; set; }
+    [MaxLength(500)] public string? ComplianceReason { get; set; }
+    [MaxLength(120)] public string? ComplianceReviewedBy { get; set; }
+    public DateTimeOffset? ComplianceReviewedDate { get; set; }
     [MaxLength(35)] public string? Imad { get; set; }
     [MaxLength(35)] public string? Omad { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
@@ -201,6 +209,18 @@ public sealed class MessageExchange
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
     public List<IsoMessage> Messages { get; set; } = [];
+}
+
+public sealed class OutboxMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(120)] public required string Queue { get; set; }
+    public required string Payload { get; set; }
+    public int Attempts { get; set; }
+    [MaxLength(1000)] public string? LastError { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? NextAttemptDate { get; set; }
+    public DateTimeOffset? PublishedDate { get; set; }
 }
 
 public sealed class WireEvent

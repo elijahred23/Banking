@@ -13,6 +13,8 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - customer funds holds that become posted debits only after final settlement;
 - balanced debit/credit journals for outgoing and incoming posting; and
 - selectable pending, network-rejection, and malformed-message learning scenarios.
+- bank-scoped maker, approver, compliance, and operations personas with dual-control release;
+- unique customer payment references, durable outbox publication, and human compliance review queues;
 - ACH entry validation, scheduled batch cutoff, fixed-width NACHA files, FedACH-style settlement, returns, notifications of change, and EFTPS-style CCD+ addenda.
 - check capture, MICR validation, front/back TIFF storage, simplified image cash letters, paying-bank presentment, settlement, and returns.
 - an operator dashboard with live RabbitMQ queue depth, cross-rail lifecycle counts, payment exceptions, master-account movements, balanced-journal controls, and rail health.
@@ -29,7 +31,7 @@ The script builds the solution once, starts the web app before the worker servic
 and stops every project when you press Ctrl+C. Run `python3 run_all.py --help` for
 configuration and build options.
 
-Open the URL printed by `Banking.Web` and sign in with `operator` / `fedwire-lab`. Start the web project first on a fresh database; it creates the schema and seed data. For an international wire, send from John Smith at Bankers Bank to Anna Müller at Euro Demo Bank using IBAN `DE89370400440532013000` and the SWIFT international wire rail. Switch the active-bank persona to Euro Demo Bank to see the received wire. Use the scenario selector to exercise pending, rejection, and validation-failure paths.
+Open the URL printed by `Banking.Web`. The login page lets you select a bank and click the Maker, Approver, Compliance, or Operations persona; the shared lab password `fedwire-lab` is prefilled. Create a payment as the maker, click **Switch user**, and release it as the approver. Choose the receiving bank at login to inspect its received payments. Start the web project first on a fresh database because it creates and upgrades the schema.
 
 Configuration can be overridden with standard .NET environment variables, for example `ConnectionStrings__DefaultConnection`, `RabbitMq__HostName`, `RabbitMq__UserName`, and `RabbitMq__Password`.
 
@@ -37,10 +39,10 @@ Version-controlled table definitions and the location for future migration scrip
 
 ## Projects
 
-- `Banking.Web`: authenticated MVC inquiry, persona switching, wire entry, timelines, ISO history, and the cross-rail Operations dashboard.
+- `Banking.Web`: bank-scoped, role-based MVC inquiry, dual-control wire entry, timelines, ISO history, durable outbox publication, and the cross-rail Operations dashboard.
 - Settled outgoing wires support return requests, while network-submitted outgoing wires support investigations. The wire detail workflow persists each case, generates rail-appropriate ISO 20022 requests and responses, and records accepted `pacs.004` returns with balanced customer and settlement journals.
 - The wires feature generates, validates, correlates, and persists `pacs.008`, `pacs.009`, `pacs.004`, `pain.013`, `pain.014`, `camt.110`, `pacs.028`, `camt.056`, `camt.029`, `admi.007`, `pacs.002`, `admi.002`, `camt.052`, `camt.060`, `admi.004`, and `admi.011` messages through payment, servicing, or non-value workflows.
-- Drawdown requests, account reporting, and participant broadcasts use standalone persisted conversations rather than an unrelated wire: `pain.013` produces delivery acknowledgement or a simulated `pain.014` business rejection, `camt.060` returns `camt.052`, and `admi.004` returns `admi.011`.
+- Drawdown requests, account reporting, and participant broadcasts use standalone persisted conversations rather than an unrelated wire: `pain.013` is acknowledged and held for the debtor bank's explicit decision; approval or rejection returns `pain.014`, and approval creates the resulting `pacs.008` payment. `camt.060` returns `camt.052`, and `admi.004` returns `admi.011`.
 - `Banking.WireService`: customer-funds or master-account-liquidity validation plus `pacs.008` and `pacs.009` generation.
 - `Banking.AchService`: ACH validation, open-batch grouping, cutoff, trace assignment, and NACHA file generation.
 - `Banking.CheckService`: MICR/image validation and simplified X9.37-style image cash letter generation.

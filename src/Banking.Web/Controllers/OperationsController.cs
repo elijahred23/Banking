@@ -28,10 +28,10 @@ public sealed class OperationsController(
             .Select(x => x.Status).ToListAsync(token);
 
         var payments = new PaymentStatusSummary(
-            wireStatuses.Count(x => x == WireStatus.Created)
+            wireStatuses.Count(x => x is WireStatus.PendingApproval or WireStatus.Created)
                 + achStatuses.Count(x => x == AchEntryStatus.Entered)
                 + checkStatuses.Count(x => x == CheckDepositStatus.Captured),
-            wireStatuses.Count(x => x is WireStatus.Validated or WireStatus.ReadyForFed or WireStatus.SentToFed
+            wireStatuses.Count(x => x is WireStatus.PendingComplianceReview or WireStatus.Validated or WireStatus.ReadyForFed or WireStatus.SentToFed
                 or WireStatus.PendingAtFed or WireStatus.Received)
                 + achStatuses.Count(x => x is AchEntryStatus.Validated or AchEntryStatus.Batched
                     or AchEntryStatus.SentToOperator or AchEntryStatus.NocReceived)
@@ -62,9 +62,10 @@ public sealed class OperationsController(
     {
         var wireItems = await db.WireTransfers.AsNoTracking()
             .Where(x => x.BankId == bankId && (x.Scenario == ProcessingScenario.MalformedIso
+                || x.Status == WireStatus.PendingComplianceReview
                 || x.Status == WireStatus.Rejected || x.Status == WireStatus.Returned))
             .OrderByDescending(x => x.CreatedDate).Take(10)
-            .Select(x => new { x.CorrelationId, x.Scenario, x.Status, x.CreatedDate }).ToListAsync(token);
+            .Select(x => new { x.CorrelationId, x.Scenario, x.Status, x.ComplianceReason, x.CreatedDate }).ToListAsync(token);
         var achItems = await db.AchEntries.AsNoTracking()
             .Where(x => (x.OriginatingBankId == bankId || x.ReceivingBankId == bankId)
                 && (x.Scenario != AchProcessingScenario.Standard || x.Status == AchEntryStatus.Returned))
@@ -81,8 +82,9 @@ public sealed class OperationsController(
         var items = new List<OperationsExceptionViewModel>();
         items.AddRange(wireItems.Select(x => new OperationsExceptionViewModel("ISO 20022",
             x.Scenario == ProcessingScenario.MalformedIso ? "Malformed ISO"
+                : x.Status == WireStatus.PendingComplianceReview ? "Compliance review"
                 : x.Status == WireStatus.Returned ? "Payment returned" : "Payment rejected",
-            x.CorrelationId.ToString("N")[..8], $"{x.Scenario} · {x.Status}", x.CreatedDate)));
+            x.CorrelationId.ToString("N")[..8], x.ComplianceReason ?? $"{x.Scenario} · {x.Status}", x.CreatedDate)));
         items.AddRange(achItems.Select(x => new OperationsExceptionViewModel("ACH / NACHA",
             x.Scenario == AchProcessingScenario.InsufficientFunds ? "Insufficient funds" : "NACHA exception",
             x.Id.ToString("N")[..8], $"{x.Scenario} · {x.ReturnCode ?? x.Status.ToString()}", x.CreatedDate)));

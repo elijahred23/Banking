@@ -11,6 +11,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<WireTransfer> WireTransfers => Set<WireTransfer>();
     public DbSet<IsoMessage> IsoMessages => Set<IsoMessage>();
     public DbSet<MessageExchange> MessageExchanges => Set<MessageExchange>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<WireEvent> WireEvents => Set<WireEvent>();
     public DbSet<WireCase> WireCases => Set<WireCase>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
@@ -44,9 +45,12 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<Bank>().HasIndex(x => x.Bic).IsUnique();
         modelBuilder.Entity<Account>().HasIndex(x => x.AccountNumber).IsUnique();
         modelBuilder.Entity<WireTransfer>().HasIndex(x => x.CorrelationId);
+        modelBuilder.Entity<WireTransfer>().HasIndex(x => new { x.BankId, x.CustomerReference })
+            .IsUnique().HasFilter("[CustomerReference] IS NOT NULL");
         modelBuilder.Entity<FedSettlement>().HasIndex(x => x.CorrelationId).IsUnique();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<WireTransfer>().Property(x => x.Status).IsConcurrencyToken();
         modelBuilder.Entity<IsoMessage>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<IsoMessage>().HasOne(x => x.WireTransfer).WithMany(x => x.IsoMessages)
             .HasForeignKey(x => x.WireTransferId).OnDelete(DeleteBehavior.Cascade);
@@ -56,11 +60,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<MessageExchange>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<MessageExchange>().Property(x => x.Rail).HasConversion<string>();
         modelBuilder.Entity<MessageExchange>().Property(x => x.Amount).HasPrecision(19, 4);
+        modelBuilder.Entity<MessageExchange>().Property(x => x.UpdatedDate).IsConcurrencyToken();
         modelBuilder.Entity<MessageExchange>().HasIndex(x => new { x.BankId, x.CreatedDate });
         modelBuilder.Entity<MessageExchange>().HasOne(x => x.Bank).WithMany()
             .HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<MessageExchange>().HasOne(x => x.CounterpartyBank).WithMany()
             .HasForeignKey(x => x.CounterpartyBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<OutboxMessage>().HasIndex(x => new { x.PublishedDate, x.NextAttemptDate });
         modelBuilder.Entity<MessageDelivery>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Scenario).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Rail).HasConversion<string>();

@@ -1,4 +1,5 @@
 using Banking.Infrastructure;
+using Banking.Web;
 using Banking.Web.Realtime;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
@@ -8,6 +9,7 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<WireUpdateTracker>();
 builder.Services.AddHostedService<WireUpdateBroadcaster>();
+builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -16,7 +18,7 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromHours(8);
 });
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options => { options.LoginPath = "/auth/login"; options.Cookie.Name = "FedwireLab.Auth"; });
+    .AddCookie(options => { options.LoginPath = "/auth/login"; options.Cookie.Name = "FedwireLab.Auth.v2"; });
 builder.Services.AddAuthorization();
 builder.Services.AddBankingInfrastructure(builder.Configuration);
 

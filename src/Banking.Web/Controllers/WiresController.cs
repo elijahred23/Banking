@@ -12,7 +12,7 @@ using System.Xml.Linq;
 namespace Banking.Web.Controllers;
 
 [Authorize]
-public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus,
+public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory,
     IIsoMessageService iso, ICbprPlusMessageService cbpr,
     IWireIsoMessageService wireMessages, INonValueMessageWorkflowService nonValueMessages) : Controller
 {
@@ -101,6 +101,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             "Select a different debtor bank.");
         if (model.Rail is not (PaymentRail.Fedwire or PaymentRail.FedNow))
             ModelState.AddModelError(nameof(model.Rail), "Select Fedwire or FedNow.");
+        if (model.Rail == PaymentRail.FedNow
+            && model.Amount > FedNowProfile.CustomerCreditTransferLimit)
+            ModelState.AddModelError(nameof(model.Amount),
+                $"FedNow payment requests cannot exceed {FedNowProfile.CustomerCreditTransferLimit:C0}.");
         if (model.Rail == PaymentRail.FedNow && debtorBank is not null && account is not null
             && (!account.Customer.Bank.FedNowRequestForPaymentEnabled
                 || !debtorBank.FedNowReceiveEnabled || !debtorBank.FedNowOnline))
@@ -117,8 +121,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         {
             BankId = bankId, CounterpartyBankId = debtorBank!.Id,
             Type = MessageExchangeType.RequestForPayment,
-            Status = model.SimulateBusinessRejection
-                ? MessageExchangeStatus.Rejected : MessageExchangeStatus.Responded,
+            Status = MessageExchangeStatus.Submitted,
             Rail = model.Rail, Subject = $"Request {model.Amount:C} from {model.DebtorName}",
             Details = model.Remittance.Trim(), AccountNumber = account!.AccountNumber,
             Amount = model.Amount
@@ -126,12 +129,119 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         AddExchangeMessages(exchange, nonValueMessages.CreateRequestForPayment(exchange.Id,
             account.Customer.Bank, debtorBank, account.Customer.Name, account.AccountNumber,
             model.DebtorName.Trim(), model.DebtorAccount.Trim(), model.Amount,
-            model.Remittance.Trim(), model.Rail, model.SimulateBusinessRejection));
+            model.Remittance.Trim(), model.Rail));
         db.MessageExchanges.Add(exchange);
         await db.SaveChangesAsync(token);
-        TempData["Notice"] = model.SimulateBusinessRejection
-            ? "Drawdown request created; the simulated receiver returned pain.014 rejection."
-            : "Drawdown request delivered and acknowledged; no payment is created until the debtor sends one.";
+        TempData["Notice"] =
+            "Drawdown request delivered and acknowledged. It is waiting for the debtor bank to approve or reject it.";
+        return RedirectToAction(nameof(MessageWorkflows));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentApprover)]
+    public async Task<IActionResult> RespondToRequest(Guid id, bool approve, string? reason,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var exchange = await db.MessageExchanges.Include(x => x.Bank)
+            .Include(x => x.CounterpartyBank).Include(x => x.Messages)
+            .SingleOrDefaultAsync(x => x.Id == id
+                && x.Type == MessageExchangeType.RequestForPayment
+                && x.CounterpartyBankId == bankId, token);
+        if (exchange is null) return NotFound();
+        if (exchange.Status != MessageExchangeStatus.Submitted)
+        {
+            TempData["Error"] = "This request has already been answered.";
+            return RedirectToAction(nameof(MessageWorkflows));
+        }
+
+        var debtorBank = exchange.CounterpartyBank!;
+        WireTransfer? wire = null;
+        if (approve)
+        {
+            var request = exchange.Messages.Single(x => x.MessageType == "pain.013");
+            var debtorAccountNumber = ReadPaymentAccount(request.XmlPayload, "DbtrAcct");
+            var creditorAccountNumber = ReadPaymentAccount(request.XmlPayload, "CdtrAcct");
+            var debtorAccount = await db.Accounts.Include(x => x.Customer)
+                .SingleOrDefaultAsync(x => x.Customer.BankId == bankId
+                    && x.AccountNumber == debtorAccountNumber, token);
+            if (debtorAccount is null)
+            {
+                TempData["Error"] =
+                    "The requested debtor account does not exist at this bank, so the request cannot be approved.";
+                return RedirectToAction(nameof(MessageWorkflows));
+            }
+            if (exchange.Amount is null || debtorAccount.AvailableBalance < exchange.Amount.Value)
+            {
+                TempData["Error"] = "The debtor account has insufficient available funds.";
+                return RedirectToAction(nameof(MessageWorkflows));
+            }
+            if (exchange.Rail == PaymentRail.FedNow
+                && (exchange.Amount.Value > FedNowProfile.CustomerCreditTransferLimit
+                    || !debtorBank.FedNowSendEnabled || !debtorBank.FedNowOnline
+                    || !exchange.Bank.FedNowReceiveEnabled || !exchange.Bank.FedNowOnline))
+            {
+                TempData["Error"] =
+                    "The approved payment does not meet the FedNow amount or participant availability rules.";
+                return RedirectToAction(nameof(MessageWorkflows));
+            }
+
+            var creditorAccount = await db.Accounts.Include(x => x.Customer)
+                .SingleOrDefaultAsync(x => x.Customer.BankId == exchange.BankId
+                    && x.AccountNumber == creditorAccountNumber, token);
+            wire = new WireTransfer
+            {
+                BankId = bankId, SenderBankId = bankId, ReceiverBankId = exchange.BankId,
+                FromAccountId = debtorAccount.Id, ToAccountId = creditorAccount?.Id,
+                Direction = WireDirection.Outgoing, Status = WireStatus.Created,
+                Amount = exchange.Amount!.Value, SenderName = debtorAccount.Customer.Name,
+                ReceiverName = creditorAccount?.Customer.Name
+                    ?? ReadPaymentParty(request.XmlPayload, "Cdtr"),
+                BeneficiaryAccountNumber = creditorAccountNumber,
+                Scenario = ProcessingScenario.Standard, Rail = exchange.Rail,
+                TransferType = WireTransferType.CustomerCreditTransfer,
+                CustomerReference = $"RFP-{exchange.Id:N}"[..35],
+                CreatedBy = $"pain.013:{exchange.Id:N}", ApprovedBy = User.Identity!.Name,
+                ApprovedDate = DateTimeOffset.UtcNow,
+                Events = [new WireEvent { EventType = "Created",
+                    Description = $"Payment created after approval of pain.013 request {exchange.Id.ToString()[..8]}." }]
+            };
+            db.WireTransfers.Add(wire);
+            exchange.Status = MessageExchangeStatus.Responded;
+        }
+        else
+        {
+            exchange.Status = MessageExchangeStatus.Rejected;
+        }
+
+        var response = nonValueMessages.CreateRequestForPaymentResponse(exchange.Id,
+            exchange.Bank, debtorBank, exchange.Rail, approve, reason);
+        exchange.Messages.Add(new IsoMessage
+        {
+            MessageExchangeId = exchange.Id, MessageType = response.MessageType,
+            Direction = response.Direction, XmlPayload = response.XmlPayload
+        });
+        exchange.UpdatedDate = DateTimeOffset.UtcNow;
+        if (wire is not null)
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+        try
+        {
+            await db.SaveChangesAsync(token);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            TempData["Error"] = "This request was answered by another session.";
+            return RedirectToAction(nameof(MessageWorkflows));
+        }
+
+        if (wire is not null)
+        {
+            TempData["Notice"] =
+                $"Request approved. Payment {wire.Id.ToString()[..8]} was durably queued for processing.";
+            return RedirectToAction(nameof(Details), new { id = wire.Id });
+        }
+
+        TempData["Notice"] = "Request rejected. A pain.014 rejection was returned to the creditor bank.";
         return RedirectToAction(nameof(MessageWorkflows));
     }
 
@@ -192,7 +302,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return RedirectToAction(nameof(MessageWorkflows));
     }
 
-    [HttpGet]
+    [HttpGet, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Create(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -200,7 +310,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return View(await PopulateAsync(new CreateWireViewModel(), bankId, db, token));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Create(CreateWireViewModel model, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -251,6 +361,15 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 "Enter a valid IBAN for this international beneficiary.");
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
 
+        var customerReference = model.CustomerReference.Trim().ToUpperInvariant();
+        if (await db.WireTransfers.AnyAsync(x => x.BankId == bankId
+            && x.CustomerReference == customerReference, token))
+        {
+            ModelState.AddModelError(nameof(model.CustomerReference),
+                "This bank has already used that customer payment reference.");
+            return View(await PopulateAsync(model, bankId, db, token));
+        }
+
         var beneficiaryAccount = isInstitutionTransfer
             ? receiverBank!.FedParticipantId
             : model.Rail == PaymentRail.SwiftCbprPlus
@@ -265,11 +384,12 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         {
             BankId = bankId, SenderBankId = bankId, ReceiverBankId = model.ReceiverBankId,
             FromAccountId = account?.Id, ToAccountId = receiverAccount?.Id,
-            Direction = WireDirection.Outgoing, Status = WireStatus.Created, Amount = model.Amount,
+            Direction = WireDirection.Outgoing, Status = WireStatus.PendingApproval, Amount = model.Amount,
             SenderName = isInstitutionTransfer ? senderBank.Name : account!.Customer.Name,
             ReceiverName = isInstitutionTransfer ? receiverBank!.Name : model.ReceiverName!.Trim(),
             BeneficiaryAccountNumber = beneficiaryAccount, Scenario = model.Scenario,
             Rail = model.Rail, TransferType = model.TransferType,
+            CustomerReference = customerReference, CreatedBy = User.Identity!.Name,
             Events = [new WireEvent { EventType = "Created",
                 Description = isInstitutionTransfer
                     ? $"Outgoing pacs.009 financial institution credit transfer created over {model.Rail} using the {model.Scenario} lab scenario."
@@ -279,9 +399,98 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         };
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
-        await bus.PublishAsync(Queues.WireCreated, new WireCreated(wire.Id), token);
-        TempData["Notice"] = $"Wire {wire.Id.ToString()[..8]} created and queued for validation.";
+        TempData["Notice"] =
+            $"Wire {wire.Id.ToString()[..8]} created. A different payment approver must release it.";
         return RedirectToAction(nameof(Details), new { id = wire.Id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentApprover)]
+    public async Task<IActionResult> DecideApproval(Guid id, bool approve, string? reason,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == id
+            && x.BankId == bankId && x.Direction == WireDirection.Outgoing, token);
+        if (wire is null) return NotFound();
+        if (wire.Status != WireStatus.PendingApproval)
+        {
+            TempData["Error"] = "This payment is no longer waiting for approval.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        if (string.Equals(wire.CreatedBy, User.Identity!.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["Error"] = "The payment creator cannot approve their own payment.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        wire.ApprovedBy = User.Identity.Name;
+        wire.ApprovedDate = DateTimeOffset.UtcNow;
+        wire.Status = approve ? WireStatus.Created : WireStatus.Rejected;
+        if (approve)
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+        db.WireEvents.Add(new WireEvent
+        {
+            WireTransferId = wire.Id,
+            EventType = approve ? "Approved" : "ApprovalRejected",
+            Description = approve
+                ? $"Payment released by {User.Identity.Name} under dual control."
+                : $"Payment rejected by {User.Identity.Name}: {NormalizeDecisionReason(reason)}"
+        });
+        try
+        {
+            await db.SaveChangesAsync(token);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            TempData["Error"] = "Another approver already answered this payment.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (approve)
+        {
+            TempData["Notice"] = "Payment approved and durably queued for validation.";
+        }
+        else TempData["Notice"] = "Payment rejected before transmission; no funds moved.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.ComplianceOfficer)]
+    public async Task<IActionResult> DecideCompliance(Guid id, bool clear, string? reason,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var wire = await db.WireTransfers.SingleOrDefaultAsync(x => x.Id == id
+            && x.BankId == bankId && x.Status == WireStatus.PendingComplianceReview, token);
+        if (wire is null) return NotFound();
+
+        wire.ComplianceStatus = clear ? "ClearedByOfficer" : "Rejected";
+        wire.ComplianceReason = clear ? NormalizeDecisionReason(reason)
+            : NormalizeDecisionReason(reason);
+        wire.ComplianceReviewedBy = User.Identity!.Name;
+        wire.ComplianceReviewedDate = DateTimeOffset.UtcNow;
+        wire.Status = clear ? WireStatus.Created : WireStatus.Rejected;
+        db.WireEvents.Add(new WireEvent
+        {
+            WireTransferId = wire.Id,
+            EventType = clear ? "ComplianceCleared" : "ComplianceRejected",
+            Description = $"Compliance officer {User.Identity.Name} "
+                + (clear ? "cleared the review hit" : "rejected the payment")
+                + $": {wire.ComplianceReason}"
+        });
+        if (clear)
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+        try { await db.SaveChangesAsync(token); }
+        catch (DbUpdateConcurrencyException)
+        {
+            TempData["Error"] = "Another compliance officer already answered this review.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        TempData["Notice"] = clear
+            ? "Compliance review cleared; the payment was durably re-queued."
+            : "Compliance review rejected; no funds moved.";
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     public async Task<IActionResult> Details(Guid id, CancellationToken token)
@@ -733,6 +942,25 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         }).ToList();
     }
 
+    private static string ReadPaymentAccount(string xml, string accountElement)
+    {
+        var account = XDocument.Parse(xml).Descendants()
+            .First(x => x.Name.LocalName == accountElement);
+        return account.Descendants().First(x => x.Name.LocalName == "Id" && !x.HasElements)
+            .Value.Trim();
+    }
+
+    private static string ReadPaymentParty(string xml, string partyElement)
+    {
+        var party = XDocument.Parse(xml).Descendants()
+            .First(x => x.Name.LocalName == partyElement);
+        return party.Descendants().First(x => x.Name.LocalName == "Nm").Value.Trim();
+    }
+
+    private static string NormalizeDecisionReason(string? reason) =>
+        string.IsNullOrWhiteSpace(reason) ? "Approver declined the payment."
+            : reason.Trim().Length <= 500 ? reason.Trim() : reason.Trim()[..500];
+
     private static async Task<MessageWorkflowsViewModel> LoadMessageWorkflowsAsync(Guid bankId,
         BankingDbContext db, CancellationToken token)
     {
@@ -748,8 +976,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
             .AsNoTracking().ToListAsync(token);
-        var exchanges = await db.MessageExchanges.Where(x => x.BankId == bankId)
-            .Include(x => x.CounterpartyBank).Include(x => x.Messages)
+        var exchanges = await db.MessageExchanges
+            .Where(x => x.BankId == bankId || x.CounterpartyBankId == bankId)
+            .Include(x => x.Bank).Include(x => x.CounterpartyBank).Include(x => x.Messages)
             .OrderByDescending(x => x.CreatedDate).AsSplitQuery().AsNoTracking()
             .Take(30).ToListAsync(token);
         return new MessageWorkflowsViewModel
