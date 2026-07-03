@@ -1,0 +1,7 @@
+@model RailComparisonViewModel
+@{ ViewData["Title"] = "Compare payment rails"; }
+<div class="page-heading mb-4"><div><div class="eyebrow">DECISION GUIDE</div><h1>Compare payment rails</h1><p class="text-secondary mb-0">Choose a rail from the payment requirement—not from familiarity.</p></div><a asp-action="Index">Learning Center</a></div>
+<div class="table-responsive surface"><table class="table rail-comparison mb-0"><thead><tr><th>Rail</th><th>Best for</th><th>Speed / finality</th><th>Limit</th><th>Format</th><th>Settlement</th><th>Key lesson</th></tr></thead><tbody>
+@foreach (var rail in Model.Rails) { <tr><th>@rail.Rail</th><td>@rail.BestFor</td><td><strong>@rail.Speed</strong><small>@rail.Finality</small></td><td>@rail.Limit</td><td>@rail.Format</td><td>@rail.Settlement</td><td>@rail.KeyLesson</td></tr> }
+</tbody></table></div>
+<section class="surface mission-section mt-4"><div class="eyebrow">DECISION PRACTICE</div><h2 class="h4">Test the comparison</h2><ol><li>Urgent domestic payment that must settle immediately: identify the participant availability and amount constraints.</li><li>International USD payment: identify the message network and the separate settlement arrangement.</li><li>Ten thousand scheduled payroll credits: identify why batching is useful.</li></ol></section>

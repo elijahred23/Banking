@@ -14,6 +14,11 @@
     <span class="status status-@wire.Status.ToString().ToLowerInvariant() status-large">@wire.Status</span>
 </div>
 
+<section class="surface learning-debrief mb-4">
+    <div><div class="eyebrow">LEARNING DEBRIEF</div><h2 class="h4">@Model.Debrief.Outcome</h2><p>@Model.Debrief.Explanation</p><small>@Model.Debrief.ProductionNote</small></div>
+    <div><strong>Verify with evidence</strong><ul>@foreach (var item in Model.Debrief.Checkpoints) { <li>@item</li> }</ul><a asp-controller="Learning" asp-action="Index">Continue learning</a></div>
+</section>
+
 @if (wire.Direction == WireDirection.Outgoing && wire.Status == WireStatus.PendingApproval)
 {
     <section class="surface section mb-4">
@@ -105,7 +110,7 @@
         <section class="surface section mb-4">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
                 <div><h2 class="h5 mb-1">Lifecycle</h2><div class="section-help">Every persisted processing stage.</div></div>
-                <span class="duration-pill">@FormatDuration(Model.ProcessingDuration) total</span>
+                <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary replay-timeline" type="button">Replay</button><span class="duration-pill">@FormatDuration(Model.ProcessingDuration) total</span></div>
             </div>
             <div class="timeline">
                 @foreach (var stage in Model.Stages)
@@ -232,6 +237,7 @@
 
 <section class="surface section mt-4">
     <div class="mb-3"><h2 class="h5 mb-1">Accounting journal</h2><div class="section-help">Balanced debit and credit entries posted when settlement completes.</div></div>
+    <div class="accounting-explainer mb-3"><div><strong>Debit</strong><span>Records the account receiving value or the reduction of a liability, depending on the account type.</span></div><div><strong>Credit</strong><span>Records the funding side of the entry. Total credits must equal total debits.</span></div><div><strong>Hold vs posting</strong><span>A hold affects available funds but is not a journal entry; settlement converts it into posted accounting.</span></div></div>
     @if (Model.LedgerEntries.Any())
     {
         <div class="table-responsive"><table class="table diagnostics-table mb-0">

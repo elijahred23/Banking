@@ -1,0 +1,35 @@
+@model MissionPageViewModel
+@{ ViewData["Title"] = Model.Mission.Title; }
+
+<nav class="mb-3"><a asp-action="Index">← Learning Center</a></nav>
+<div class="mission-hero surface mb-4">
+    <div><div class="eyebrow">@Model.Path.Title · @Model.Mission.Difficulty</div><h1>@Model.Mission.Title</h1><p>@Model.Mission.Summary</p></div>
+    <span class="mission-duration">@Model.Mission.EstimatedMinutes min</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <section class="surface mission-section mb-4"><div class="eyebrow">LEARNING OBJECTIVES</div><h2 class="h4">What you will be able to explain</h2><ul class="objective-list">@foreach (var item in Model.Mission.Objectives) { <li>@item</li> }</ul></section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">EXERCISE</div><h2 class="h4">Run the mission</h2><ol class="mission-steps">@foreach (var item in Model.Mission.Steps) { <li>@item</li> }</ol>
+            <a class="btn btn-primary" asp-controller="@Model.Mission.ActionController" asp-action="@Model.Mission.ActionName" asp-route-learningMission="@Model.Mission.Id" asp-route-rail="@Model.Mission.Rail" asp-route-scenario="@Model.Mission.Scenario">@Model.Mission.ActionLabel</a>
+        </section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">ROLE HANDOFFS</div><h2 class="h4">Coordinate the workflow</h2><div class="role-handoffs">@foreach (var item in Model.RoleHandoffs) { var parts = item.Split(':', 2); <div><strong>@parts[0]</strong><span>@(parts.Length > 1 ? parts[1] : "")</span></div> }</div></section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">PROGRESSIVE HINTS</div><h2 class="h4">Reveal only what you need</h2>@for (var i = 0; i < Model.Hints.Count; i++) { <details class="learning-hint"><summary>Hint @(i + 1)</summary><p>@Model.Hints[i]</p></details> }</section>
+        <section class="surface mission-section flow-section"><div class="eyebrow">SYSTEM FLOW</div><h2 class="h4">What to observe</h2>
+            <div class="payment-flow" aria-label="Payment processing flow"><span>Maker</span><b>→</b><span>Approver</span><b>→</b><span>Bank service</span><b>→</b><span>Rail</span><b>→</b><span>Settlement</span><b>→</b><span>Journal</span></div>
+            <p class="section-help mb-0">The instruction and the money do not move at the same time. Use lifecycle events, ISO messages, and journals as separate evidence.</p>
+        </section>
+    </div>
+    <aside class="col-lg-5">
+        <section class="surface mission-section mb-4"><div class="eyebrow">PREDICT BEFORE RUNNING</div><h2 class="h5">@Model.Mission.PredictionPrompt</h2>
+            @if (Model.Prediction is null) {
+                <form asp-action="Predict" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><div class="prediction-options">@foreach (var choice in Model.Mission.PredictionChoices) { <label><input type="radio" name="prediction" value="@choice" required /> <span>@choice</span></label> }</div><button class="btn btn-outline-primary" type="submit">Save prediction</button></form>
+            } else { <div class="saved-prediction"><span>Your prediction</span><strong>@Model.Prediction</strong></div> }
+        </section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">DEBRIEF</div><h2 class="h5">Explain the result</h2><p>@Model.Mission.Debrief</p><p class="section-help">Do not mark the mission complete until you can support the explanation with evidence from the timeline, messages, or journal.</p>
+            @if (!Model.IsComplete) { <form asp-action="Complete" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><button class="btn btn-success" type="submit">I verified the evidence</button></form> } else { <div class="mission-complete">✓ Mission complete</div> }
+        </section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">KNOWLEDGE CHECK</div><h2 class="h5">@Model.Question.Prompt</h2><form asp-action="Answer" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><div class="prediction-options">@foreach (var choice in Model.Question.Choices) { <label><input type="radio" name="answer" value="@choice" required /><span>@choice</span></label> }</div><button class="btn btn-outline-primary">Check answer</button></form>@if (Model.LastAttempt is not null) { <p class="attempt-result @(Model.LastAttempt.IsCorrect ? "correct" : "incorrect")">Last answer: @(Model.LastAttempt.IsCorrect ? "Correct" : "Review and retry")</p> }</section>
+        <aside class="production-callout"><strong>Lab versus production</strong><span>@Model.ProductionNote</span></aside>
+    </aside>
+</div>

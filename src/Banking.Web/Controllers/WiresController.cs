@@ -304,11 +304,19 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpGet, Authorize(Roles = BankSecurity.PaymentCreator)]
-    public async Task<IActionResult> Create(CancellationToken token)
+    public async Task<IActionResult> Create(string? learningMission, PaymentRail? rail,
+        ProcessingScenario? scenario, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        return View(await PopulateAsync(new CreateWireViewModel(), bankId, db, token));
+        var model = new CreateWireViewModel
+        {
+            LearningMissionId = LearningCatalog.Mission(learningMission ?? "")?.Id,
+            Rail = rail is PaymentRail.Fedwire or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus
+                ? rail.Value : PaymentRail.Fedwire,
+            Scenario = scenario ?? ProcessingScenario.Standard
+        };
+        return View(await PopulateAsync(model, bankId, db, token));
     }
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
@@ -669,7 +677,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return new WireDetailsViewModel(wire, route, deliveries, stages, messages, ledgerEntries,
             wire.Cases.OrderByDescending(x => x.CreatedDate).ToList(),
             WireCasePolicy.CanRequestReturn(wire), WireCasePolicy.CanInvestigate(wire), failure,
-            lastActivity - wire.CreatedDate, wireMessages.SupportedMessages);
+            lastActivity - wire.CreatedDate, wireMessages.SupportedMessages,
+            LearningCatalog.Debrief(wire));
     }
 
     private IsoMessageViewModel BuildMessage(IsoMessage message, PaymentRail rail)

@@ -6,6 +6,12 @@
 <div class="row justify-content-center"><div class="col-lg-7">
     <div class="mb-4"><div class="eyebrow">OUTGOING PAYMENT</div><h1>Create a bank payment</h1><p class="text-secondary">Use <strong>Show values</strong> to select stored accounts and beneficiaries. A beneficiary selection fills its bank, name, account, and recommended rail together.</p></div>
     <form method="post" class="surface form-surface" id="wire-create-form">
+        <input asp-for="LearningMissionId" type="hidden" />
+        @if (Model.LearningMissionId is not null)
+        {
+            var mission = LearningCatalog.Mission(Model.LearningMissionId);
+            <div class="learning-context mb-4"><span>Guided mission</span><strong>@mission?.Title</strong><a asp-controller="Learning" asp-action="Mission" asp-route-id="@Model.LearningMissionId">View objectives</a></div>
+        }
         <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
         <div class="mb-3"><div class="field-label-row"><label asp-for="CustomerReference" class="form-label">Customer payment reference</label><partial name="_ValuePicker" model="Picker(nameof(Model.CustomerReference))" /></div><input asp-for="CustomerReference" class="form-control" /><span asp-validation-for="CustomerReference" class="text-danger"></span><div class="form-text">Must be unique for this bank. It becomes the ISO end-to-end reference.</div></div>
         <div class="mb-3"><div class="field-label-row"><label asp-for="TransferType" class="form-label">Payment type</label><partial name="_ValuePicker" model="Picker(nameof(Model.TransferType))" /></div><select asp-for="TransferType" asp-items="Html.GetEnumSelectList<WireTransferType>()" class="form-select" id="transfer-type"></select><div class="form-text">Customer payments use pacs.008. Bank-to-bank liquidity transfers use pacs.009.</div></div>
@@ -16,7 +22,14 @@
         <div class="mb-3 customer-field"><div class="field-label-row"><label asp-for="ReceiverName" class="form-label">Beneficiary name</label><partial name="_ValuePicker" model="Picker(nameof(Model.ReceiverName))" /></div><input asp-for="ReceiverName" class="form-control" placeholder="Mary Jones"><span asp-validation-for="ReceiverName" class="text-danger"></span></div>
         <div class="mb-3 customer-field"><div class="field-label-row"><label asp-for="BeneficiaryAccountNumber" class="form-label">Beneficiary account or IBAN</label><partial name="_ValuePicker" model="Picker(nameof(Model.BeneficiaryAccountNumber))" /></div><input asp-for="BeneficiaryAccountNumber" class="form-control" placeholder="DE89370400440532013000"><span asp-validation-for="BeneficiaryAccountNumber" class="text-danger"></span></div>
         <div class="mb-3"><div class="field-label-row"><label asp-for="Amount" class="form-label">Amount (USD)</label><partial name="_ValuePicker" model="Picker(nameof(Model.Amount))" /></div><div class="input-group"><span class="input-group-text">$</span><input asp-for="Amount" class="form-control" inputmode="decimal" placeholder="10000.00"></div><span asp-validation-for="Amount" class="text-danger"></span></div>
-        <div class="mb-4"><div class="field-label-row"><label asp-for="Scenario" class="form-label">Learning scenario</label><partial name="_ValuePicker" model="Picker(nameof(Model.Scenario))" /></div><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<ProcessingScenario>()" class="form-select"></select><div class="form-text">Pending exercises an intermediate status; rejection releases the hold; malformed ISO fails before transmission.</div></div>
+        <fieldset class="mb-4"><div class="field-label-row"><legend class="form-label mb-0">Learning scenario</legend><partial name="_ValuePicker" model="Picker(nameof(Model.Scenario))" /></div>
+            <div class="scenario-grid">
+                <label class="scenario-card"><input asp-for="Scenario" type="radio" value="Standard" /><strong>Standard settlement</strong><span>Normal validation, acceptance, settlement, and posting.</span><small>Beginner</small></label>
+                <label class="scenario-card"><input asp-for="Scenario" type="radio" value="PendingThenAccepted" /><strong>Pending, then accepted</strong><span>Observe an intermediate state before final acceptance.</span><small>Intermediate</small></label>
+                <label class="scenario-card"><input asp-for="Scenario" type="radio" value="FedRejects" /><strong>Network rejection</strong><span>Trace rejection and verify that held funds are released.</span><small>Intermediate</small></label>
+                <label class="scenario-card"><input asp-for="Scenario" type="radio" value="MalformedIso" /><strong>Malformed ISO</strong><span>See structural validation stop transmission.</span><small>Advanced</small></label>
+            </div><div class="form-text">Choose the behavior you want to study. Each scenario has a different evidence trail.</div>
+        </fieldset>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Submit for approval</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>
     </form>
 </div></div>

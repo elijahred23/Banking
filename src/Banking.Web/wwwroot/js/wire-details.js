@@ -247,6 +247,17 @@
     }
 
     function wireMessageActions(root = content) {
+        root.querySelector(".replay-timeline")?.addEventListener("click", event => {
+            const items = Array.from(root.querySelectorAll(".timeline-item"));
+            items.forEach(item => item.classList.add("replay-hidden"));
+            event.currentTarget.disabled = true;
+            items.forEach((item, index) => setTimeout(() => {
+                item.classList.remove("replay-hidden");
+                item.classList.add("replay-active");
+                setTimeout(() => item.classList.remove("replay-active"), 700);
+                if (index === items.length - 1) event.currentTarget.disabled = false;
+            }, index * 650));
+        });
         root.querySelectorAll(".iso-message").forEach(message => {
             const xml = () => {
                 const code = message.querySelector(".xml-viewer code");

@@ -1,0 +1,4 @@
+@model IReadOnlyList<DiagnosticChallengeViewModel>
+@{ ViewData["Title"] = "Diagnostic challenges"; }
+<div class="page-heading mb-4"><div><div class="eyebrow">OPERATIONS PRACTICE</div><h1>Diagnostic challenges</h1><p class="text-secondary mb-0">Form a diagnosis before revealing the answer.</p></div><a asp-action="Index">Learning Center</a></div>
+<div class="challenge-grid">@foreach (var item in Model) { <article class="surface challenge-card"><span>Evidence packet</span><h2 class="h4">@item.Title</h2><p>@item.Evidence</p><strong>Possible causes</strong><ul>@foreach(var suspect in item.Suspects){<li>@suspect</li>}</ul><details><summary>Reveal diagnosis</summary><h3 class="h6">@item.Diagnosis</h3><p>@item.Verification</p></details></article> }</div>

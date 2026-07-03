@@ -32,6 +32,8 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<CheckReturn> CheckReturns => Set<CheckReturn>();
     public DbSet<CheckLedgerEntry> CheckLedgerEntries => Set<CheckLedgerEntry>();
     public DbSet<CheckEvent> CheckEvents => Set<CheckEvent>();
+    public DbSet<LearningProgress> LearningProgress => Set<LearningProgress>();
+    public DbSet<LearningAttempt> LearningAttempts => Set<LearningAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -160,5 +162,9 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
             .HasForeignKey(x => x.CheckCashLetterId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CheckCashLetter>().HasOne(x => x.DepositoryBank).WithMany()
             .HasForeignKey(x => x.DepositoryBankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<LearningProgress>().HasIndex(x => new { x.BankId, x.MissionId }).IsUnique();
+        modelBuilder.Entity<LearningProgress>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<LearningAttempt>().HasIndex(x => new { x.BankId, x.MissionId, x.CreatedDate });
+        modelBuilder.Entity<LearningAttempt>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
     }
 }

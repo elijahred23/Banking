@@ -33,6 +33,10 @@ configuration and build options.
 
 Open the URL printed by `Banking.Web`. The login page lets you select a bank and click the Maker, Approver, Compliance, or Operations persona; the shared lab password `fedwire-lab` is prefilled. Create a payment as the maker, click **Switch user**, and release it as the approver. Choose the receiving bank at login to inspect its received payments. Start the web project first on a fresh database because it creates and upgrades the schema.
 
+## Guided learning
+
+After signing in, open **Learn** to use the guided curriculum. The Learning Center includes role- and topic-based paths, explicit objectives, prediction checkpoints, live simulator exercises, evidence-based debriefs, diagnostic challenges, progressive hints, knowledge checks, a payment-rail comparison, a visual processing flow, and an ISO 20022 field and message explorer. Progress and assessment attempts are stored durably per bank so maker-to-approver role changes preserve the exercise. Operations users can open instructor mode; reset removes only learning records and preserves payment data.
+
 Configuration can be overridden with standard .NET environment variables, for example `ConnectionStrings__DefaultConnection`, `RabbitMq__HostName`, `RabbitMq__UserName`, and `RabbitMq__Password`.
 
 Version-controlled table definitions and the location for future migration scripts are documented in [`database/README.md`](database/README.md).

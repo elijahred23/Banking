@@ -6,6 +6,7 @@ namespace Banking.Web.Models;
 
 public sealed class CreateWireViewModel
 {
+    [StringLength(40)] public string? LearningMissionId { get; set; }
     public WireTransferType TransferType { get; set; }
     public Guid? FromAccountId { get; set; }
     [Required] public Guid ReceiverBankId { get; set; }
@@ -62,7 +63,8 @@ public sealed record WireDetailsViewModel(
     bool CanInvestigate,
     string? FailureReason,
     TimeSpan ProcessingDuration,
-    IReadOnlyList<WireIsoMessageDefinition> SupportedMessages);
+    IReadOnlyList<WireIsoMessageDefinition> SupportedMessages,
+    LearningDebriefViewModel Debrief);
 
 public sealed record ProcessingStageViewModel(
     WireEvent Event,

@@ -12,5 +12,9 @@
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Outgoing payments</span><strong>@Model.OutgoingCount</strong><small>@Model.OutgoingTotal.ToString("C") in recent activity</small></div></div>
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Incoming payments</span><strong>@Model.IncomingCount</strong><small>For the active persona</small></div></div>
 </div>
+<section class="surface learning-home-callout mb-5">
+    <div><div class="eyebrow">NEW TO THE LAB?</div><h2 class="h4 mb-1">Learn through guided payment missions</h2><p class="text-secondary mb-0">Choose a role-focused path, predict the outcome, run the live workflow, and verify your explanation against messages and accounting evidence.</p></div>
+    <a class="btn btn-outline-primary" asp-controller="Learning" asp-action="Index">Open Learning Center</a>
+</section>
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Recent payment activity</h2><a asp-controller="Wires" asp-action="Index">View all</a></div>
 <partial name="_WireTable" model="Model.RecentWires" />

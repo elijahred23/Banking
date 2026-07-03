@@ -54,3 +54,6 @@ upgrade idempotently for existing local databases.
 
 `202606291900_nonvalue_message_workflows.sql` adds independently owned ISO message exchanges
 for request-for-payment, account-reporting, and system-event conversations.
+
+`202607021800_learning_progress.sql` adds durable mission progress and knowledge-check attempts
+for the guided curriculum and instructor dashboard.

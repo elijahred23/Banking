@@ -1,0 +1,35 @@
+@model LearningCenterViewModel
+@{ ViewData["Title"] = "Learning Center"; }
+@{ var recommended = Model.Missions.FirstOrDefault(x => !Model.CompletedMissionIds.Contains(x.Id)); }
+
+<div class="learning-hero surface mb-4">
+    <div><div class="eyebrow">GUIDED CURRICULUM</div><h1>Learning Center</h1><p>Move from concepts to controlled practice. Every mission uses the live simulator and follows the same loop: predict, execute, inspect, and explain.</p></div>
+    <div class="learning-progress"><strong>@Model.CompletedMissionIds.Count / @Model.Missions.Count</strong><span>missions complete</span><progress value="@Model.CompletedMissionIds.Count" max="@Model.Missions.Count"></progress></div>
+</div>
+@if (recommended is not null) { <div class="recommended-mission mb-4"><div><span>Recommended next</span><strong>@recommended.Title</strong><small>@recommended.Summary</small></div><a class="btn btn-primary" asp-action="Mission" asp-route-id="@recommended.Id">Continue</a></div> }
+
+<div class="learning-tools mb-4">
+    <a class="surface learning-tool" asp-action="Rails"><strong>Compare payment rails</strong><span>Speed, finality, format, limits, and settlement</span></a>
+    <a class="surface learning-tool" asp-action="IsoExplorer"><strong>Explore ISO 20022</strong><span>Annotated fields and message-type comparison</span></a>
+    <a class="surface learning-tool" asp-action="Challenges"><strong>Diagnostic challenges</strong><span>Infer root causes from operational evidence</span></a>
+    <a class="surface learning-tool" asp-action="Glossary"><strong>Payment glossary</strong><span>Contextual definitions for rails, messages, and accounting</span></a>
+</div>
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-4">@if(User.IsInRole(BankSecurity.Operations)){<a class="btn btn-outline-secondary" asp-action="Instructor">Instructor dashboard</a>}<form asp-action="ResetProgress" method="post" onsubmit="return confirm('Reset learning progress for this bank? Payment records will be preserved.')"><button class="btn btn-outline-danger">Reset learning progress</button></form></div>
+
+@foreach (var path in Model.Paths)
+{
+    var missions = Model.Missions.Where(x => path.MissionIds.Contains(x.Id)).ToList();
+    <section class="surface learning-path mb-4">
+        <div class="learning-path-heading"><div><div class="eyebrow">@path.Audience</div><h2 class="h3">@path.Title</h2><p>@path.Description</p></div><span>@missions.Count missions</span></div>
+        <div class="mission-grid">
+            @foreach (var mission in missions)
+            {
+                var complete = Model.CompletedMissionIds.Contains(mission.Id);
+                <a class="mission-card @(complete ? "is-complete" : "")" asp-action="Mission" asp-route-id="@mission.Id">
+                    <span class="mission-state">@(complete ? "✓ Complete" : mission.Difficulty)</span>
+                    <strong>@mission.Title</strong><span>@mission.Summary</span><small>@mission.EstimatedMinutes minutes</small>
+                </a>
+            }
+        </div>
+    </section>
+}
