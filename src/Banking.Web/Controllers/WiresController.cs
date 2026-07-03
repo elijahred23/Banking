@@ -917,9 +917,12 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     private static async Task<CreateWireViewModel> PopulateAsync(CreateWireViewModel model, Guid bankId,
         BankingDbContext db, CancellationToken token)
     {
-        model.Accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
-            .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber} · available {(x.Balance - x.HeldBalance):C}", x.Id.ToString()))
-            .ToListAsync(token);
+        var accountData = await db.Accounts.Where(x => x.Customer.BankId == bankId)
+            .OrderBy(x => x.Customer.Name)
+            .Select(x => new WireAccountChoice(x.Id, x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
+            .AsNoTracking().ToListAsync(token);
+        model.Accounts = accountData.Select(x => new SelectListItem(
+            $"{x.CustomerName} · {x.AccountNumber} · available {x.AvailableBalance:C}", x.Id.ToString())).ToList();
         model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString()))
             .ToListAsync(token);
@@ -928,8 +931,16 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Select(x => new SelectListItem(x == PaymentRail.SwiftCbprPlus
                 ? "SWIFT international wire (CBPR+)" : x.ToString(), ((int)x).ToString())).ToList();
         var sender = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        var destinations = await db.Accounts.Where(x => x.Customer.BankId != bankId)
+            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
+            .Select(x => new WireDestinationChoice(x.Customer.BankId, x.Customer.Bank.Name,
+                x.Customer.Name, x.AccountNumber, x.Customer.Bank.CountryCode,
+                x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowReceiveEnabled && x.Customer.Bank.FedNowOnline,
+                x.Customer.Bank.SwiftEnabled))
+            .AsNoTracking().ToListAsync(token);
         model.SenderBankName = sender.Name;
         model.SenderMasterAccountBalance = sender.MasterAccountBalance;
+        model.Choices = WireChoices(sender, accountData, destinations, model.CustomerReference);
         return model;
     }
 
@@ -966,10 +977,11 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         BankingDbContext db, CancellationToken token)
     {
         var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
-        var accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
+        var accountData = await db.Accounts.Where(x => x.Customer.BankId == bankId)
             .OrderBy(x => x.Customer.Name)
-            .Select(x => new SelectListItem($"{x.Customer.Name} · {x.AccountNumber}", x.Id.ToString()))
+            .Select(x => new WireAccountChoice(x.Id, x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
             .AsNoTracking().ToListAsync(token);
+        var accounts = accountData.Select(x => new SelectListItem($"{x.CustomerName} · {x.AccountNumber}", x.Id.ToString())).ToList();
         var banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
             .AsNoTracking().ToListAsync(token);
@@ -982,10 +994,110 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Include(x => x.Bank).Include(x => x.CounterpartyBank).Include(x => x.Messages)
             .OrderByDescending(x => x.CreatedDate).AsSplitQuery().AsNoTracking()
             .Take(30).ToListAsync(token);
+        var debtorAccounts = await db.Accounts.Where(x => x.Customer.BankId != bankId)
+            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
+            .Select(x => new WorkflowDebtorChoice(x.Customer.BankId, x.Customer.Bank.Name,
+                x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance,
+                x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowReceiveEnabled && x.Customer.Bank.FedNowOnline))
+            .AsNoTracking().ToListAsync(token);
         return new MessageWorkflowsViewModel
         {
             Bank = bank, Accounts = accounts, Banks = banks, FedNowBanks = fedNowBanks,
-            Exchanges = exchanges
+            Exchanges = exchanges,
+            Choices = WorkflowChoices(bank, accountData, debtorAccounts, exchanges)
         };
     }
+
+    private static Dictionary<string, AchFieldChoices> WireChoices(Bank sender,
+        IReadOnlyList<WireAccountChoice> accounts, IReadOnlyList<WireDestinationChoice> destinations,
+        string currentReference)
+    {
+        var beneficiaryOptions = destinations.Where(x => x.CountryCode == sender.CountryCode || x.SwiftEnabled).Select(x =>
+        {
+            var rail = x.CountryCode != sender.CountryCode && x.SwiftEnabled
+                ? PaymentRail.SwiftCbprPlus
+                : sender.FedNowEnabled && sender.FedNowSendEnabled && sender.FedNowOnline && x.FedNowAvailable
+                    ? PaymentRail.FedNow : PaymentRail.Fedwire;
+            return WireOption($"{x.CustomerName} · {x.BankName}", $"{x.AccountNumber} · recommended {rail}",
+                (nameof(CreateWireViewModel.ReceiverBankId), x.BankId.ToString()),
+                (nameof(CreateWireViewModel.ReceiverName), x.CustomerName),
+                (nameof(CreateWireViewModel.BeneficiaryAccountNumber), x.AccountNumber),
+                (nameof(CreateWireViewModel.Rail), Convert.ToInt32(rail).ToString()));
+        }).ToList();
+        var accountOptions = accounts.Select(x => WireOption($"{x.CustomerName} · {x.AccountNumber}",
+            $"{x.AvailableBalance:C} available", (nameof(CreateWireViewModel.FromAccountId), x.Id.ToString()))).ToList();
+        var refs = new List<AchValueOption>
+        {
+            WireOption(currentReference, "New unique sender reference", (nameof(CreateWireViewModel.CustomerReference), currentReference))
+        };
+        return new()
+        {
+            [nameof(CreateWireViewModel.CustomerReference)] = WireChoice("Payment reference", "The generated value is checked against this bank's stored references when submitted and must remain unique.", refs),
+            [nameof(CreateWireViewModel.TransferType)] = WireEnumChoices<WireTransferType>(nameof(CreateWireViewModel.TransferType), "Payment types", "Customer transfers use an account; institution transfers use master-account liquidity."),
+            [nameof(CreateWireViewModel.Rail)] = WireEnumChoices<PaymentRail>(nameof(CreateWireViewModel.Rail), "Supported wire rails", "Fedwire and FedNow are domestic; SWIFT CBPR+ is international.", x => x is PaymentRail.Fedwire or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus),
+            [nameof(CreateWireViewModel.FromAccountId)] = WireChoice("Funded source accounts", "Only accounts owned by the active bank are accepted.", accountOptions),
+            [nameof(CreateWireViewModel.ReceiverBankId)] = WireChoice("Database beneficiaries", "Selecting a beneficiary fills bank, name, account, and recommended rail.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.ReceiverName)] = WireChoice("Database beneficiaries", "Selecting a beneficiary fills all receiving fields.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.BeneficiaryAccountNumber)] = WireChoice("Database beneficiaries", "Domestic accounts and stored international IBANs are listed.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.Amount)] = WireChoice("Available source balances", "Customer transfers cannot exceed the selected account's available balance.",
+                accounts.Where(x => x.AvailableBalance > 0).Select(x => WireOption($"{Math.Min(10_000m, x.AvailableBalance):C} from {x.CustomerName}",
+                    $"{x.AvailableBalance:C} available", (nameof(CreateWireViewModel.FromAccountId), x.Id.ToString()),
+                    (nameof(CreateWireViewModel.Amount), Math.Min(10_000m, x.AvailableBalance).ToString("0.00")))).ToList()),
+            [nameof(CreateWireViewModel.Scenario)] = WireEnumChoices<ProcessingScenario>(nameof(CreateWireViewModel.Scenario), "Learning scenarios", "Standard follows normal processing; other values exercise intermediate or rejected states.")
+        };
+    }
+
+    private static Dictionary<string, AchFieldChoices> WorkflowChoices(Bank sender, IReadOnlyList<WireAccountChoice> accounts,
+        IReadOnlyList<WorkflowDebtorChoice> debtors, IReadOnlyList<MessageExchange> exchanges)
+    {
+        var creditorOptions = accounts.Select(x => WireOption($"{x.CustomerName} · {x.AccountNumber}",
+            $"{x.AvailableBalance:C} available", ("rfp-account", x.Id.ToString()))).ToList();
+        var debtorOptions = debtors.Select(x => WireOption($"{x.CustomerName} · {x.BankName}",
+            $"{x.AccountNumber} · {x.AvailableBalance:C} available",
+            ("rfp-bank", x.BankId.ToString()), ("rfp-name", x.CustomerName), ("rfp-debtor-account", x.AccountNumber),
+            ("rfp-rail", sender.FedNowRequestForPaymentEnabled && sender.FedNowOnline && x.FedNowAvailable
+                ? PaymentRail.FedNow.ToString() : PaymentRail.Fedwire.ToString()))).ToList();
+        var remittances = exchanges.Where(x => x.Type == MessageExchangeType.RequestForPayment)
+            .Select(x => x.Details).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8).Select(x => WireOption(x, "Previous request", ("rfp-remittance", x))).ToList();
+        var participants = debtors.Where(x => x.FedNowAvailable).GroupBy(x => new { x.BankId, x.BankName }).Select(x => x.Key)
+            .Select(x => WireOption(x.BankName, "Online FedNow participant", ("event-recipient", x.BankId.ToString()))).ToList();
+        var eventHistory = exchanges.Where(x => x.Type == MessageExchangeType.SystemEvent).Take(8).ToList();
+        return new()
+        {
+            ["rfp-account"] = WireChoice("Creditor accounts", "Accounts owned by the active bank.", creditorOptions),
+            ["rfp-bank"] = WireChoice("Database debtors", "Selecting a customer fills debtor bank, name, account, and an available rail.", debtorOptions),
+            ["rfp-name"] = WireChoice("Database debtors", "Selecting a customer fills all debtor fields.", debtorOptions),
+            ["rfp-debtor-account"] = WireChoice("Database debtors", "Stored debtor accounts and balances are shown.", debtorOptions),
+            ["rfp-amount"] = WireChoice("Debtor available balances", "Choose a conservative sample amount tied to a stored debtor account.", debtors.Where(x => x.AvailableBalance > 0)
+                .Select(x => WireOption($"{Math.Min(1_000m, x.AvailableBalance):C} from {x.CustomerName}", $"{x.AvailableBalance:C} available",
+                    ("rfp-bank", x.BankId.ToString()), ("rfp-name", x.CustomerName), ("rfp-debtor-account", x.AccountNumber),
+                    ("rfp-amount", Math.Min(1_000m, x.AvailableBalance).ToString("0.00")))).ToList()),
+            ["rfp-rail"] = WireChoice("Request rails", "FedNow is selected only for online database participants.",
+                [WireOption("Fedwire", null, ("rfp-rail", "Fedwire")), WireOption("FedNow", null, ("rfp-rail", "FedNow"))]),
+            ["rfp-remittance"] = WireChoice("Previous remittance values", "Use a previous database value or enter a new purpose up to 140 characters.", remittances),
+            ["report-type"] = WireChoice("Report types", "Supported camt.060 request types.", [WireOption("Account balance", null, ("report-type", "Account balance")), WireOption("Activity totals", null, ("report-type", "Activity totals")), WireOption("Activity details", null, ("report-type", "Activity details"))]),
+            ["report-rail"] = WireChoice("Report rails", "Account reporting is supported for FedNow and Fedwire.", [WireOption("FedNow", null, ("report-rail", "FedNow")), WireOption("Fedwire", null, ("report-rail", "Fedwire"))]),
+            ["report-date"] = WireChoice("Business date", "The lab accepts the current business date.", [WireOption(DateTime.Today.ToString("D"), null, ("report-date", DateTime.Today.ToString("yyyy-MM-dd")))]),
+            ["event-recipient"] = WireChoice("Online FedNow participants", "Only enabled, online database participants are listed.", participants),
+            ["event-code"] = WireChoice("Event codes", "Previous event subjects plus the standard participant notice code.",
+                eventHistory.Select(x => x.Subject).Prepend("PARTICIPANT_NOTICE").Distinct().Select(x => WireOption(x, null, ("event-code", x))).ToList()),
+            ["event-details"] = WireChoice("Previous event narratives", "Use a prior database narrative or enter new details from 10 to 500 characters.",
+                eventHistory.Select(x => x.Details).Distinct().Select(x => WireOption(x, null, ("event-details", x))).ToList())
+        };
+    }
+
+    private static AchFieldChoices WireEnumChoices<T>(string field, string title, string guidance,
+        Func<T, bool>? predicate = null) where T : struct, Enum => WireChoice(title, guidance,
+        Enum.GetValues<T>().Where(x => predicate?.Invoke(x) ?? true)
+            .Select(x => WireOption(x.ToString(), null, (field, Convert.ToInt32(x).ToString()))).ToList());
+
+    private static AchFieldChoices WireChoice(string title, string guidance, IReadOnlyList<AchValueOption> options) => new(title, guidance, options);
+    private static AchValueOption WireOption(string label, string? detail, params (string Field, string Value)[] values) =>
+        new(label, detail, values.ToDictionary(x => x.Field, x => x.Value));
+    private sealed record WireAccountChoice(Guid Id, string CustomerName, string AccountNumber, decimal AvailableBalance);
+    private sealed record WireDestinationChoice(Guid BankId, string BankName, string CustomerName, string AccountNumber,
+        string CountryCode, bool FedNowAvailable, bool SwiftEnabled);
+    private sealed record WorkflowDebtorChoice(Guid BankId, string BankName, string CustomerName, string AccountNumber,
+        decimal AvailableBalance, bool FedNowAvailable);
 }

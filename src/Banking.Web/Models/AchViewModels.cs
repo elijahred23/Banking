@@ -21,6 +21,7 @@ public sealed class CreateAchViewModel
     public AchPaymentPurpose Purpose { get; set; }
     public AchProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
+    public Dictionary<string, AchFieldChoices> Choices { get; set; } = [];
 }
 
 public sealed class CreateEftpsViewModel
@@ -35,7 +36,20 @@ public sealed class CreateEftpsViewModel
     [DataType(DataType.Date)] public DateOnly SettlementDate { get; set; } = AchBusinessCalendar.NextBankingDay(DateOnly.FromDateTime(DateTime.Today));
     public AchProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
+    public Dictionary<string, AchFieldChoices> Choices { get; set; } = [];
 }
+
+public sealed record AchValueOption(
+    string Label,
+    string? Detail,
+    IReadOnlyDictionary<string, string> Values);
+
+public sealed record AchFieldChoices(
+    string Title,
+    string Guidance,
+    IReadOnlyList<AchValueOption> Options);
+
+public sealed record AchValuePickerViewModel(string FieldId, AchFieldChoices Choices);
 
 public sealed record AchIndexViewModel(Bank Bank, IReadOnlyList<AchEntry> Entries);
 public sealed record AchBatchIndexViewModel(Bank Bank, IReadOnlyList<AchBatch> Batches);

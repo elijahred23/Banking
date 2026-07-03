@@ -21,6 +21,7 @@ public sealed class CreateWireViewModel
     public List<SelectListItem> Rails { get; set; } = [];
     public string SenderBankName { get; set; } = "";
     public decimal SenderMasterAccountBalance { get; set; }
+    public Dictionary<string, AchFieldChoices> Choices { get; set; } = [];
 }
 
 public sealed record DashboardViewModel(Bank Bank, IReadOnlyList<WireTransfer> RecentWires,
@@ -85,6 +86,7 @@ public sealed class MessageWorkflowsViewModel
     public List<SelectListItem> Banks { get; init; } = [];
     public List<SelectListItem> FedNowBanks { get; init; } = [];
     public IReadOnlyList<MessageExchange> Exchanges { get; init; } = [];
+    public Dictionary<string, AchFieldChoices> Choices { get; init; } = [];
 }
 
 public sealed class RequestForPaymentViewModel

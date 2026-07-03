@@ -1,0 +1,30 @@
+@using System.Text.Json
+@model AchValuePickerViewModel
+<div class="dropdown ach-value-picker">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+            aria-label="Show acceptable values for @Model.FieldId">
+        Show values
+    </button>
+    <div class="dropdown-menu dropdown-menu-end ach-value-menu">
+        <div class="ach-value-heading">@Model.Choices.Title</div>
+        <div class="ach-value-guidance">@Model.Choices.Guidance</div>
+        @if (Model.Choices.Options.Count == 0)
+        {
+            <div class="ach-value-empty">No saved database values yet. Use the rule above.</div>
+        }
+        else
+        {
+            <div class="ach-value-options">
+                @foreach (var option in Model.Choices.Options)
+                {
+                    <button class="dropdown-item ach-value-option" type="button"
+                            data-ach-values="@JsonSerializer.Serialize(option.Values)">
+                        <strong>@option.Label</strong>
+                        @if (!string.IsNullOrWhiteSpace(option.Detail)) { <small>@option.Detail</small> }
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</div>

@@ -59,12 +59,23 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpGet]
-    public IActionResult Generator() => View(new CheckTiffGeneratorViewModel());
+    public async Task<IActionResult> Generator(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        return View(await PopulateGeneratorAsync(new CheckTiffGeneratorViewModel(), bankId, db, token));
+    }
 
     [HttpGet]
-    public IActionResult DownloadTiff(CheckTiffGeneratorViewModel model, CheckImageSide side)
+    public async Task<IActionResult> DownloadTiff(CheckTiffGeneratorViewModel model, CheckImageSide side,
+        CancellationToken token)
     {
-        if (!ModelState.IsValid) return View("Generator", model);
+        if (!ModelState.IsValid)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(token);
+            var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+            return View("Generator", await PopulateGeneratorAsync(model, bankId, db, token));
+        }
         var content = CheckTiffGenerator.Generate(side, model.RoutingNumber,
             model.AccountNumber, model.CheckNumber, model.Amount);
         var suffix = side.ToString().ToLowerInvariant();
@@ -165,10 +176,103 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
         CreateCheckDepositViewModel model, Guid bankId, BankingDbContext db,
         CancellationToken token)
     {
-        model.Accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId)
-            .OrderBy(x => x.Customer.Name).Select(x => new SelectListItem(
-                $"{x.Customer.Name} · {x.AccountNumber} · available {(x.Balance - x.HeldBalance):C}",
-                x.Id.ToString())).ToListAsync(token);
+        var depositing = await db.Accounts.Where(x => x.Customer.BankId == bankId)
+            .OrderBy(x => x.Customer.Name).Select(x => new CheckAccountChoice(x.Id, x.Customer.Name,
+                x.AccountNumber, x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
+            .AsNoTracking().ToListAsync(token);
+        var country = await db.Banks.Where(x => x.Id == bankId).Select(x => x.CountryCode).SingleAsync(token);
+        var paying = await db.Accounts.Where(x => x.Customer.BankId != bankId
+                && x.Customer.Bank.CountryCode == country && x.Balance - x.HeldBalance > 0)
+            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
+            .Select(x => new CheckAccountChoice(x.Id, x.Customer.Name, x.AccountNumber,
+                x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
+            .AsNoTracking().ToListAsync(token);
+        var history = await db.CheckDeposits.Where(x => x.DepositoryBankId == bankId)
+            .OrderByDescending(x => x.CreatedDate).Take(20)
+            .Select(x => new CheckHistoryChoice(x.DepositorName, x.RawMicrLine, x.Amount, x.CheckNumber))
+            .AsNoTracking().ToListAsync(token);
+        model.Accounts = depositing.Select(x => new SelectListItem(
+            $"{x.CustomerName} · {x.AccountNumber} · available {x.AvailableBalance:C}", x.Id.ToString())).ToList();
+        model.Choices = CheckCaptureChoices(depositing, paying, history);
         return model;
     }
+
+    private static async Task<CheckTiffGeneratorViewModel> PopulateGeneratorAsync(CheckTiffGeneratorViewModel model,
+        Guid bankId, BankingDbContext db, CancellationToken token)
+    {
+        var country = await db.Banks.Where(x => x.Id == bankId).Select(x => x.CountryCode).SingleAsync(token);
+        var paying = await db.Accounts.Where(x => x.Customer.BankId != bankId
+                && x.Customer.Bank.CountryCode == country && x.Balance - x.HeldBalance > 0)
+            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
+            .Select(x => new CheckAccountChoice(x.Id, x.Customer.Name, x.AccountNumber,
+                x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
+            .AsNoTracking().ToListAsync(token);
+        var history = await db.CheckDeposits.Where(x => x.DepositoryBankId == bankId)
+            .OrderByDescending(x => x.CreatedDate).Take(20)
+            .Select(x => new CheckHistoryChoice(x.DepositorName, x.RawMicrLine, x.Amount, x.CheckNumber))
+            .AsNoTracking().ToListAsync(token);
+        model.Choices = CheckGeneratorChoices(paying, history);
+        return model;
+    }
+
+    private static Dictionary<string, AchFieldChoices> CheckCaptureChoices(IReadOnlyList<CheckAccountChoice> depositing,
+        IReadOnlyList<CheckAccountChoice> paying, IReadOnlyList<CheckHistoryChoice> history)
+    {
+        var depositorOptions = depositing.Select(x => CheckOption($"{x.CustomerName} · {x.AccountNumber}",
+            $"{x.AvailableBalance:C} available", (nameof(CreateCheckDepositViewModel.DepositingAccountId), x.Id.ToString()),
+            (nameof(CreateCheckDepositViewModel.DepositorName), x.CustomerName))).ToList();
+        var micrOptions = paying.Select((x, index) =>
+        {
+            var checkNumber = (1001 + index).ToString();
+            var amount = Math.Max(.01m, Math.Min(125.50m, x.AvailableBalance));
+            return CheckOption($"{x.CustomerName} · {x.RoutingNumber}", $"Account {x.AccountNumber} · {x.AvailableBalance:C} available",
+                (nameof(CreateCheckDepositViewModel.RawMicrLine), $"t{x.RoutingNumber}t {x.AccountNumber}o {checkNumber}"),
+                (nameof(CreateCheckDepositViewModel.Amount), amount.ToString("0.00")));
+        }).ToList();
+        var historicalMicr = history.Select(x => CheckOption(x.RawMicrLine, $"Previous deposit · {x.Amount:C}",
+            (nameof(CreateCheckDepositViewModel.RawMicrLine), x.RawMicrLine),
+            (nameof(CreateCheckDepositViewModel.Amount), x.Amount.ToString("0.00"))));
+        micrOptions.AddRange(historicalMicr);
+        return new()
+        {
+            [nameof(CreateCheckDepositViewModel.DepositingAccountId)] = CheckChoice("Depositing accounts", "Selecting an account also fills the depositor name.", depositorOptions),
+            [nameof(CreateCheckDepositViewModel.DepositorName)] = CheckChoice("Database depositors", "Customers belonging to the active bank are listed.", depositorOptions),
+            [nameof(CreateCheckDepositViewModel.Amount)] = CheckChoice("Paying-account examples", "Suggested amounts stay within the stored paying account's available balance.", micrOptions),
+            [nameof(CreateCheckDepositViewModel.RawMicrLine)] = CheckChoice("Database paying accounts", "Selecting a value builds the teaching MICR line and matching amount.", micrOptions),
+            [nameof(CreateCheckDepositViewModel.Scenario)] = CheckEnumChoices<CheckProcessingScenario>(nameof(CreateCheckDepositViewModel.Scenario), "Learning scenarios", "Standard follows normal presentment; other values exercise check exceptions.")
+        };
+    }
+
+    private static Dictionary<string, AchFieldChoices> CheckGeneratorChoices(IReadOnlyList<CheckAccountChoice> paying,
+        IReadOnlyList<CheckHistoryChoice> history)
+    {
+        var accountOptions = paying.Select((x, index) => CheckOption($"{x.CustomerName} · {x.RoutingNumber}",
+            $"Account {x.AccountNumber} · {x.AvailableBalance:C} available",
+            (nameof(CheckTiffGeneratorViewModel.RoutingNumber), x.RoutingNumber),
+            (nameof(CheckTiffGeneratorViewModel.AccountNumber), x.AccountNumber),
+            (nameof(CheckTiffGeneratorViewModel.CheckNumber), (1001 + index).ToString()),
+            (nameof(CheckTiffGeneratorViewModel.Amount), Math.Max(.01m, Math.Min(125.50m, x.AvailableBalance)).ToString("0.00")))).ToList();
+        var checkNumbers = history.Select(x => x.CheckNumber).Prepend("1001").Distinct()
+            .Select(x => CheckOption(x, "Fixture check number", (nameof(CheckTiffGeneratorViewModel.CheckNumber), x))).ToList();
+        var amounts = history.Select(x => x.Amount).Prepend(125.50m).Distinct()
+            .Select(x => CheckOption(x.ToString("C"), "Previous or standard fixture amount",
+                (nameof(CheckTiffGeneratorViewModel.Amount), x.ToString("0.00")))).ToList();
+        return new()
+        {
+            [nameof(CheckTiffGeneratorViewModel.RoutingNumber)] = CheckChoice("Database paying accounts", "Selecting one fills routing, account, check number, and an affordable amount.", accountOptions),
+            [nameof(CheckTiffGeneratorViewModel.AccountNumber)] = CheckChoice("Database paying accounts", "Selecting one fills all related fixture fields.", accountOptions),
+            [nameof(CheckTiffGeneratorViewModel.CheckNumber)] = CheckChoice("Check numbers", "Recent database values and the standard fixture number are listed.", checkNumbers),
+            [nameof(CheckTiffGeneratorViewModel.Amount)] = CheckChoice("Fixture amounts", "Recent database values and the standard fixture amount are listed.", amounts)
+        };
+    }
+
+    private static AchFieldChoices CheckEnumChoices<T>(string field, string title, string guidance) where T : struct, Enum =>
+        CheckChoice(title, guidance, Enum.GetValues<T>().Select(x => CheckOption(x.ToString(), null,
+            (field, Convert.ToInt32(x).ToString()))).ToList());
+    private static AchFieldChoices CheckChoice(string title, string guidance, IReadOnlyList<AchValueOption> options) => new(title, guidance, options);
+    private static AchValueOption CheckOption(string label, string? detail, params (string Field, string Value)[] values) =>
+        new(label, detail, values.ToDictionary(x => x.Field, x => x.Value));
+    private sealed record CheckAccountChoice(Guid Id, string CustomerName, string AccountNumber,
+        decimal AvailableBalance, string RoutingNumber);
+    private sealed record CheckHistoryChoice(string DepositorName, string RawMicrLine, decimal Amount, string CheckNumber);
 }

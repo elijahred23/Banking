@@ -24,6 +24,7 @@ public sealed class CheckTiffGeneratorViewModel
     public string CheckNumber { get; set; } = "1001";
     [Range(typeof(decimal), "0.01", "9999999")]
     public decimal Amount { get; set; } = 125.50m;
+    public Dictionary<string, AchFieldChoices> Choices { get; set; } = [];
 }
 
 public sealed class CreateCheckDepositViewModel
@@ -42,4 +43,5 @@ public sealed class CreateCheckDepositViewModel
     [Required, Display(Name = "Back TIFF image")]
     public IFormFile? BackImage { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
+    public Dictionary<string, AchFieldChoices> Choices { get; set; } = [];
 }

@@ -1,19 +1,22 @@
 @model CreateCheckDepositViewModel
-@{ ViewData["Title"] = "Capture check"; }
+@{
+    ViewData["Title"] = "Capture check";
+    AchValuePickerViewModel Picker(string field) => new(field, Model.Choices[field]);
+}
 
 <div class="row justify-content-center"><div class="col-xl-8 col-lg-9">
 <div class="mb-4"><div class="eyebrow">CHECK CAPTURE</div><h1>Capture check deposit</h1>
-<p class="text-secondary mb-0">Upload one front and one back TIFF image, each no larger than 2 MB. Need fixtures? <a asp-action="Generator">Generate test TIFF images</a> or read the <a asp-action="Instructions">step-by-step guide</a>.</p></div>
+<p class="text-secondary mb-0">Use <strong>Show values</strong> for stored depositing and paying accounts. Upload one front and one back TIFF image, each no larger than 2 MB. Need fixtures? <a asp-action="Generator">Generate test TIFF images</a>.</p></div>
 <form asp-action="Create" method="post" enctype="multipart/form-data" class="surface form-surface row g-3">
     <div asp-validation-summary="All" class="text-danger"></div>
-    <div class="col-12"><label asp-for="DepositingAccountId" class="form-label"></label><select asp-for="DepositingAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select></div>
-    <div class="col-md-6"><label asp-for="DepositorName" class="form-label"></label><input asp-for="DepositorName" class="form-control" /></div>
-    <div class="col-md-6"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" class="form-control" /></div>
-    <div class="col-12"><label asp-for="RawMicrLine" class="form-label"></label><input asp-for="RawMicrLine" class="form-control" placeholder="t103000648t 654321o 1001" /><div class="form-text">Teaching format: tRoutingNumbert AccountNumbero CheckNumber</div></div>
-    <div class="col-md-6"><label asp-for="Scenario" class="form-label"></label><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<CheckProcessingScenario>()" class="form-select"></select></div>
+    <div class="col-12"><div class="field-label-row"><label asp-for="DepositingAccountId" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.DepositingAccountId))" /></div><select asp-for="DepositingAccountId" asp-items="Model.Accounts" class="form-select"><option value="">Select an account</option></select></div>
+    <div class="col-md-6"><div class="field-label-row"><label asp-for="DepositorName" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.DepositorName))" /></div><input asp-for="DepositorName" class="form-control" /></div>
+    <div class="col-md-6"><div class="field-label-row"><label asp-for="Amount" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.Amount))" /></div><input asp-for="Amount" class="form-control" /></div>
+    <div class="col-12"><div class="field-label-row"><label asp-for="RawMicrLine" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.RawMicrLine))" /></div><input asp-for="RawMicrLine" class="form-control" placeholder="t103000648t 654321o 1001" /><div class="form-text">Teaching format: tRoutingNumbert AccountNumbero CheckNumber</div></div>
+    <div class="col-md-6"><div class="field-label-row"><label asp-for="Scenario" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.Scenario))" /></div><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<CheckProcessingScenario>()" class="form-select"></select></div>
     <div class="col-md-6"></div>
-    <div class="col-md-6"><label asp-for="FrontImage" class="form-label"></label><input asp-for="FrontImage" class="form-control" accept=".tif,.tiff,image/tiff" /></div>
-    <div class="col-md-6"><label asp-for="BackImage" class="form-label"></label><input asp-for="BackImage" class="form-control" accept=".tif,.tiff,image/tiff" /></div>
+    <div class="col-md-6"><label asp-for="FrontImage" class="form-label"></label><input asp-for="FrontImage" class="form-control" accept=".tif,.tiff,image/tiff" /><div class="form-text">Choose a local TIFF file; browsers do not allow sites to prefill file inputs.</div></div>
+    <div class="col-md-6"><label asp-for="BackImage" class="form-label"></label><input asp-for="BackImage" class="form-control" accept=".tif,.tiff,image/tiff" /><div class="form-text">Choose the matching back image generated with the same fixture values.</div></div>
     <div class="col-12 form-actions"><button class="btn btn-primary">Capture check</button><a asp-action="Index" class="btn btn-light">Cancel</a></div>
 </form>
 </div></div>
