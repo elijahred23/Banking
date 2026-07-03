@@ -84,7 +84,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return View(await LoadMessageWorkflowsAsync(bankId, db, token));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> CreateRequestForPayment(RequestForPaymentViewModel model,
         CancellationToken token)
     {
@@ -216,7 +216,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
         var response = nonValueMessages.CreateRequestForPaymentResponse(exchange.Id,
             exchange.Bank, debtorBank, exchange.Rail, approve, reason);
-        exchange.Messages.Add(new IsoMessage
+        db.IsoMessages.Add(new IsoMessage
         {
             MessageExchangeId = exchange.Id, MessageType = response.MessageType,
             Direction = response.Direction, XmlPayload = response.XmlPayload
@@ -230,7 +230,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         }
         catch (DbUpdateConcurrencyException)
         {
-            TempData["Error"] = "This request was answered by another session.";
+            TempData["Error"] =
+                "The request changed while you were reviewing it. Refresh the conversation to see its current decision.";
             return RedirectToAction(nameof(MessageWorkflows));
         }
 
@@ -245,7 +246,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return RedirectToAction(nameof(MessageWorkflows));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> CreateAccountReport(AccountReportRequestViewModel model,
         CancellationToken token)
     {
@@ -274,7 +275,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return RedirectToAction(nameof(MessageWorkflows));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> CreateSystemEvent(SystemEventViewModel model,
         CancellationToken token)
     {
@@ -510,7 +511,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return model is null ? NotFound() : PartialView("_WireDetails", model);
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> OpenCase(Guid id, WireCaseType type, string reason,
         CancellationToken token)
     {
@@ -590,7 +591,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> GenerateIsoMessage(Guid id, string messageType, string? details,
         CancellationToken token)
     {

@@ -18,25 +18,19 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             .SingleOrDefaultAsync(x => x.Id == command.EntryId, token);
         if (entry is null || entry.Status != AchEntryStatus.Entered) return;
 
-        var error = entry.Amount <= 0 ? "Amount must be positive."
-            : entry.EffectiveEntryDate < DateOnly.FromDateTime(DateTime.UtcNow.Date) ? "Effective date cannot be in the past."
-            : !AbaRoutingNumberValidator.IsValid(entry.ReceivingRoutingNumber) ? "Invalid ACH routing number."
-            : entry.SecCode == AchStandardEntryClass.Iat ? "IAT is reserved for a later lab slice."
-            : entry.Purpose == AchPaymentPurpose.TaxPaymentEftps && (entry.SecCode != AchStandardEntryClass.Ccd || string.IsNullOrWhiteSpace(entry.Addenda05))
-                ? "EFTPS-style payments require CCD and an addenda 05 record."
-            : IsCredit(entry.TransactionCode) && entry.OriginatingAccount.AvailableBalance < entry.Amount
-                ? "Insufficient originating account funds."
-            : null;
-        if (error is not null)
+        var errors = AchRules.Validate(entry, DateOnly.FromDateTime(DateTime.UtcNow.Date)).ToList();
+        if (AchRules.IsCredit(entry.TransactionCode) && entry.OriginatingAccount.AvailableBalance < entry.Amount)
+            errors.Add(new(nameof(entry.Amount), "The originating account has insufficient available funds."));
+        if (errors.Count != 0)
         {
-            entry.Status = AchEntryStatus.Returned;
-            entry.ReturnCode = !AbaRoutingNumberValidator.IsValid(entry.ReceivingRoutingNumber) ? "R13" : "R01";
-            db.AchReturns.Add(new AchReturn { AchEntryId = entry.Id, ReturnCode = entry.ReturnCode, Reason = error });
+            entry.Status = AchEntryStatus.Rejected;
             await db.SaveChangesAsync(token);
+            logger.LogWarning("ODFI rejected ACH entry {EntryId}: {Errors}", entry.Id,
+                string.Join(" ", errors.Select(x => x.Message)));
             return;
         }
 
-        if (IsCredit(entry.TransactionCode)) entry.OriginatingAccount.HeldBalance += entry.Amount;
+        if (AchRules.IsCredit(entry.TransactionCode)) entry.OriginatingAccount.HeldBalance += entry.Amount;
         entry.Status = AchEntryStatus.Validated;
         var batch = await db.AchBatches.Include(x => x.Entries).FirstOrDefaultAsync(x =>
             x.OriginatingBankId == entry.OriginatingBankId && x.Status == "Open"
@@ -77,6 +71,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             var sequence = 0;
             foreach (var batch in bankGroup)
             {
+                batch.ServiceClassCode = AchRules.ServiceClassCode(batch.Entries);
                 batch.Status = "Closed";
                 batch.BatchNumber = ++number;
                 file.Batches.Add(batch);
@@ -99,6 +94,4 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             logger.LogInformation("Closed {BatchCount} ACH batches into file {FileId}", file.Batches.Count, file.Id);
         }
     }
-
-    private static bool IsCredit(AchTransactionCode code) => code is AchTransactionCode.CheckingCredit or AchTransactionCode.SavingsCredit;
 }

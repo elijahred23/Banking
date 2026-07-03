@@ -169,7 +169,8 @@
                 </div>
                 @if (Model.CanRequestReturn || Model.CanInvestigate)
                 {
-                    <form asp-controller="Wires" asp-action="OpenCase" method="post" class="mb-4">
+                    @if (!User.IsInRole(BankSecurity.Operations)) { <div class="alert alert-secondary">Operations permission is required to open servicing cases.</div> }
+                    <fieldset disabled="@(!User.IsInRole(BankSecurity.Operations))"><form asp-controller="Wires" asp-action="OpenCase" method="post" class="mb-4">
                         <input type="hidden" name="id" value="@wire.Id" />
                         <label for="case-reason-@wire.Id" class="form-label">Case reason</label>
                         <textarea id="case-reason-@wire.Id" name="reason" class="form-control mb-2" rows="3" minlength="10" maxlength="500" required placeholder="Explain why the payment should be returned or investigated."></textarea>
@@ -183,7 +184,7 @@
                                 <button class="btn btn-outline-primary" name="type" value="Investigation">Open investigation</button>
                             }
                         </div>
-                    </form>
+                    </form></fieldset>
                 }
                 @if (Model.Cases.Any())
                 {
@@ -248,7 +249,8 @@
         @if (Model.Messages.Count > 1)
         { <span class="compare-hint">Side-by-side comparison</span> }
     </div>
-    <form asp-controller="Wires" asp-action="GenerateIsoMessage" method="post" class="border rounded p-3 mb-4">
+    @if (!User.IsInRole(BankSecurity.Operations)) { <div class="alert alert-secondary">Operations permission is required to generate servicing messages.</div> }
+    <fieldset disabled="@(!User.IsInRole(BankSecurity.Operations))"><form asp-controller="Wires" asp-action="GenerateIsoMessage" method="post" class="border rounded p-3 mb-4">
         <input type="hidden" name="id" value="@wire.Id" />
         <div class="row g-2 align-items-end">
             <div class="col-md-4">
@@ -274,7 +276,7 @@
             </div>
         </div>
         <div class="form-text">Creates a wire-correlated message with the rail's business header, validates it, and persists it to this timeline. Drawdown, reporting, and system-event messages use <a asp-action="MessageWorkflows">dedicated workflows</a>.</div>
-    </form>
+    </form></fieldset>
     @if (Model.Messages.Any())
     {
         <div class="message-grid @(Model.Messages.Count > 1 ? "message-grid-compare" : "")">

@@ -1,0 +1,12 @@
+@{ ViewData["Title"] = "Permission required"; }
+<div class="login-wrap">
+    <div class="surface login-card text-center">
+        <div class="brand-mark mb-4 mx-auto">!</div>
+        <h1 class="h3">Permission required</h1>
+        <p class="text-secondary">The <strong>@User.Identity?.Name</strong> persona cannot perform this action. Switch to the role responsible for this workflow.</p>
+        <form asp-action="Logout" method="post" class="d-grid gap-2">
+            <button class="btn btn-primary" type="submit">Switch user</button>
+            <a class="btn btn-light" asp-controller="Home" asp-action="Index">Return to overview</a>
+        </form>
+    </div>
+</div>

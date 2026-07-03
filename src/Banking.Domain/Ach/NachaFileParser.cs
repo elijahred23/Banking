@@ -12,15 +12,29 @@ public sealed class NachaFileParser
         var errors = new List<string>();
         var lines = (payload ?? "").Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length == 0) return new(false, ["The NACHA file is empty."], 0, 0, 0, 0);
+        if (lines.Length % 10 != 0) errors.Add("The file is not padded to a multiple of 10 records.");
         for (var i = 0; i < lines.Length; i++)
             if (lines[i].Length != 94) errors.Add($"Record {i + 1} is {lines[i].Length} characters; expected 94.");
         if (lines[0].Length == 0 || lines[0][0] != '1') errors.Add("File header record is missing.");
+        else if (lines[0].Length == 94 && !AbaRoutingNumberValidator.IsValid(lines[0].Substring(4, 9)))
+            errors.Add("The immediate destination routing number is invalid.");
+        var supportedTypes = new HashSet<char> { '1', '5', '6', '7', '8', '9' };
+        for (var i = 0; i < lines.Length; i++)
+            if (lines[i].Length == 94 && !supportedTypes.Contains(lines[i][0]))
+                errors.Add($"Record {i + 1} has unsupported record type {lines[i][0]}.");
         var controls = lines.Where(x => x.Length == 94 && x[0] == '9' && x.Any(c => c != '9')).ToList();
         if (controls.Count != 1) errors.Add("Exactly one file control record is required.");
+        if (controls.Count == 1)
+        {
+            var controlIndex = Array.IndexOf(lines, controls[0]);
+            if (lines.Skip(controlIndex + 1).Any(x => x.Length != 94 || x.Any(c => c != '9')))
+                errors.Add("Only 9-filled block padding records may follow the file control record.");
+        }
         var batchCount = lines.Count(x => x.Length == 94 && x[0] == '5');
         var batchControls = lines.Count(x => x.Length == 94 && x[0] == '8');
         if (batchCount != batchControls) errors.Add("Batch header and control counts do not match.");
         var entryLines = lines.Where(x => x.Length == 94 && x[0] == '6').ToList();
+        var traces = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in entryLines)
         {
             var routing = entry.Substring(3, 8) + entry[11];
@@ -29,7 +43,9 @@ public sealed class NachaFileParser
                 errors.Add("Entry contains a nonnumeric amount.");
             if (entry.Substring(1, 2) is not ("22" or "27" or "32" or "37"))
                 errors.Add($"Transaction code {entry.Substring(1, 2)} is outside the supported ACH subset.");
+            if (!traces.Add(entry.Substring(79, 15))) errors.Add("Entry trace numbers must be unique within a file.");
         }
+        ValidateAddenda(lines, errors);
         decimal debit = 0, credit = 0;
         foreach (var entry in entryLines)
         {
@@ -78,6 +94,22 @@ public sealed class NachaFileParser
             CheckNumber(control.Substring(10, 10), RoutingHash(details), "batch routing hash", errors);
             CheckCents(control.Substring(20, 12), debits, "batch debit total", errors);
             CheckCents(control.Substring(32, 12), credits, "batch credit total", errors);
+            var expectedServiceClass = debits > 0 && credits > 0 ? "200" : debits > 0 ? "225" : "220";
+            if (lines[i].Substring(1, 3) != expectedServiceClass || control.Substring(1, 3) != expectedServiceClass)
+                errors.Add($"Batch service class must be {expectedServiceClass} for its entry directions.");
+        }
+    }
+
+    private static void ValidateAddenda(string[] lines, List<string> errors)
+    {
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Length != 94 || lines[i][0] != '6') continue;
+            var hasAddenda = i + 1 < lines.Length && lines[i + 1].Length == 94 && lines[i + 1][0] == '7';
+            if (lines[i][78] == '1' && !hasAddenda) errors.Add("An entry indicates addenda but no addenda record follows it.");
+            if (lines[i][78] == '0' && hasAddenda) errors.Add("An addenda record follows an entry whose addenda indicator is zero.");
+            if (hasAddenda && lines[i + 1].Substring(87, 7) != lines[i].Substring(87, 7))
+                errors.Add("The addenda trace sequence does not match its entry detail record.");
         }
     }
 

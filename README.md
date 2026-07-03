@@ -86,6 +86,10 @@ details, addenda records, settlement, returns, and notifications of change.
 Supported examples include PPD credits/debits, CCD credits/debits, and a narrow
 EFTPS-style CCD+ tax-payment addenda flow. ACH uses its own file contracts and
 `ACH.*` queues; it is not transported as an ISO 20022 or `FedEnvelope` message.
+Entry validation enforces supported SEC/purpose/direction combinations, ABA prefix
+and check-digit rules, cent precision, and Federal Reserve banking-day effective
+dates. ODFI rejections remain distinct from operator file rejection and RDFI return
+files; simulated RDFI returns reverse the original settlement with balanced journals.
 
 This is not production ACH certification. It does not implement the full Nacha
 Operating Rules, FedLine connectivity, prefunding/risk controls, exposure limits,

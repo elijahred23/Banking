@@ -57,10 +57,10 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<IsoMessage>().HasOne(x => x.MessageExchange).WithMany(x => x.Messages)
             .HasForeignKey(x => x.MessageExchangeId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<MessageExchange>().Property(x => x.Type).HasConversion<string>();
-        modelBuilder.Entity<MessageExchange>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<MessageExchange>().Property(x => x.Status).HasConversion<string>()
+            .IsConcurrencyToken();
         modelBuilder.Entity<MessageExchange>().Property(x => x.Rail).HasConversion<string>();
         modelBuilder.Entity<MessageExchange>().Property(x => x.Amount).HasPrecision(19, 4);
-        modelBuilder.Entity<MessageExchange>().Property(x => x.UpdatedDate).IsConcurrencyToken();
         modelBuilder.Entity<MessageExchange>().HasIndex(x => new { x.BankId, x.CreatedDate });
         modelBuilder.Entity<MessageExchange>().HasOne(x => x.Bank).WithMany()
             .HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);

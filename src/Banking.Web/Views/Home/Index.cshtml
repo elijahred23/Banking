@@ -2,7 +2,10 @@
 @{ ViewData["Title"] = "Overview"; }
 <div class="page-heading mb-4">
     <div><div class="eyebrow">CURRENT PERSONA</div><h1 class="mb-1">@Model.Bank.Name</h1><div class="text-secondary">Routing @Model.Bank.RoutingNumber · BIC @Model.Bank.Bic · @Model.Bank.FedParticipantId</div></div>
-    <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create outgoing payment</a>
+    @if (User.IsInRole(BankSecurity.PaymentCreator))
+    { <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create outgoing payment</a> }
+    else
+    { <span class="btn btn-primary disabled" aria-disabled="true" title="Maker permission required">Create outgoing payment · Maker only</span> }
 </div>
 <div class="row g-3 mb-5">
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Master account</span><strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong><small>Simulated Fed balance</small></div></div>

@@ -88,6 +88,19 @@ public sealed class WireCaseTests
     }
 
     [Fact]
+    public void Request_decisions_use_business_status_for_concurrency()
+    {
+        var options = new DbContextOptionsBuilder<BankingDbContext>()
+            .UseSqlServer("Server=localhost;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        using var db = new BankingDbContext(options);
+        var exchange = db.Model.FindEntityType(typeof(MessageExchange))!;
+
+        Assert.True(exchange.FindProperty(nameof(MessageExchange.Status))!.IsConcurrencyToken);
+        Assert.False(exchange.FindProperty(nameof(MessageExchange.UpdatedDate))!.IsConcurrencyToken);
+    }
+
+    [Fact]
     public void Completing_domestic_return_reverses_customer_and_master_account_balances()
     {
         var outgoing = Wire(WireStatus.Settled, WireDirection.Outgoing);

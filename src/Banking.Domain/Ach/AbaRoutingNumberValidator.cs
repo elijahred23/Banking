@@ -7,6 +7,10 @@ public static class AbaRoutingNumberValidator
         if (routingNumber is null || routingNumber.Length != 9 || routingNumber.Any(c => !char.IsDigit(c)))
             return false;
         var digits = routingNumber.Select(c => c - '0').ToArray();
+        var prefix = digits[0] * 10 + digits[1];
+        if (prefix is not (>= 0 and <= 12) and not (>= 21 and <= 32)
+            and not (>= 61 and <= 72) and not 80)
+            return false;
         var checksum = 3 * (digits[0] + digits[3] + digits[6])
             + 7 * (digits[1] + digits[4] + digits[7])
             + digits[2] + digits[5] + digits[8];

@@ -4,7 +4,7 @@ namespace Banking.Domain;
 
 public enum AchStandardEntryClass { Ppd, Ccd, Ctx, Web, Tel, Iat }
 public enum AchTransactionCode { CheckingCredit = 22, CheckingDebit = 27, SavingsCredit = 32, SavingsDebit = 37 }
-public enum AchEntryStatus { Entered, Validated, Batched, SentToOperator, Settled, Returned, NocReceived, Posted }
+public enum AchEntryStatus { Entered, Validated, Batched, SentToOperator, Settled, Returned, NocReceived, Posted, Rejected }
 public enum AchPaymentPurpose { Payroll, VendorPayment, ConsumerDebit, TaxPaymentEftps }
 public enum AchProcessingScenario
 {

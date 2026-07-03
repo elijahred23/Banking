@@ -58,6 +58,14 @@ public sealed class AuthController(IConfiguration configuration,
         return RedirectToAction(nameof(Login));
     }
 
+    [Authorize, HttpGet("/auth/access-denied")]
+    public IActionResult AccessDenied(string? returnUrl = null)
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        ViewData["ReturnUrl"] = returnUrl;
+        return View();
+    }
+
     private static async Task<LoginViewModel> PopulateAsync(LoginViewModel model,
         BankingDbContext db, CancellationToken token)
     {

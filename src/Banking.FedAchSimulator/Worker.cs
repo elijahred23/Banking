@@ -32,10 +32,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 x.Customer.Bank.RoutingNumber == entry.ReceivingRoutingNumber
                 && x.AccountNumber == entry.ReceivingAccountNumber, token);
             var item = ReturnFor(entry, account);
+            settled.Add(entry.Id);
             if (item is not null) returns.Add(item);
             else
             {
-                settled.Add(entry.Id);
                 if (entry.Scenario == AchProcessingScenario.NocCorrectedAccount)
                     nocs.Add(new(entry.Id, "C01", entry.ReceivingAccountNumber.TrimStart('0'), "Corrected account number."));
                 if (entry.Scenario == AchProcessingScenario.NocCorrectedRouting)
@@ -47,6 +47,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         }
         await bus.PublishAsync(Queues.AchInbound,
             new AchOperatorResult(file.Id, true, "FedACH simulator accepted and settled the file.", settled), token);
+        // Returns and NOCs are separate files produced after the original entries settle.
         if (returns.Count != 0 || nocs.Count != 0) await Task.Delay(TimeSpan.FromSeconds(1), token);
         if (returns.Count != 0) await bus.PublishAsync(Queues.AchReturnInbound, new AchReturnFile(file.Id, returns), token);
         if (nocs.Count != 0) await bus.PublishAsync(Queues.AchNocInbound, new AchNocFile(file.Id, nocs), token);

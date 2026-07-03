@@ -10,7 +10,10 @@
         <h1 class="mb-2">How to create wires and ISO 20022 messages</h1>
         <p class="text-secondary mb-0">Follow these end-to-end steps using the current data for <strong>@Model.Bank.Name</strong>. Accounts, institutions, routing details, servicing cases, and supporting messages are connected to live lab records.</p>
     </div>
-    <a class="btn btn-primary" asp-action="Create">Create a payment</a>
+    @if (User.IsInRole(BankSecurity.PaymentCreator))
+    { <a class="btn btn-primary" asp-action="Create">Create a payment</a> }
+    else
+    { <span class="btn btn-primary disabled" aria-disabled="true">Create a payment · Maker only</span> }
 </div>
 
 <nav class="instruction-jump surface mb-4" aria-label="Wire type instructions">

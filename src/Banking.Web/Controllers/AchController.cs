@@ -64,10 +64,16 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         var account = await db.Accounts.Include(x => x.Customer)
             .SingleOrDefaultAsync(x => x.Id == model.OriginatingAccountId && x.Customer.BankId == bankId, token);
         if (account is null) ModelState.AddModelError(nameof(model.OriginatingAccountId), "Select an account owned by the active bank.");
-        if (model.EffectiveEntryDate < DateOnly.FromDateTime(DateTime.Today))
-            ModelState.AddModelError(nameof(model.EffectiveEntryDate), "The effective date cannot be in the past.");
         if (model.Purpose == AchPaymentPurpose.TaxPaymentEftps)
             ModelState.AddModelError(nameof(model.Purpose), "Use the EFTPS-style form for tax payments.");
+        if (account is not null)
+        {
+            var candidate = Candidate(model, account, bankId);
+            foreach (var error in AchRules.Validate(candidate, DateOnly.FromDateTime(DateTime.Today)))
+                ModelState.AddModelError(error.Field, error.Message);
+            if (AchRules.IsCredit(model.TransactionCode) && account.AvailableBalance < model.Amount)
+                ModelState.AddModelError(nameof(model.Amount), "The originating account has insufficient available funds.");
+        }
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
         await CreateEntryAsync(db, account!, bankId, model.CompanyName, model.CompanyId, model.SecCode,
             model.ReceiverName, model.ReceivingRoutingNumber, model.ReceivingAccountNumber,
@@ -125,6 +131,10 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         var account = await db.Accounts.Include(x => x.Customer)
             .SingleOrDefaultAsync(x => x.Id == model.OriginatingAccountId && x.Customer.BankId == bankId, token);
         if (account is null) ModelState.AddModelError(nameof(model.OriginatingAccountId), "Select an account owned by the active bank.");
+        if (model.SettlementDate < DateOnly.FromDateTime(DateTime.Today))
+            ModelState.AddModelError(nameof(model.SettlementDate), "The settlement date cannot be in the past.");
+        else if (!AchBusinessCalendar.IsBankingDay(model.SettlementDate))
+            ModelState.AddModelError(nameof(model.SettlementDate), "The settlement date must be a Federal Reserve banking day.");
         string? addenda = null;
         if (ModelState.IsValid)
         {
@@ -159,6 +169,16 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         await db.SaveChangesAsync(token);
         await bus.PublishAsync(Queues.AchEntryCreated, new AchEntryCreated(entry.Id), token);
     }
+
+    private static AchEntry Candidate(CreateAchViewModel model, Account account, Guid bankId) => new()
+    {
+        OriginatingBankId = bankId, OriginatingAccountId = account.Id, CompanyName = model.CompanyName,
+        CompanyId = model.CompanyId, SecCode = model.SecCode, ReceiverName = model.ReceiverName,
+        ReceivingRoutingNumber = model.ReceivingRoutingNumber, ReceivingAccountNumber = model.ReceivingAccountNumber,
+        TransactionCode = model.TransactionCode, Amount = model.Amount, EntryDescription = model.EntryDescription,
+        EffectiveEntryDate = model.EffectiveEntryDate, Addenda05 = model.Addenda05, Purpose = model.Purpose,
+        Scenario = model.Scenario
+    };
 
     private static async Task<CreateAchViewModel> PopulateAsync(CreateAchViewModel model, Guid bankId,
         BankingDbContext db, CancellationToken token) { model.Accounts = await AccountsAsync(bankId, db, token); return model; }

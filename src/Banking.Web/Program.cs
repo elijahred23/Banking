@@ -18,7 +18,7 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromHours(8);
 });
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options => { options.LoginPath = "/auth/login"; options.Cookie.Name = "FedwireLab.Auth.v2"; });
+    .AddCookie(options => { options.LoginPath = "/auth/login"; options.AccessDeniedPath = "/auth/access-denied"; options.Cookie.Name = "FedwireLab.Auth.v2"; });
 builder.Services.AddAuthorization();
 builder.Services.AddBankingInfrastructure(builder.Configuration);
 

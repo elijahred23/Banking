@@ -41,14 +41,12 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             file.Status = "Rejected";
             foreach (var entry in file.Batches.SelectMany(x => x.Entries))
             {
-                entry.Status = AchEntryStatus.Returned;
-                entry.ReturnCode = "R99";
+                entry.Status = AchEntryStatus.Rejected;
                 if (IsCredit(entry.TransactionCode))
                 {
                     var origin = await db.Accounts.SingleAsync(x => x.Id == entry.OriginatingAccountId, token);
                     origin.HeldBalance = Math.Max(0, origin.HeldBalance - entry.Amount);
                 }
-                db.AchReturns.Add(new AchReturn { AchEntryId = entry.Id, ReturnCode = "R99", Reason = result.Message[..Math.Min(240, result.Message.Length)] });
             }
             await db.SaveChangesAsync(token);
             return;
@@ -105,7 +103,9 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         {
             if (await db.AchReturns.AnyAsync(x => x.AchEntryId == item.EntryId && x.ReturnCode == item.ReturnCode, token)) continue;
             var entry = await db.AchEntries.SingleOrDefaultAsync(x => x.Id == item.EntryId, token);
-            if (entry is null || entry.Status == AchEntryStatus.Posted) continue;
+            if (entry is null) continue;
+            if (entry.Status == AchEntryStatus.Posted)
+                await ReversePostedAchAsync(db, entry, token);
             entry.Status = AchEntryStatus.Returned;
             entry.ReturnCode = item.ReturnCode;
             if (IsCredit(entry.TransactionCode))
@@ -488,6 +488,40 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private static bool IsCredit(AchTransactionCode code) => code is AchTransactionCode.CheckingCredit or AchTransactionCode.SavingsCredit;
 
+    private static async Task ReversePostedAchAsync(BankingDbContext db, AchEntry entry, CancellationToken token)
+    {
+        var origin = await db.Accounts.SingleAsync(x => x.Id == entry.OriginatingAccountId, token);
+        var originBank = await db.Banks.SingleAsync(x => x.Id == entry.OriginatingBankId, token);
+        if (entry.Purpose == AchPaymentPurpose.TaxPaymentEftps)
+        {
+            origin.Balance += entry.Amount;
+            originBank.MasterAccountBalance += entry.Amount;
+            AddEftpsReturnJournal(db, entry, origin);
+            return;
+        }
+
+        var receiver = await db.Accounts.Include(x => x.Customer).SingleOrDefaultAsync(x =>
+            x.Customer.BankId == entry.ReceivingBankId && x.AccountNumber == entry.ReceivingAccountNumber, token);
+        if (receiver is null) return;
+        var receiverBank = await db.Banks.SingleAsync(x => x.Id == receiver.Customer.BankId, token);
+        if (IsCredit(entry.TransactionCode))
+        {
+            origin.Balance += entry.Amount;
+            receiver.Balance -= entry.Amount;
+            originBank.MasterAccountBalance += entry.Amount;
+            receiverBank.MasterAccountBalance -= entry.Amount;
+            AddAchCreditReturnJournal(db, entry, origin, receiver);
+        }
+        else
+        {
+            receiver.Balance += entry.Amount;
+            origin.Balance -= entry.Amount;
+            receiverBank.MasterAccountBalance += entry.Amount;
+            originBank.MasterAccountBalance -= entry.Amount;
+            AddAchDebitReturnJournal(db, entry, origin, receiver);
+        }
+    }
+
     private static void AddAchCreditJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
     {
         var journal = Guid.NewGuid();
@@ -514,6 +548,34 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         db.AchLedgerEntries.AddRange(
             AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit taxpayer deposit liability"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit simulated Treasury tax payment settlement"));
+    }
+
+    private static void AddAchCreditReturnJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit receiver for ACH return"),
+            AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", 0, entry.Amount, "Credit returning RDFI settlement"),
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit returned ACH clearing"),
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit originator for ACH return"));
+    }
+
+    private static void AddAchDebitReturnJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit originator for ACH debit return"),
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit returned ACH clearing"),
+            AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", entry.Amount, 0, "Debit returning RDFI settlement"),
+            AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit receiver for ACH debit return"));
+    }
+
+    private static void AddEftpsReturnJournal(BankingDbContext db, AchEntry entry, Account origin)
+    {
+        var journal = Guid.NewGuid();
+        db.AchLedgerEntries.AddRange(
+            AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit returned Treasury tax payment"),
+            AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit taxpayer for ACH return"));
     }
 
     private static AchLedgerEntry AchJournal(Guid journal, Guid entryId, string code, string name,

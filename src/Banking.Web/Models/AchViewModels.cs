@@ -16,7 +16,7 @@ public sealed class CreateAchViewModel
     public AchTransactionCode TransactionCode { get; set; } = AchTransactionCode.CheckingCredit;
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     [Required, StringLength(10)] public string EntryDescription { get; set; } = "PAYMENT";
-    [DataType(DataType.Date)] public DateOnly EffectiveEntryDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+    [DataType(DataType.Date)] public DateOnly EffectiveEntryDate { get; set; } = AchBusinessCalendar.NextBankingDay(DateOnly.FromDateTime(DateTime.Today));
     [StringLength(80)] public string? Addenda05 { get; set; }
     public AchPaymentPurpose Purpose { get; set; }
     public AchProcessingScenario Scenario { get; set; }
@@ -32,7 +32,7 @@ public sealed class CreateEftpsViewModel
     [Required] public string TaxTypeCode { get; set; } = "";
     [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "Use YYMMDD.")] public string TaxPeriodEndDate { get; set; } = "";
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
-    [DataType(DataType.Date)] public DateOnly SettlementDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+    [DataType(DataType.Date)] public DateOnly SettlementDate { get; set; } = AchBusinessCalendar.NextBankingDay(DateOnly.FromDateTime(DateTime.Today));
     public AchProcessingScenario Scenario { get; set; }
     public List<SelectListItem> Accounts { get; set; } = [];
 }

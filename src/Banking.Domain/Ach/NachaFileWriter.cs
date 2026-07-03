@@ -34,7 +34,7 @@ public sealed class NachaFileWriter
         Fit("FEDACH SIMULATOR", 23), Fit(file.OriginatingBank?.Name ?? "ORIGINATING BANK", 23), Fit(file.Id.ToString("N"), 8));
 
     private static string WriteBatchHeader(AchBatch batch, AchFile file) => Record(
-        "5", Digits(batch.ServiceClassCode, 3), Fit(batch.CompanyName, 16), new string(' ', 20),
+        "5", AchRules.ServiceClassCode(batch.Entries), Fit(batch.CompanyName, 16), new string(' ', 20),
         Fit(batch.CompanyId, 10), Fit(batch.SecCode.ToString().ToUpperInvariant(), 3),
         Fit(batch.Entries.FirstOrDefault()?.EntryDescription ?? "PAYMENT", 10), new string(' ', 6),
         batch.EffectiveEntryDate.ToString("yyMMdd", CultureInfo.InvariantCulture), new string(' ', 3), "1",
@@ -59,7 +59,7 @@ public sealed class NachaFileWriter
         var debit = batch.Entries.Where(IsDebit).Sum(x => x.Amount);
         var credit = batch.Entries.Where(x => !IsDebit(x)).Sum(x => x.Amount);
         var count = batch.Entries.Count + batch.Entries.Count(x => !string.IsNullOrWhiteSpace(x.Addenda05));
-        return Record("8", Digits(batch.ServiceClassCode, 3), Number(count, 6),
+        return Record("8", AchRules.ServiceClassCode(batch.Entries), Number(count, 6),
             RoutingHash(batch.Entries), Amount(debit, 12), Amount(credit, 12), Fit(batch.CompanyId, 10),
             new string(' ', 19), new string(' ', 6), Digits(file.ImmediateOriginRoutingNumber, 9)[..8],
             Number(batch.BatchNumber, 7));
