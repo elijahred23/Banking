@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Banking.AchService;
 
 public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> dbFactory,
-    NachaFileWriter writer, IConfiguration configuration, ILogger<Worker> logger) : BackgroundService
+    NachaFileWriter writer, IConfiguration configuration, SimulationStateService simulation,
+    ILogger<Worker> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
         bus.ConsumeAsync<AchEntryCreated>(Queues.AchEntryCreated, ValidateAndBatchAsync, stoppingToken),
@@ -14,13 +15,21 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private async Task ValidateAndBatchAsync(AchEntryCreated command, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
-        var entry = await db.AchEntries.Include(x => x.OriginatingAccount)
+        var entry = await db.AchEntries.Include(x => x.OriginatingAccount).Include(x => x.OriginatingBank)
             .SingleOrDefaultAsync(x => x.Id == command.EntryId, token);
         if (entry is null || entry.Status != AchEntryStatus.Entered) return;
 
-        var errors = AchRules.Validate(entry, DateOnly.FromDateTime(DateTime.UtcNow.Date)).ToList();
-        if (AchRules.IsCredit(entry.TransactionCode) && entry.OriginatingAccount.AvailableBalance < entry.Amount)
+        var processingDate = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
+        var errors = AchRules.Validate(entry, processingDate).ToList();
+        if (AchRules.IsCredit(entry.TransactionCode) && !AccountAvailabilityPolicy.CanDebit(entry.OriginatingAccount, entry.Amount))
             errors.Add(new(nameof(entry.Amount), "The originating account has insufficient available funds."));
+        var pendingExposure = await db.AchEntries.Where(x => x.OriginatingBankId == entry.OriginatingBankId
+                && x.Id != entry.Id && (x.Status == AchEntryStatus.Validated || x.Status == AchEntryStatus.Batched
+                    || x.Status == AchEntryStatus.SentToOperator) && (x.TransactionCode == AchTransactionCode.CheckingCredit
+                    || x.TransactionCode == AchTransactionCode.SavingsCredit)).SumAsync(x => x.Amount, token);
+        if (AchRules.IsCredit(entry.TransactionCode)
+            && !PaymentRiskPolicy.WithinAchExposure(entry.OriginatingBank, pendingExposure + entry.Amount))
+            errors.Add(new(nameof(entry.Amount), "The entry would exceed the originating bank's teaching ACH exposure limit."));
         if (errors.Count != 0)
         {
             entry.Status = AchEntryStatus.Rejected;
@@ -59,8 +68,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private async Task CloseOpenBatchesAsync(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
+        var businessDate = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
         var batches = await db.AchBatches.Include(x => x.OriginatingBank).Include(x => x.Entries)
-            .Where(x => x.Status == "Open" && x.Entries.Count != 0).OrderBy(x => x.EffectiveEntryDate).ToListAsync(token);
+            .Where(x => x.Status == "Open" && x.Entries.Count != 0 && x.EffectiveEntryDate <= businessDate)
+            .OrderBy(x => x.EffectiveEntryDate).ToListAsync(token);
         foreach (var bankGroup in batches.GroupBy(x => x.OriginatingBankId))
         {
             var origin = bankGroup.First().OriginatingBank;

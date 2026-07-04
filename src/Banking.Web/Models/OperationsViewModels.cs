@@ -28,6 +28,14 @@ public sealed record DeadLetterViewModel(Guid Id, string Queue, int Attempts, st
 public sealed record StuckOutboxViewModel(Guid Id, string Queue, int Attempts, string? Error,
     DateTimeOffset CreatedDate);
 
+public sealed record OperationsCaseViewModel(Guid Id, string Rail, string CaseType, string Reference,
+    string Summary, OperationsCaseStatus Status, OperationsCaseSeverity Severity, string? AssignedTo,
+    DateTimeOffset DueDate, string? Notes);
+
+public sealed record AccountAvailabilityViewModel(string AccountNumber, string Customer,
+    decimal Ledger, decimal Collected, decimal Available, decimal Holds, decimal Pending,
+    decimal Provisional, AccountStatus Status);
+
 public sealed record OperationsDashboardViewModel(
     Bank Bank,
     PaymentStatusSummary Payments,
@@ -39,4 +47,8 @@ public sealed record OperationsDashboardViewModel(
     IReadOnlyList<DeadLetterViewModel> DeadLetters,
     IReadOnlyList<StuckOutboxViewModel> StuckOutbox,
     PaymentReconciliationResult Reconciliation,
+    SimulationState Simulation,
+    IReadOnlyList<OperationsCaseViewModel> Cases,
+    IReadOnlyList<AccountAvailabilityViewModel> AccountAvailability,
+    IReadOnlyDictionary<string, decimal> TrialBalance,
     DateTimeOffset RefreshedDate);

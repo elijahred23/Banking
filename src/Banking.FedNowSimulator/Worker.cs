@@ -51,11 +51,12 @@ public sealed class Worker(
         {
             await PublishStatusAsync(payment, "ACCP", "Receiver accepted the payment for processing",
                 networkReference, token);
-            if (payment.Scenario == ProcessingScenario.PendingThenAccepted)
+            if (payment.Scenario is ProcessingScenario.PendingThenAccepted or ProcessingScenario.DroppedDelivery)
             {
                 await PublishStatusAsync(payment, "ACWP", "Receiver accepted without posting pending review",
                     networkReference, token);
-                await Task.Delay(TimeSpan.FromSeconds(2), token);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Max(1,
+                    ScenarioCatalog.For(payment.Scenario).DelaySeconds)), token);
             }
         }
 
@@ -90,6 +91,8 @@ public sealed class Worker(
         });
 
         await PublishResultsAsync(payment, settlement, token, rejection);
+        if (payment.Scenario == ProcessingScenario.DuplicateDelivery && settlement.StatusCode == "ACSC")
+            await PublishResultsAsync(payment, settlement, token, rejection);
         logger.LogInformation("FedNow processed {CorrelationId} with {Status}; reference {Reference}",
             payment.CorrelationId, settlement.StatusCode, settlement.Imad);
     }

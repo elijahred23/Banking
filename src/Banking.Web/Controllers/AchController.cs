@@ -167,6 +167,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             Purpose = purpose, Scenario = scenario, Status = AchEntryStatus.Entered };
         db.AchEntries.Add(entry);
         await db.SaveChangesAsync(token);
+        await LearningRunLinker.AttachAsync(HttpContext, db, bankId, "ACH", entry.Id, token);
         await bus.PublishAsync(Queues.AchEntryCreated, new AchEntryCreated(entry.Id), token);
     }
 

@@ -17,6 +17,53 @@
     </div>
 </div>
 
+<div class="row g-4 mt-1">
+    <section class="col-lg-5" aria-labelledby="clock-heading">
+        <div class="surface operations-panel h-100">
+            <div class="eyebrow">SIMULATION TIME</div><h2 id="clock-heading" class="h4">Operating clock</h2>
+            <p><strong>@Model.Simulation.CurrentUtc.ToString("yyyy-MM-dd HH:mm 'UTC'")</strong></p>
+            <p class="form-text">A deterministic teaching clock controls dated exercises. It does not represent a production rail clock.</p>
+            <form asp-action="AdvanceClock" method="post" class="d-flex gap-2">
+                <label class="visually-hidden" for="advance-hours">Hours</label>
+                <select id="advance-hours" name="hours" class="form-select">
+                    <option value="1">1 hour</option><option value="8">8 hours</option>
+                    <option value="24">1 day</option><option value="72">3 days</option>
+                </select>
+                <button class="btn btn-outline-primary" type="submit">Advance</button>
+            </form>
+        </div>
+    </section>
+    <section class="col-lg-7" aria-labelledby="availability-heading">
+        <div class="surface operations-panel h-100">
+            <div class="eyebrow">CUSTOMER FUNDS</div><h2 id="availability-heading" class="h4">Ledger, collected, and available</h2>
+            <div class="table-responsive"><table class="table operations-table mb-0">
+                <thead><tr><th>Account</th><th class="text-end">Ledger</th><th class="text-end">Collected</th><th class="text-end">Available</th><th class="text-end">Holds</th></tr></thead>
+                <tbody>@foreach (var account in Model.AccountAvailability) { <tr>
+                    <td><strong>@account.Customer</strong><code>@account.AccountNumber · @account.Status</code></td>
+                    <td class="text-end">@account.Ledger.ToString("C")</td><td class="text-end">@account.Collected.ToString("C")</td>
+                    <td class="text-end">@account.Available.ToString("C")</td><td class="text-end">@account.Holds.ToString("C")</td>
+                </tr> }</tbody>
+            </table></div>
+        </div>
+    </section>
+</div>
+
+<section class="surface operations-panel mt-4" aria-labelledby="cases-heading">
+    <div class="panel-heading"><div><div class="eyebrow">CASE MANAGEMENT</div><h2 id="cases-heading" class="h4 mb-0">Investigation work queue</h2></div><span class="text-secondary small">Ownership, SLA, evidence, and closure</span></div>
+    @if (Model.Cases.Count == 0) { <div class="operations-empty">No cases. Open one from an exception below or use the fault lab.</div> }
+    else { <div class="table-responsive"><table class="table operations-table mb-0"><thead><tr><th>Case</th><th>Status / due</th><th>Work note</th></tr></thead><tbody>
+    @foreach (var item in Model.Cases) { <tr><td><strong>@item.CaseType</strong><code>@item.Rail · @item.Reference · @item.Severity</code><small>@item.Summary</small></td>
+        <td>@item.Status<small>@item.AssignedTo · @item.DueDate.ToLocalTime().ToString("MMM d HH:mm")</small></td>
+        <td><form asp-action="UpdateCase" method="post" class="d-flex gap-2"><input type="hidden" name="id" value="@item.Id" /><input name="notes" class="form-control form-control-sm" aria-label="Investigation note" placeholder="Evidence or resolution" /><button class="btn btn-sm btn-outline-secondary" name="resolve" value="false">Assign</button><button class="btn btn-sm btn-outline-primary" name="resolve" value="true">Resolve</button></form></td></tr> }
+    </tbody></table></div> }
+</section>
+
+<section class="surface operations-panel mt-4" aria-labelledby="trial-heading">
+    <div class="eyebrow">UNIFIED SUBLEDGER</div><h2 id="trial-heading" class="h4">Cross-rail trial balance</h2>
+    <p class="form-text">Net debit balance by account code, read across the existing wire, ACH, and check journals.</p>
+    <div class="row row-cols-1 row-cols-md-3 g-2">@foreach (var account in Model.TrialBalance.OrderBy(x => x.Key)) { <div class="col"><div class="border rounded p-2"><code>@account.Key</code><strong class="float-end">@account.Value.ToString("C")</strong></div></div> }</div>
+</section>
+
 <section aria-labelledby="payment-heading" class="mb-4">
     <div class="d-flex justify-content-between align-items-end mb-3">
         <div><div class="eyebrow">PAYMENTS</div><h2 id="payment-heading" class="h4 mb-0">Lifecycle position</h2></div>
@@ -102,7 +149,13 @@
                         <div class="exception-row">
                             <span class="exception-mark">!</span>
                             <div><strong>@item.Type</strong><small>@item.Area · @item.Detail</small></div>
-                            <div class="text-end"><code>@item.Reference</code><time>@item.OccurredDate.ToLocalTime().ToString("MMM d, HH:mm")</time></div>
+                            <div class="text-end"><code>@item.Reference</code><time>@item.OccurredDate.ToLocalTime().ToString("MMM d, HH:mm")</time>
+                                <form asp-action="OpenCase" method="post" class="mt-1">
+                                    <input type="hidden" name="rail" value="@item.Area" /><input type="hidden" name="caseType" value="@item.Type" />
+                                    <input type="hidden" name="reference" value="@item.Reference" /><input type="hidden" name="summary" value="@item.Detail" />
+                                    <input type="hidden" name="severity" value="High" /><button class="btn btn-sm btn-outline-secondary" type="submit">Open case</button>
+                                </form>
+                            </div>
                         </div>
                     }
                 </div>

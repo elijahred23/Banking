@@ -87,7 +87,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         Bank payingBank, Bank depositoryBank)
     {
         payingAccount.Balance -= deposit.Amount;
-        deposit.DepositingAccount.Balance += deposit.Amount;
+        AccountAvailabilityPolicy.AcceptProvisionalCredit(deposit.DepositingAccount, deposit.Amount);
         payingBank.MasterAccountBalance -= deposit.Amount;
         depositoryBank.MasterAccountBalance += deposit.Amount;
         deposit.Status = CheckDepositStatus.Settled;
@@ -107,6 +107,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private static void Return(BankingDbContext db, CheckDeposit deposit, string code, string reason)
     {
+        deposit.DepositingAccount.PendingCreditBalance = Math.Max(0,
+            deposit.DepositingAccount.PendingCreditBalance - deposit.Amount);
+        deposit.DepositingAccount.ProvisionalCreditBalance = Math.Max(0,
+            deposit.DepositingAccount.ProvisionalCreditBalance - deposit.Amount);
         deposit.Status = CheckDepositStatus.Returned;
         deposit.ReturnCode = code;
         deposit.ReturnReason = reason;

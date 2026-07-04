@@ -16,6 +16,8 @@ BEGIN
         FedNowRequestForPaymentEnabled bit NOT NULL CONSTRAINT DF_Banks_FedNowRfpEnabled DEFAULT (1),
         FedNowOnline bit NOT NULL CONSTRAINT DF_Banks_FedNowOnline DEFAULT (1),
         SwiftEnabled bit NOT NULL CONSTRAINT DF_Banks_SwiftEnabled DEFAULT (1),
+        FedwireCreditLimit decimal(19, 4) NOT NULL CONSTRAINT DF_Banks_FedwireCreditLimit DEFAULT (0),
+        AchExposureLimit decimal(19, 4) NOT NULL CONSTRAINT DF_Banks_AchExposureLimit DEFAULT (1000000),
         CONSTRAINT PK_Banks PRIMARY KEY (Id)
     );
 END;

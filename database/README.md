@@ -65,3 +65,11 @@ replay only failed messages owned by their active bank.
 `202607031800_learning_evidence.sql` adds evidence-backed mission runs, learner/cohort attribution,
 confidence ratings, and instructor assignments. Runs retain before-state balance snapshots and
 links to bank-scoped simulator items; they do not duplicate or alter payment truth.
+
+`202607032200_simulation_operations_and_availability.sql` adds the shared lab clock, operational
+case work queue, account availability components, and bank exposure/liquidity limits. These are
+teaching controls and do not represent regulatory compliance or a production core ledger.
+
+`202607032230_learning_explanation_rubric.sql` stores learner explanations and transparent rubric
+scores. `202607032245_individual_learning_progress.sql` separates individual/cohort progress while
+keeping payment evidence and role handoffs bank-scoped.

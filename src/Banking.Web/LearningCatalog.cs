@@ -122,7 +122,7 @@ public static class LearningCatalog
         if (variant % 2 == 1)
         {
             const string correctEvidence = "A correlated, balanced value journal";
-            var choices = new[] { "A delivered transport message", "Elapsed processing time", correctEvidence };
+            var choices = Rotate(new[] { "A delivered transport message", "Elapsed processing time", correctEvidence }, variant);
             return new($"{id}-evidence", "Which evidence proves that value was posted in this lab?", choices,
                 correctEvidence, "Transport and status evidence establish processing state; a correlated balanced journal establishes accounting movement.",
                 new Dictionary<string, string>
@@ -139,10 +139,18 @@ public static class LearningCatalog
         if (id is "iso-message-chain") correct = "pacs.008";
         if (id is "swift-route") correct = "No";
         if (id is "fednow-finality") correct = "Receiver acceptance";
-        return new($"{id}-check", mission.PredictionPrompt, mission.PredictionChoices, correct, mission.Debrief,
+        var orderedChoices = Rotate(mission.PredictionChoices, variant);
+        return new($"{id}-check", mission.PredictionPrompt, orderedChoices, correct, mission.Debrief,
             mission.PredictionChoices.ToDictionary(x => x, x => x == correct
                 ? $"Correct. {mission.Debrief}"
                 : $"That choice conflicts with the expected rail behavior. {mission.Debrief}"));
+    }
+
+    private static IReadOnlyList<string> Rotate(IReadOnlyList<string> choices, int variant)
+    {
+        if (choices.Count < 2) return choices;
+        var offset = Math.Abs(variant) % choices.Count;
+        return choices.Skip(offset).Concat(choices.Take(offset)).ToList();
     }
 
     public static string ProductionNote(string id) => id switch

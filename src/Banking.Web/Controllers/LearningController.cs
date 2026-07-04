@@ -16,7 +16,8 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
     public async Task<IActionResult> Index(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token); var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var completed = (await db.LearningProgress.Where(x => x.BankId == bankId && x.IsComplete).Select(x => x.MissionId).ToListAsync(token)).ToHashSet();
+        var completed = (await db.LearningProgress.Where(x => x.BankId == bankId
+            && x.LearnerAlias == LearnerAlias && x.IsComplete).Select(x => x.MissionId).ToListAsync(token)).ToHashSet();
         ViewData["LearnerAlias"] = LearnerAlias;
         return View(new LearningCenterViewModel(LearningCatalog.Paths, LearningCatalog.Missions, completed));
     }
@@ -26,11 +27,14 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         var mission = LearningCatalog.Mission(id);
         if (mission is null) return NotFound();
         await using var db = await dbFactory.CreateDbContextAsync(token); var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var progress = await db.LearningProgress.AsNoTracking().SingleOrDefaultAsync(x => x.BankId == bankId && x.MissionId == mission.Id, token);
-        var attempt = await db.LearningAttempts.AsNoTracking().Where(x => x.BankId == bankId && x.MissionId == mission.Id).OrderByDescending(x => x.CreatedDate).FirstOrDefaultAsync(token);
-        var attemptCount = await db.LearningAttempts.CountAsync(x => x.BankId == bankId && x.MissionId == mission.Id, token);
+        var progress = await db.LearningProgress.AsNoTracking().SingleOrDefaultAsync(x => x.BankId == bankId
+            && x.LearnerAlias == LearnerAlias && x.MissionId == mission.Id, token);
+        var attempt = await db.LearningAttempts.AsNoTracking().Where(x => x.BankId == bankId
+            && x.LearnerAlias == LearnerAlias && x.MissionId == mission.Id).OrderByDescending(x => x.CreatedDate).FirstOrDefaultAsync(token);
+        var attemptCount = await db.LearningAttempts.CountAsync(x => x.BankId == bankId
+            && x.LearnerAlias == LearnerAlias && x.MissionId == mission.Id, token);
         var path = LearningCatalog.Paths.Single(x => x.Id == mission.PathId);
-        var run = await evidenceService.EvaluateLatestAsync(bankId, mission.Id, token);
+        var run = await evidenceService.EvaluateLatestAsync(bankId, mission.Id, LearnerAlias, token);
         return View(new MissionPageViewModel(mission, path, progress?.IsComplete == true, progress?.Prediction,
             LearningCatalog.Hints(id), LearningCatalog.RoleHandoffs(id), LearningCatalog.Question(id, attemptCount), attempt,
             LearningCatalog.ProductionNote(id), run, progress?.NextReviewDate));
@@ -64,15 +68,18 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         var master = await db.Banks.Where(x => x.Id == bankId)
             .Select(x => x.MasterAccountBalance).SingleAsync(token);
         var progress = await db.LearningProgress.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.BankId == bankId && x.MissionId == id, token);
-        db.LearningRuns.Add(new LearningRun
+            .SingleOrDefaultAsync(x => x.BankId == bankId && x.LearnerAlias == LearnerAlias
+                && x.MissionId == id, token);
+        var run = new LearningRun
         {
             BankId = bankId, MissionId = id, LearnerAlias = LearnerAlias,
             Rail = mission.Rail?.ToString() ?? MissionRail(id), Prediction = progress?.Prediction,
             BaselineCustomerBalance = accounts.Sum(x => x.Balance),
             BaselineHeldBalance = accounts.Sum(x => x.HeldBalance), BaselineMasterBalance = master
-        });
+        };
+        db.LearningRuns.Add(run);
         await db.SaveChangesAsync(token);
+        LearningRunLinker.SetActive(HttpContext, run.Id);
         return RedirectToAction(mission.ActionName, mission.ActionController,
             new { learningMission = mission.Id, rail = mission.Rail, scenario = mission.Scenario });
     }
@@ -88,7 +95,7 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
             return RedirectToAction(nameof(Mission), new { id });
         }
         await using var db = await dbFactory.CreateDbContextAsync(token); var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var progress = await ProgressAsync(db, bankId, mission.Id, token); progress.Prediction = prediction; progress.UpdatedDate = DateTimeOffset.UtcNow; await db.SaveChangesAsync(token);
+        var progress = await ProgressAsync(db, bankId, LearnerAlias, mission.Id, token); progress.Prediction = prediction; progress.UpdatedDate = DateTimeOffset.UtcNow; await db.SaveChangesAsync(token);
         TempData["Notice"] = "Prediction saved. Run the exercise, then compare it with the evidence.";
         return RedirectToAction(nameof(Mission), new { id });
     }
@@ -99,7 +106,7 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         var mission = LearningCatalog.Mission(id);
         if (mission is null) return NotFound();
         await using var db = await dbFactory.CreateDbContextAsync(token); var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var progress = await ProgressAsync(db, bankId, mission.Id, token);
+        var progress = await ProgressAsync(db, bankId, LearnerAlias, mission.Id, token);
         var run = await evidenceService.EvaluateAsync(bankId, runId, token);
         if (progress.Prediction is null || progress.AnsweredQuestions == 0 || run?.CanComplete != true)
         {
@@ -114,7 +121,8 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Answer(string id, string questionId, string answer, int confidence = 3,
+    public async Task<IActionResult> Answer(string id, string questionId, string answer,
+        string? explanation, int confidence = 3,
         CancellationToken token = default)
     {
         var mission = LearningCatalog.Mission(id); if (mission is null) return NotFound();
@@ -123,13 +131,18 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         if (question.Id != questionId) return BadRequest();
         if (!question.Choices.Contains(answer)) return RedirectToAction(nameof(Mission), new { id });
         await using var db = await dbFactory.CreateDbContextAsync(token); var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        var correct = answer == question.CorrectAnswer;
+        var explanationScore = LearningExplanationRubric.Score(explanation);
+        var correct = answer == question.CorrectAnswer && explanationScore >= 2;
         db.LearningAttempts.Add(new() { BankId = bankId, MissionId = id, QuestionId = question.Id,
             SelectedAnswer = answer, IsCorrect = correct, LearnerAlias = LearnerAlias,
-            Confidence = Math.Clamp(confidence, 1, 5) });
-        var progress = await ProgressAsync(db, bankId, id, token); progress.AnsweredQuestions++; if (correct) progress.CorrectAnswers++;
+            Confidence = Math.Clamp(confidence, 1, 5), LearnerExplanation = explanation?.Trim(),
+            ExplanationScore = explanationScore });
+        var progress = await ProgressAsync(db, bankId, LearnerAlias, id, token); progress.AnsweredQuestions++; if (correct) progress.CorrectAnswers++;
         progress.NextReviewDate = DateTimeOffset.UtcNow.AddDays(correct ? 7 : 1); progress.UpdatedDate = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(token); TempData[correct ? "Notice" : "Error"] = question.OptionFeedback[answer];
+        await db.SaveChangesAsync(token); TempData[correct ? "Notice" : "Error"] = correct
+            ? $"{question.OptionFeedback[answer]} Evidence explanation met the rubric ({explanationScore}/3)."
+            : answer != question.CorrectAnswer ? question.OptionFeedback[answer]
+            : "The choice is correct, but cite at least two evidence concepts such as transport, status, settlement, holds, balances, correlation, or journals.";
         return RedirectToAction(nameof(Mission), new { id });
     }
 
@@ -236,7 +249,11 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         new RailDecisionCaseViewModel("instant", "A domestic payment must be available in seconds and final immediately.", ["ACH", "FedNow", "Check"], "FedNow", "FedNow combines immediate receiver processing with final settlement, subject to participation and limits."),
         new RailDecisionCaseViewModel("payroll", "Ten thousand payroll credits are scheduled for the next banking day.", ["Fedwire", "ACH", "SWIFT CBPR+"], "ACH", "Batch grouping and effective dates fit high-volume scheduled credits."),
         new RailDecisionCaseViewModel("cross-border", "A USD customer payment must reach an overseas bank through correspondents.", ["FedNow", "Check", "SWIFT CBPR+"], "SWIFT CBPR+", "SWIFT carries the cross-border message while correspondent arrangements model settlement."),
-        new RailDecisionCaseViewModel("paper", "A deposited paper item must be presented using captured front and back images.", ["Check", "ACH", "Fedwire"], "Check", "The image check workflow uses image cash letters and paying-bank presentment.")
+        new RailDecisionCaseViewModel("paper", "A deposited paper item must be presented using captured front and back images.", ["Check", "ACH", "Fedwire"], "Check", "The image check workflow uses image cash letters and paying-bank presentment."),
+        new RailDecisionCaseViewModel("ach-window", "A payroll file misses its selected same-day cutoff. What should operations do?", ["Backdate settlement", "Move it to the next eligible window", "Post customers immediately"], "Move it to the next eligible window", "Cutoff eligibility determines the next processing and settlement window; elapsed time does not authorize posting."),
+        new RailDecisionCaseViewModel("check-hold", "A $500 check has provisional ledger credit but $500 remains uncollected. What is immediately available under the teaching schedule?", ["$0", "$225", "$500"], "$225", "The teaching availability policy releases $225 while the remainder remains deferred and returnable."),
+        new RailDecisionCaseViewModel("swift-fee", "A beneficiary-charged cross-border transfer converts to EUR 900 with a EUR 10 correspondent fee. What arrives?", ["EUR 890", "EUR 900", "EUR 910"], "EUR 890", "BEN charging deducts the fee from the converted beneficiary amount; this is simplified teaching behavior."),
+        new RailDecisionCaseViewModel("fednow-timeout", "A FedNow receiver status times out without final settlement evidence. What is the safe action?", ["Send a duplicate", "Infer settlement", "Open a correlated investigation"], "Open a correlated investigation", "A timeout is an exception boundary, not proof of failure or settlement.")
     });
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -244,7 +261,9 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         CancellationToken token = default)
     {
         var expected = id switch { "instant" => "FedNow", "payroll" => "ACH",
-            "cross-border" => "SWIFT CBPR+", "paper" => "Check", _ => null };
+            "cross-border" => "SWIFT CBPR+", "paper" => "Check",
+            "ach-window" => "Move it to the next eligible window", "check-hold" => "$225",
+            "swift-fee" => "EUR 890", "fednow-timeout" => "Open a correlated investigation", _ => null };
         if (expected is null) return BadRequest();
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -316,9 +335,9 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
     [
         new("Fedwire", "Urgent domestic high-value transfers", "Same business day", "Final when settled", "No lab customer limit", "ISO 20022", "Federal Reserve master accounts", "Approval and delivery are not settlement"),
         new("FedNow", "Immediate domestic payments", "Seconds", "Immediate and final", "$10 million customer transfer", "ISO 20022", "Immediate Federal Reserve settlement", "Receiver availability is part of routing"),
-        new("SWIFT CBPR+", "Cross-border bank messaging", "Depends on route", "Depends on settlement arrangement", "No lab-specific limit", "ISO 20022 / CBPR+", "Simulated correspondent positions", "SWIFT messaging is not itself settlement"),
-        new("ACH", "High-volume scheduled consumer and business payments", "Batch / banking day", "Return rights remain", "Rules and risk limits vary", "94-character NACHA records", "FedACH-style net settlement", "Files, batches, entries, and returns are separate layers"),
-        new("Checks", "Image-based presentment", "Batch / clearing cycle", "Subject to returns", "Policy dependent", "TIFF + image cash letter", "Paying/depository bank settlement", "Image validation is distinct from payment authorization")
+        new("SWIFT CBPR+", "Cross-border bank messaging", "Depends on route and value date", "Depends on settlement arrangement", "Currency and relationship dependent", "ISO 20022 / CBPR+", "Nostro/vostro positions with teaching FX and OUR/SHA/BEN fees", "Serial and cover methods produce different message and funding paths"),
+        new("ACH", "High-volume scheduled consumer and business payments", "Multiple batch windows / banking day", "Return rights remain", "ODFI exposure and window dependent", "94-character NACHA records", "FedACH-style settlement", "Same-day windows, files, entries, NOCs, reversals, and returns are separate layers"),
+        new("Checks", "Image-based presentment", "Batch / clearing and availability cycle", "Provisional credit remains returnable", "Availability policy dependent", "TIFF + image cash letter", "Paying/depository bank settlement", "Ledger credit, collection, and funds availability are distinct")
     ]));
 
     public async Task<IActionResult> IsoExplorer(CancellationToken token)
@@ -334,10 +353,13 @@ public sealed class LearningController(IDbContextFactory<BankingDbContext> dbFac
         return View(new IsoExplorerViewModel(messages, Fields, MessageTypes));
     }
 
-    private static async Task<LearningProgress> ProgressAsync(BankingDbContext db, Guid bankId, string missionId, CancellationToken token)
+    private static async Task<LearningProgress> ProgressAsync(BankingDbContext db, Guid bankId,
+        string learnerAlias, string missionId, CancellationToken token)
     {
-        var progress = await db.LearningProgress.SingleOrDefaultAsync(x => x.BankId == bankId && x.MissionId == missionId, token);
-        if (progress is not null) return progress; progress = new() { BankId = bankId, MissionId = missionId }; db.LearningProgress.Add(progress); return progress;
+        var progress = await db.LearningProgress.SingleOrDefaultAsync(x => x.BankId == bankId
+            && x.LearnerAlias == learnerAlias && x.MissionId == missionId, token);
+        if (progress is not null) return progress; progress = new() { BankId = bankId,
+            LearnerAlias = learnerAlias, MissionId = missionId }; db.LearningProgress.Add(progress); return progress;
     }
 
     private static string MissionRail(string id) => id.StartsWith("ach-", StringComparison.Ordinal) ? "ACH"

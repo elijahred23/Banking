@@ -139,9 +139,11 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
         deposit.Images.Add(ToImage(deposit.Id, CheckImageSide.Front, model.FrontImage!, front!));
         deposit.Images.Add(ToImage(deposit.Id, CheckImageSide.Back, model.BackImage!, back!));
         deposit.Events.Add(new CheckEvent { EventType = "Captured",
-            Description = "Check captured with front/back TIFF images and a parsed MICR line." });
+            Description = "Check captured with front/back TIFF images and a parsed MICR line. Provisional credit is uncollected and unavailable." });
+        AccountAvailabilityPolicy.PlaceProvisionalCredit(account, deposit.Amount);
         db.CheckDeposits.Add(deposit);
         await db.SaveChangesAsync(token);
+        await LearningRunLinker.AttachAsync(HttpContext, db, bankId, "Check", deposit.Id, token);
         await bus.PublishAsync(Queues.CheckDepositCreated, new CheckDepositCreated(deposit.Id), token);
         TempData["Notice"] = "Check captured and queued for image cash letter processing.";
         return RedirectToAction(nameof(Details), new { id = deposit.Id });

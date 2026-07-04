@@ -30,7 +30,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 var imad = $"{DateTime.UtcNow:yyyyMMdd}{sender.FedParticipantId[..Math.Min(6, sender.FedParticipantId.Length)]}{sequence}";
                 var omad = $"{DateTime.UtcNow:yyyyMMdd}FED{Random.Shared.Next(100000, 999999)}";
                 var validXml = iso.Validate(payment.XmlPayload).IsValid;
-                var accepted = validXml && payment.Amount > 0 && sender.MasterAccountBalance >= payment.Amount
+                var accepted = validXml && PaymentRiskPolicy.WithinFedwireLiquidity(sender, payment.Amount)
                     && payment.Scenario != ProcessingScenario.FedRejects;
                 if (accepted)
                 {
@@ -47,13 +47,23 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             }
             await transaction.CommitAsync(token);
         });
-        if (payment.Scenario == ProcessingScenario.PendingThenAccepted
+        var scenario = ScenarioCatalog.For(payment.Scenario);
+        if (payment.Scenario is ProcessingScenario.PendingThenAccepted or ProcessingScenario.DroppedDelivery
             && settlement!.StatusCode == "ACSC")
         {
             await PublishStatusAsync(payment, settlement, "PDNG", "Payment is pending Fed processing", token);
-            await Task.Delay(TimeSpan.FromSeconds(2), token);
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, scenario.DelaySeconds)), token);
+        }
+        if (payment.Scenario == ProcessingScenario.OutOfOrderDelivery && settlement!.StatusCode == "ACSC")
+        {
+            await PublishResultsAsync(payment, settlement, token);
+            await PublishStatusAsync(payment, settlement, "PDNG",
+                "Delayed stale status delivered after final acceptance", token);
+            return;
         }
         await PublishResultsAsync(payment, settlement!, token);
+        if (payment.Scenario == ProcessingScenario.DuplicateDelivery && settlement!.StatusCode == "ACSC")
+            await PublishResultsAsync(payment, settlement, token);
         logger.LogInformation("Fed processed {CorrelationId} with {Status}; IMAD {Imad}",
             payment.CorrelationId, settlement!.StatusCode, settlement.Imad);
     }

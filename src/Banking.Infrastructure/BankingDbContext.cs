@@ -38,12 +38,21 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<LearningAttempt> LearningAttempts => Set<LearningAttempt>();
     public DbSet<LearningRun> LearningRuns => Set<LearningRun>();
     public DbSet<LearningAssignment> LearningAssignments => Set<LearningAssignment>();
+    public DbSet<SimulationState> SimulationStates => Set<SimulationState>();
+    public DbSet<OperationsCase> OperationsCases => Set<OperationsCase>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Bank>().Property(x => x.MasterAccountBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Bank>().Property(x => x.FedwireCreditLimit).HasPrecision(19, 4);
+        modelBuilder.Entity<Bank>().Property(x => x.AchExposureLimit).HasPrecision(19, 4);
         modelBuilder.Entity<Account>().Property(x => x.Balance).HasPrecision(19, 4);
         modelBuilder.Entity<Account>().Property(x => x.HeldBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.PendingCreditBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.ProvisionalCreditBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.UncollectedBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.OverdraftLimit).HasPrecision(19, 4);
+        modelBuilder.Entity<Account>().Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
         modelBuilder.Entity<Account>().Property(x => x.Balance).IsConcurrencyToken();
         modelBuilder.Entity<Account>().Property(x => x.HeldBalance).IsConcurrencyToken();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Amount).HasPrecision(19, 4);
@@ -178,7 +187,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
             .HasForeignKey(x => x.CheckCashLetterId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CheckCashLetter>().HasOne(x => x.DepositoryBank).WithMany()
             .HasForeignKey(x => x.DepositoryBankId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<LearningProgress>().HasIndex(x => new { x.BankId, x.MissionId }).IsUnique();
+        modelBuilder.Entity<LearningProgress>().HasIndex(x => new { x.BankId, x.LearnerAlias, x.MissionId }).IsUnique();
         modelBuilder.Entity<LearningProgress>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<LearningAttempt>().HasIndex(x => new { x.BankId, x.MissionId, x.CreatedDate });
         modelBuilder.Entity<LearningAttempt>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
@@ -190,5 +199,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<LearningRun>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<LearningAssignment>().HasIndex(x => new { x.BankId, x.Cohort, x.MissionId, x.IsActive });
         modelBuilder.Entity<LearningAssignment>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<SimulationState>().Property(x => x.SpeedMultiplier).HasPrecision(9, 2);
+        modelBuilder.Entity<SimulationState>().HasIndex(x => x.Name).IsUnique();
+        modelBuilder.Entity<OperationsCase>().Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+        modelBuilder.Entity<OperationsCase>().Property(x => x.Severity).HasConversion<string>().HasMaxLength(20);
+        modelBuilder.Entity<OperationsCase>().HasIndex(x => new { x.BankId, x.Status, x.DueDate });
+        modelBuilder.Entity<OperationsCase>().HasIndex(x => new { x.BankId, x.Rail, x.Reference });
+        modelBuilder.Entity<OperationsCase>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

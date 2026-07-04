@@ -6,7 +6,11 @@ public enum WireDirection { Outgoing, Incoming }
 public enum WireStatus { PendingApproval, PendingComplianceReview, Created, Validated, ReadyForFed, SentToFed, PendingAtFed, Settled, Received, Completed, Rejected, Returned }
 public enum MessageDirection { Outbound, Inbound }
 public enum DeliveryStatus { Pending, Sent, Delivered, Failed }
-public enum ProcessingScenario { Standard, PendingThenAccepted, FedRejects, MalformedIso }
+public enum ProcessingScenario
+{
+    Standard, PendingThenAccepted, FedRejects, MalformedIso,
+    DuplicateDelivery, OutOfOrderDelivery, DroppedDelivery
+}
 public enum WireTransferType
 {
     [Display(Name = "Customer credit transfer (pacs.008)")] CustomerCreditTransfer,
@@ -24,6 +28,9 @@ public enum PaymentRail
     Ach,
     Check
 }
+public enum AccountStatus { Open, Restricted, Frozen, Closed }
+public enum OperationsCaseStatus { Open, Assigned, Investigating, Resolved }
+public enum OperationsCaseSeverity { Low, Medium, High, Critical }
 
 public sealed class Bank
 {
@@ -41,6 +48,8 @@ public sealed class Bank
     public bool FedNowRequestForPaymentEnabled { get; set; } = true;
     public bool FedNowOnline { get; set; } = true;
     public bool SwiftEnabled { get; set; } = true;
+    public decimal FedwireCreditLimit { get; set; }
+    public decimal AchExposureLimit { get; set; } = 1_000_000m;
     public List<Customer> Customers { get; set; } = [];
 }
 
@@ -61,7 +70,43 @@ public sealed class Account
     [MaxLength(34)] public required string AccountNumber { get; set; }
     public decimal Balance { get; set; }
     public decimal HeldBalance { get; set; }
-    public decimal AvailableBalance => Balance - HeldBalance;
+    public decimal PendingCreditBalance { get; set; }
+    public decimal ProvisionalCreditBalance { get; set; }
+    public decimal UncollectedBalance { get; set; }
+    public decimal OverdraftLimit { get; set; }
+    public AccountStatus Status { get; set; } = AccountStatus.Open;
+    public decimal CollectedBalance => Balance - UncollectedBalance;
+    public decimal AvailableBalance => Balance - HeldBalance - UncollectedBalance + OverdraftLimit;
+}
+
+public sealed class SimulationState
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(60)] public required string Name { get; set; }
+    public DateTimeOffset CurrentUtc { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsPaused { get; set; } = true;
+    public decimal SpeedMultiplier { get; set; } = 1m;
+    public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OperationsCase
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid BankId { get; set; }
+    public Bank Bank { get; set; } = null!;
+    [MaxLength(30)] public required string Rail { get; set; }
+    [MaxLength(60)] public required string CaseType { get; set; }
+    [MaxLength(120)] public required string Reference { get; set; }
+    [MaxLength(240)] public required string Summary { get; set; }
+    public OperationsCaseStatus Status { get; set; } = OperationsCaseStatus.Open;
+    public OperationsCaseSeverity Severity { get; set; } = OperationsCaseSeverity.Medium;
+    [MaxLength(120)] public string? AssignedTo { get; set; }
+    [MaxLength(2000)] public string? Notes { get; set; }
+    [MaxLength(500)] public string? Resolution { get; set; }
+    public DateTimeOffset DueDate { get; set; }
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ResolvedDate { get; set; }
 }
 
 public sealed class WireTransfer

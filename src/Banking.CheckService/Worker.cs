@@ -17,7 +17,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private async Task ProcessAsync(CheckDepositCreated command, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
-        var deposit = await db.CheckDeposits.Include(x => x.DepositoryBank).Include(x => x.Images)
+        var deposit = await db.CheckDeposits.Include(x => x.DepositoryBank).Include(x => x.DepositingAccount).Include(x => x.Images)
             .Include(x => x.Events).SingleOrDefaultAsync(x => x.Id == command.CheckDepositId, token);
         if (deposit is null || deposit.Status != CheckDepositStatus.Captured) return;
         try
@@ -64,12 +64,19 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            ReleaseProvisionalCredit(deposit.DepositingAccount, deposit.Amount);
             deposit.Status = CheckDepositStatus.Rejected;
             deposit.ReturnReason = ex.Message;
             deposit.Events.Add(Event("Rejected", ex.Message));
             await db.SaveChangesAsync(token);
             logger.LogWarning(ex, "Check deposit {CheckDepositId} failed validation", deposit.Id);
         }
+    }
+
+    private static void ReleaseProvisionalCredit(Account account, decimal amount)
+    {
+        account.PendingCreditBalance = Math.Max(0, account.PendingCreditBalance - amount);
+        account.ProvisionalCreditBalance = Math.Max(0, account.ProvisionalCreditBalance - amount);
     }
 
     private static CheckEvent Event(string type, string description) =>

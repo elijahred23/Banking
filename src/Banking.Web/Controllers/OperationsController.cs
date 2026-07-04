@@ -11,7 +11,9 @@ namespace Banking.Web.Controllers;
 public sealed class OperationsController(
     IDbContextFactory<BankingDbContext> dbFactory,
     IQueueOperationsMonitor queueMonitor,
-    PaymentReconciliationService reconciliationService) : Controller
+    PaymentReconciliationService reconciliationService,
+    SimulationStateService simulation,
+    UnifiedJournalService unifiedJournals) : Controller
 {
     public async Task<IActionResult> Index(CancellationToken token)
     {
@@ -67,9 +69,82 @@ public sealed class OperationsController(
             .Select(x => new StuckOutboxViewModel(x.Id, x.Queue, x.Attempts, x.LastError, x.CreatedDate))
             .ToListAsync(token);
         var reconciliation = await reconciliationService.ReconcileAsync(bankId, token);
+        var simulationState = await simulation.GetAsync(token);
+        var cases = await db.OperationsCases.AsNoTracking().Where(x => x.BankId == bankId)
+            .OrderBy(x => x.Status == OperationsCaseStatus.Resolved).ThenBy(x => x.DueDate).Take(20)
+            .Select(x => new OperationsCaseViewModel(x.Id, x.Rail, x.CaseType, x.Reference,
+                x.Summary, x.Status, x.Severity, x.AssignedTo, x.DueDate, x.Notes)).ToListAsync(token);
+        var accounts = await db.Accounts.AsNoTracking().Where(x => x.Customer.BankId == bankId)
+            .Select(x => new { x.AccountNumber, Customer = x.Customer.Name, x.Balance,
+                x.HeldBalance, x.PendingCreditBalance, x.ProvisionalCreditBalance,
+                x.UncollectedBalance, x.OverdraftLimit, x.Status }).ToListAsync(token);
+        var availability = accounts.Select(x => new AccountAvailabilityViewModel(x.AccountNumber,
+            x.Customer, x.Balance, x.Balance - x.UncollectedBalance,
+            x.Balance - x.HeldBalance - x.UncollectedBalance + x.OverdraftLimit,
+            x.HeldBalance, x.PendingCreditBalance, x.ProvisionalCreditBalance, x.Status)).ToList();
+        var unified = await unifiedJournals.ReadAsync(bankId, token);
+        var trialBalance = UnifiedAccountingPolicy.TrialBalance(unified);
         return View(new OperationsDashboardViewModel(bank, payments, queueSnapshot,
             exceptions, movements, journals, rails, deadLetters, stuckOutbox, reconciliation,
+            simulationState, cases, availability, trialBalance,
             DateTimeOffset.UtcNow));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AdvanceClock(int hours, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        _ = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        hours = Math.Clamp(hours, 1, 24 * 31);
+        var state = await simulation.AdvanceAsync(TimeSpan.FromHours(hours), token);
+        TempData["Notice"] = $"Lab clock advanced {hours} hour(s) to {state.CurrentUtc:u}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> OpenCase(string rail, string caseType, string reference,
+        string summary, OperationsCaseSeverity severity, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(rail) || string.IsNullOrWhiteSpace(caseType)
+            || string.IsNullOrWhiteSpace(reference) || string.IsNullOrWhiteSpace(summary))
+            return BadRequest();
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var duplicate = await db.OperationsCases.AnyAsync(x => x.BankId == bankId
+            && x.Reference == reference && x.CaseType == caseType
+            && x.Status != OperationsCaseStatus.Resolved, token);
+        if (duplicate)
+        {
+            TempData["Error"] = "An active case already exists for this exception.";
+            return RedirectToAction(nameof(Index));
+        }
+        db.OperationsCases.Add(new OperationsCase
+        {
+            BankId = bankId, Rail = Truncate(rail, 30), CaseType = Truncate(caseType, 60),
+            Reference = Truncate(reference, 120), Summary = Truncate(summary, 240), Severity = severity,
+            DueDate = DateTimeOffset.UtcNow.Add(severity >= OperationsCaseSeverity.High
+                ? TimeSpan.FromHours(1) : TimeSpan.FromHours(8))
+        });
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = "Operational case opened for investigation.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateCase(Guid id, string? assignedTo, string? notes,
+        bool resolve, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var item = await db.OperationsCases.SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
+        if (item is null) return NotFound();
+        item.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? User.Identity?.Name : assignedTo.Trim();
+        item.Notes = string.IsNullOrWhiteSpace(notes) ? item.Notes : notes.Trim();
+        item.Status = resolve ? OperationsCaseStatus.Resolved : OperationsCaseStatus.Investigating;
+        item.UpdatedDate = DateTimeOffset.UtcNow;
+        if (resolve) { item.ResolvedDate = item.UpdatedDate; item.Resolution = item.Notes ?? "Reviewed and resolved."; }
+        await db.SaveChangesAsync(token);
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -215,4 +290,7 @@ public sealed class OperationsController(
 
     private static string BankName(IReadOnlyDictionary<Guid, string> banks, Guid? id) =>
         id is { } value && banks.TryGetValue(value, out var name) ? name : "External institution";
+
+    private static string Truncate(string value, int length) =>
+        value.Trim()[..Math.Min(value.Trim().Length, length)];
 }

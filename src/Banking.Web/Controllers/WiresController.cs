@@ -408,6 +408,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         };
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
+        await LearningRunLinker.AttachAsync(HttpContext, db, bankId, "Wire", wire.Id, token);
         TempData["Notice"] =
             $"Wire {wire.Id.ToString()[..8]} created. A different payment approver must release it.";
         return RedirectToAction(nameof(Details), new { id = wire.Id });

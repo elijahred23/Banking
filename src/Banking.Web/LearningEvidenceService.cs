@@ -8,10 +8,11 @@ namespace Banking.Web;
 public sealed class LearningEvidenceService(IDbContextFactory<BankingDbContext> dbFactory)
 {
     public async Task<LearningRunViewModel?> EvaluateLatestAsync(Guid bankId, string missionId,
-        CancellationToken token)
+        string learnerAlias, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
-        var run = await db.LearningRuns.Where(x => x.BankId == bankId && x.MissionId == missionId)
+        var run = await db.LearningRuns.Where(x => x.BankId == bankId && x.MissionId == missionId
+                && x.LearnerAlias == learnerAlias)
             .OrderByDescending(x => x.StartedDate).FirstOrDefaultAsync(token);
         return run is null ? null : await EvaluateAsync(db, run, token);
     }

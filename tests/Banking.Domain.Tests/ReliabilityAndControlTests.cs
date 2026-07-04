@@ -169,7 +169,8 @@ public sealed class ReliabilityAndControlTests
             await db.SaveChangesAsync();
         }
         var controller = new OperationsController(factory, new EmptyQueueMonitor(),
-            new PaymentReconciliationService(factory))
+            new PaymentReconciliationService(factory), new SimulationStateService(factory),
+            new UnifiedJournalService(factory))
         {
             ControllerContext = new ControllerContext { HttpContext = HttpContext(ownBank.Id) }
         };
