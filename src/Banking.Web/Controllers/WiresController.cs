@@ -933,9 +933,11 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .AsNoTracking().ToListAsync(token);
         model.Accounts = accountData.Select(x => new SelectListItem(
             $"{x.CustomerName} · {x.AccountNumber} · available {x.AvailableBalance:C}", x.Id.ToString())).ToList();
-        model.Banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
-            .Select(x => new SelectListItem($"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString()))
-            .ToListAsync(token);
+        var bankData = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
+            .Select(x => new { x.Id, x.Name, x.CountryCode, x.Bic })
+            .AsNoTracking().ToListAsync(token);
+        model.Banks = bankData.Select(x => new SelectListItem(
+            $"{x.Name} · {x.CountryCode} · BIC {x.Bic}", x.Id.ToString())).ToList();
         model.Rails = Enum.GetValues<PaymentRail>().Where(x => x is PaymentRail.Fedwire
                 or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus)
             .Select(x => new SelectListItem(x == PaymentRail.SwiftCbprPlus
@@ -992,13 +994,15 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Select(x => new WireAccountChoice(x.Id, x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
             .AsNoTracking().ToListAsync(token);
         var accounts = accountData.Select(x => new SelectListItem($"{x.CustomerName} · {x.AccountNumber}", x.Id.ToString())).ToList();
-        var banks = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
-            .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
-            .AsNoTracking().ToListAsync(token);
-        var fedNowBanks = await db.Banks.Where(x => x.Id != bankId && x.FedNowEnabled && x.FedNowOnline)
+        var bankData = await db.Banks.Where(x => x.Id != bankId)
             .OrderBy(x => x.Name)
-            .Select(x => new SelectListItem($"{x.Name} · {x.RoutingNumber}", x.Id.ToString()))
+            .Select(x => new { x.Id, x.Name, x.RoutingNumber, x.FedNowEnabled, x.FedNowOnline })
             .AsNoTracking().ToListAsync(token);
+        var banks = bankData.Select(x => new SelectListItem(
+            $"{x.Name} · {x.RoutingNumber}", x.Id.ToString())).ToList();
+        var fedNowBanks = bankData.Where(x => x.FedNowEnabled && x.FedNowOnline)
+            .Select(x => new SelectListItem(
+                $"{x.Name} · {x.RoutingNumber}", x.Id.ToString())).ToList();
         var exchanges = await db.MessageExchanges
             .Where(x => x.BankId == bankId || x.CounterpartyBankId == bankId)
             .Include(x => x.Bank).Include(x => x.CounterpartyBank).Include(x => x.Messages)

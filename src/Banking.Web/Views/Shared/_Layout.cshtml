@@ -55,7 +55,8 @@
                     <li class="nav-item"><a class="nav-link @(currentController == "Check" && currentAction != "Instructions" ? "active" : "")" asp-controller="Check" asp-action="Index">Checks</a></li>
                 </ul>
                 <a class="btn btn-sm btn-outline-light me-2" asp-controller="Learning" asp-action="Glossary">Glossary</a>
-                <div class="dropdown context-switcher">
+            </div>
+                <div class="dropup context-switcher">
                     <button class="btn btn-sm btn-outline-light dropdown-toggle context-switcher-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Switch bank or user. Currently @activeRoleLabel at @activeBankName">
                         <span class="context-switcher-label">@activeBankName</span>
                         <span class="context-switcher-role">@activeRoleLabel</span>
@@ -93,7 +94,6 @@
                         </form>
                     </div>
                 </div>
-            </div>
         }
     </nav>
 </header>
