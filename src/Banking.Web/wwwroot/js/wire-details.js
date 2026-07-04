@@ -275,13 +275,6 @@
                 return code.dataset.rawXml ?? code.textContent;
             };
             message.querySelector(".preview-xml")?.addEventListener("click", () => showPreview(message));
-            message.querySelector(".copy-xml")?.addEventListener("click", async event => {
-                await navigator.clipboard.writeText(xml());
-                const button = event.currentTarget;
-                const original = button.textContent;
-                button.textContent = "Copied";
-                setTimeout(() => button.textContent = original, 1200);
-            });
             message.querySelector(".download-xml")?.addEventListener("click", () => {
                 const blob = new Blob([xml()], { type: "application/xml;charset=utf-8" });
                 const link = document.createElement("a");
@@ -291,6 +284,75 @@
                 URL.revokeObjectURL(link.href);
             });
         });
+        root.querySelector(".copy-wire-lifecycle")?.addEventListener("click", async event => {
+            const button = event.currentTarget;
+            const original = button.textContent;
+            try {
+                await writeClipboard(lifecycleClipboardText());
+                button.textContent = "Copied lifecycle + all XML";
+            } catch (error) {
+                console.error(error);
+                button.textContent = "Copy failed";
+            }
+            setTimeout(() => button.textContent = original, 1800);
+        });
+    }
+
+    function lifecycleClipboardText() {
+        const source = content.querySelector(".wire-lifecycle-diagram-source");
+        const title = source?.dataset.diagramTitle
+            || "Wire lifecycle";
+        const temporaryDiagram = document.createElement("div");
+        if (source) {
+            temporaryDiagram.append(source.content.cloneNode(true));
+            temporaryDiagram.style.position = "fixed";
+            temporaryDiagram.style.left = "-10000px";
+            document.body.append(temporaryDiagram);
+        }
+        const diagramText = temporaryDiagram.innerText.trim();
+        temporaryDiagram.remove();
+        const report = [
+            title.toUpperCase(),
+            "=".repeat(title.length),
+            diagramText || "No lifecycle evidence is available."
+        ];
+        const messages = Array.from(content.querySelectorAll(".iso-message"));
+
+        report.push("", "ISO 20022 XML MESSAGES", "======================");
+        if (!messages.length) {
+            report.push("No ISO XML messages are associated with this wire.");
+        } else {
+            messages.forEach((message, index) => {
+                const code = message.querySelector(".xml-viewer code");
+                const metadata = message.querySelector(".iso-message-header > div:first-child > div")
+                    ?.textContent.trim();
+                report.push(
+                    "",
+                    `--- Message ${index + 1}: ${message.dataset.messageType}${metadata ? ` · ${metadata}` : ""} ---`,
+                    code?.dataset.rawXml ?? code?.textContent ?? ""
+                );
+            });
+        }
+
+        return report.join("\n");
+    }
+
+    async function writeClipboard(text) {
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+
+        const temporary = document.createElement("textarea");
+        temporary.value = text;
+        temporary.setAttribute("readonly", "");
+        temporary.style.position = "fixed";
+        temporary.style.opacity = "0";
+        document.body.append(temporary);
+        temporary.select();
+        const copied = document.execCommand("copy");
+        temporary.remove();
+        if (!copied) throw new Error("Clipboard copy was not available.");
     }
 
     wireMessageActions();
