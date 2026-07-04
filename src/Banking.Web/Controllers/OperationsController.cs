@@ -7,10 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Banking.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = BankSecurity.Operations)]
 public sealed class OperationsController(
     IDbContextFactory<BankingDbContext> dbFactory,
-    IQueueOperationsMonitor queueMonitor) : Controller
+    IQueueOperationsMonitor queueMonitor,
+    PaymentReconciliationService reconciliationService) : Controller
 {
     public async Task<IActionResult> Index(CancellationToken token)
     {
@@ -53,8 +54,50 @@ public sealed class OperationsController(
         var journals = await LoadJournalsAsync(db, bankId, token);
         var queueSnapshot = await queueTask;
         var rails = BuildRailHealth(bank, queueSnapshot);
+        var deadLetters = await db.DeadLetterMessages.AsNoTracking()
+            .Where(x => x.BankId == bankId && x.ReplayedDate == null)
+            .OrderByDescending(x => x.FailedDate).Take(10)
+            .Select(x => new DeadLetterViewModel(x.Id, x.Queue, x.Attempts, x.Error, x.FailedDate))
+            .ToListAsync(token);
+        var staleDate = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var stuckOutbox = await db.OutboxMessages.AsNoTracking()
+            .Where(x => x.BankId == bankId && x.PublishedDate == null
+                && (x.Attempts > 0 || x.CreatedDate < staleDate))
+            .OrderByDescending(x => x.CreatedDate).Take(10)
+            .Select(x => new StuckOutboxViewModel(x.Id, x.Queue, x.Attempts, x.LastError, x.CreatedDate))
+            .ToListAsync(token);
+        var reconciliation = await reconciliationService.ReconcileAsync(bankId, token);
         return View(new OperationsDashboardViewModel(bank, payments, queueSnapshot,
-            exceptions, movements, journals, rails, DateTimeOffset.UtcNow));
+            exceptions, movements, journals, rails, deadLetters, stuckOutbox, reconciliation,
+            DateTimeOffset.UtcNow));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReplayDeadLetter(Guid id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var deadLetter = await db.DeadLetterMessages.SingleOrDefaultAsync(x => x.Id == id
+            && x.BankId == bankId && x.ReplayedDate == null, token);
+        if (deadLetter is null) return NotFound();
+
+        var replay = new OutboxMessage
+        {
+            BankId = bankId,
+            Queue = deadLetter.Queue,
+            Payload = deadLetter.Payload
+        };
+        db.OutboxMessages.Add(replay);
+        deadLetter.ReplayedDate = DateTimeOffset.UtcNow;
+        deadLetter.ReplayOutboxMessageId = replay.Id;
+        if (deadLetter.ConsumerInboxMessageId is { } inboxId)
+        {
+            var inbox = await db.ConsumerInboxMessages.SingleOrDefaultAsync(x => x.Id == inboxId, token);
+            if (inbox is not null) inbox.CompletedDate ??= deadLetter.ReplayedDate;
+        }
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = $"Dead-letter message queued for replay to {deadLetter.Queue}.";
+        return RedirectToAction(nameof(Index));
     }
 
     private static async Task<IReadOnlyList<OperationsExceptionViewModel>> LoadExceptionsAsync(

@@ -55,7 +55,7 @@ public static class WireReturnPosting
                 receiver.MasterAccountBalance -= outgoing.Amount;
             }
         }
-        outgoing.Status = WireStatus.Returned;
-        incoming.Status = WireStatus.Returned;
+        WireWorkflow.Transition(outgoing, WireStatus.Returned);
+        WireWorkflow.Transition(incoming, WireStatus.Returned);
     }
 }

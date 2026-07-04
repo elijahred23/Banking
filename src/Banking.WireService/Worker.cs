@@ -32,7 +32,7 @@ public sealed class Worker(
             : compliance.Screen(wire, sender, receiver);
         if (screening.RequiresReview)
         {
-            wire.Status = WireStatus.PendingComplianceReview;
+            WireWorkflow.Transition(wire, WireStatus.PendingComplianceReview);
             wire.ComplianceStatus = "ReviewRequired";
             wire.ComplianceReason = screening.Reason;
             db.WireEvents.Add(Event(wire.Id, "ComplianceReviewRequired", screening.Reason!));
@@ -51,7 +51,7 @@ public sealed class Worker(
             : null;
         if (rejection is not null)
         {
-            wire.Status = WireStatus.Rejected;
+            WireWorkflow.Transition(wire, WireStatus.Rejected);
             db.WireEvents.Add(Event(wire.Id, "Rejected", rejection));
             await db.SaveChangesAsync(cancellationToken);
             logger.LogWarning("Wire {WireId} rejected: {Reason}", wire.Id, rejection);
@@ -69,7 +69,7 @@ public sealed class Worker(
             }
             catch (InvalidOperationException ex)
             {
-                wire.Status = WireStatus.Rejected;
+                WireWorkflow.Transition(wire, WireStatus.Rejected);
                 db.WireEvents.Add(Event(wire.Id, "Rejected", ex.Message));
                 await db.SaveChangesAsync(cancellationToken);
                 logger.LogWarning("Wire {WireId} rejected: {Reason}", wire.Id, ex.Message);
@@ -98,7 +98,7 @@ public sealed class Worker(
         }
 
         if (!institutionTransfer) account!.HeldBalance += wire.Amount;
-        wire.Status = WireStatus.Validated;
+        WireWorkflow.Transition(wire, WireStatus.Validated);
         db.WireEvents.Add(Event(wire.Id, "Validated",
             institutionTransfer
                 ? $"Validation passed; {wire.Amount:C} of master-account liquidity is available."
@@ -129,7 +129,7 @@ public sealed class Worker(
         if (!validation.IsValid || cbprValidation is { IsValid: false })
         {
             if (!institutionTransfer) account!.HeldBalance -= wire.Amount;
-            wire.Status = WireStatus.Rejected;
+            WireWorkflow.Transition(wire, WireStatus.Rejected);
             if (paymentRoute is not null) paymentRoute.RouteStatus = PaymentRouteStatuses.Failed;
             db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = messageType,
                 Direction = MessageDirection.Outbound, XmlPayload = xml });
@@ -142,7 +142,7 @@ public sealed class Worker(
 
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = messageType,
             Direction = MessageDirection.Outbound, XmlPayload = xml });
-        wire.Status = WireStatus.ReadyForFed;
+        WireWorkflow.Transition(wire, WireStatus.ReadyForFed);
         db.WireEvents.Add(Event(wire.Id, "IsoGenerated",
             $"{messageType} generated with head.001 business header and UETR; {wire.Rail} lab profile validation passed."));
         await db.SaveChangesAsync(cancellationToken);

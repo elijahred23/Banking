@@ -215,12 +215,42 @@ public sealed class OutboxMessage
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     [MaxLength(120)] public required string Queue { get; set; }
+    public Guid? BankId { get; set; }
     public required string Payload { get; set; }
     public int Attempts { get; set; }
     [MaxLength(1000)] public string? LastError { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? NextAttemptDate { get; set; }
     public DateTimeOffset? PublishedDate { get; set; }
+}
+
+public sealed class ConsumerInboxMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(120)] public required string Queue { get; set; }
+    [MaxLength(128)] public required string MessageId { get; set; }
+    [MaxLength(64)] public required string PayloadHash { get; set; }
+    public Guid? BankId { get; set; }
+    public int Attempts { get; set; }
+    [MaxLength(1000)] public string? LastError { get; set; }
+    public DateTimeOffset FirstReceivedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastAttemptDate { get; set; }
+    public DateTimeOffset? CompletedDate { get; set; }
+}
+
+public sealed class DeadLetterMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ConsumerInboxMessageId { get; set; }
+    public Guid? BankId { get; set; }
+    [MaxLength(120)] public required string Queue { get; set; }
+    [MaxLength(128)] public required string MessageId { get; set; }
+    public required string Payload { get; set; }
+    [MaxLength(1000)] public required string Error { get; set; }
+    public int Attempts { get; set; }
+    public DateTimeOffset FailedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ReplayedDate { get; set; }
+    public Guid? ReplayOutboxMessageId { get; set; }
 }
 
 public sealed class WireEvent

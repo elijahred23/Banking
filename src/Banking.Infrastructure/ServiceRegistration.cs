@@ -16,6 +16,9 @@ public static class ServiceRegistration
         services.AddDbContextFactory<BankingDbContext>(options =>
             options.UseSqlServer(sql, sqlOptions => sqlOptions.EnableRetryOnFailure()));
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
+        services.AddSingleton<MessageReliabilityStore>();
+        services.AddSingleton<PaymentReconciliationService>();
+        services.AddSingleton<LabSchemaUpgradeRunner>();
         services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();
         services.AddSingleton<IIsoMessageService, IsoMessageService>();
         services.AddSingleton<IWireIsoMessageService, WireIsoMessageService>();
@@ -37,7 +40,8 @@ public static class ServiceRegistration
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankingDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
-        await UpgradeLabSchemaAsync(db, cancellationToken);
+        var upgradeRunner = scope.ServiceProvider.GetRequiredService<LabSchemaUpgradeRunner>();
+        await upgradeRunner.UpgradeAsync(db, cancellationToken);
         if (seed && !await db.Banks.AnyAsync(cancellationToken))
         {
             var bankers = Bank("Bankers Bank", "101000019", "BANKERS", 50_000_000m,
@@ -58,7 +62,7 @@ public static class ServiceRegistration
         }
     }
 
-    private static Task<int> UpgradeLabSchemaAsync(BankingDbContext db, CancellationToken token) =>
+    internal static Task<int> ApplyLabSchemaUpgradeAsync(BankingDbContext db, CancellationToken token) =>
         db.Database.ExecuteSqlRawAsync("""
             IF COL_LENGTH(N'dbo.Accounts', N'HeldBalance') IS NULL
                 ALTER TABLE dbo.Accounts ADD HeldBalance decimal(19,4) NOT NULL
@@ -108,11 +112,52 @@ public static class ServiceRegistration
                 AND COL_LENGTH(N'dbo.OutboxMessages', N'NextAttemptDate') IS NULL
                 ALTER TABLE dbo.OutboxMessages ADD NextAttemptDate datetimeoffset NULL;
             IF OBJECT_ID(N'dbo.OutboxMessages', N'U') IS NOT NULL
+                AND COL_LENGTH(N'dbo.OutboxMessages', N'BankId') IS NULL
+                ALTER TABLE dbo.OutboxMessages ADD BankId uniqueidentifier NULL;
+            IF OBJECT_ID(N'dbo.OutboxMessages', N'U') IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM sys.indexes
                     WHERE object_id = OBJECT_ID(N'dbo.OutboxMessages')
                         AND name = N'IX_OutboxMessages_PublishedDate_NextAttemptDate')
                 CREATE INDEX IX_OutboxMessages_PublishedDate_NextAttemptDate
                     ON dbo.OutboxMessages(PublishedDate, NextAttemptDate);
+            IF OBJECT_ID(N'dbo.OutboxMessages', N'U') IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.OutboxMessages')
+                    AND name = N'IX_OutboxMessages_BankId_PublishedDate')
+                CREATE INDEX IX_OutboxMessages_BankId_PublishedDate ON dbo.OutboxMessages(BankId, PublishedDate);
+            IF OBJECT_ID(N'dbo.OutboxMessages', N'U') IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_OutboxMessages_Banks_BankId')
+                ALTER TABLE dbo.OutboxMessages ADD CONSTRAINT FK_OutboxMessages_Banks_BankId
+                    FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id);
+            IF OBJECT_ID(N'dbo.ConsumerInboxMessages', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.ConsumerInboxMessages (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_ConsumerInboxMessages PRIMARY KEY,
+                    Queue nvarchar(120) NOT NULL, MessageId nvarchar(128) NOT NULL,
+                    PayloadHash nvarchar(64) NOT NULL, BankId uniqueidentifier NULL,
+                    Attempts int NOT NULL, LastError nvarchar(1000) NULL,
+                    FirstReceivedDate datetimeoffset NOT NULL, LastAttemptDate datetimeoffset NULL,
+                    CompletedDate datetimeoffset NULL,
+                    CONSTRAINT FK_ConsumerInboxMessages_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id));
+                CREATE UNIQUE INDEX IX_ConsumerInboxMessages_Queue_MessageId
+                    ON dbo.ConsumerInboxMessages(Queue, MessageId);
+                CREATE INDEX IX_ConsumerInboxMessages_BankId_CompletedDate
+                    ON dbo.ConsumerInboxMessages(BankId, CompletedDate);
+            END;
+            IF OBJECT_ID(N'dbo.DeadLetterMessages', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.DeadLetterMessages (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_DeadLetterMessages PRIMARY KEY,
+                    ConsumerInboxMessageId uniqueidentifier NULL, BankId uniqueidentifier NULL,
+                    Queue nvarchar(120) NOT NULL, MessageId nvarchar(128) NOT NULL,
+                    Payload nvarchar(max) NOT NULL, Error nvarchar(1000) NOT NULL,
+                    Attempts int NOT NULL, FailedDate datetimeoffset NOT NULL,
+                    ReplayedDate datetimeoffset NULL, ReplayOutboxMessageId uniqueidentifier NULL,
+                    CONSTRAINT FK_DeadLetterMessages_ConsumerInboxMessages_ConsumerInboxMessageId
+                        FOREIGN KEY (ConsumerInboxMessageId) REFERENCES dbo.ConsumerInboxMessages(Id),
+                    CONSTRAINT FK_DeadLetterMessages_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id));
+                CREATE INDEX IX_DeadLetterMessages_BankId_ReplayedDate_FailedDate
+                    ON dbo.DeadLetterMessages(BankId, ReplayedDate, FailedDate);
+            END;
             IF EXISTS (SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.Accounts') AND name = N'AccountNumber'
                     AND max_length < 68)
@@ -490,13 +535,46 @@ public static class ServiceRegistration
                     CONSTRAINT FK_LearningProgress_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id) ON DELETE CASCADE);
                 CREATE UNIQUE INDEX IX_LearningProgress_BankId_MissionId ON dbo.LearningProgress(BankId, MissionId);
             END;
+            IF COL_LENGTH(N'dbo.LearningProgress', N'NextReviewDate') IS NULL
+                ALTER TABLE dbo.LearningProgress ADD NextReviewDate datetimeoffset NULL;
             IF OBJECT_ID(N'dbo.LearningAttempts', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.LearningAttempts (Id uniqueidentifier NOT NULL CONSTRAINT PK_LearningAttempts PRIMARY KEY,
                     BankId uniqueidentifier NOT NULL, MissionId nvarchar(40) NOT NULL, QuestionId nvarchar(40) NOT NULL,
-                    SelectedAnswer nvarchar(200) NOT NULL, IsCorrect bit NOT NULL, CreatedDate datetimeoffset NOT NULL,
+                    SelectedAnswer nvarchar(200) NOT NULL, IsCorrect bit NOT NULL,
+                    LearnerAlias nvarchar(80) NOT NULL CONSTRAINT DF_LearningAttempts_LearnerAlias DEFAULT (N'Bank team'),
+                    Confidence int NOT NULL CONSTRAINT DF_LearningAttempts_Confidence DEFAULT (3), CreatedDate datetimeoffset NOT NULL,
                     CONSTRAINT FK_LearningAttempts_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id) ON DELETE CASCADE);
                 CREATE INDEX IX_LearningAttempts_BankId_MissionId_CreatedDate ON dbo.LearningAttempts(BankId, MissionId, CreatedDate);
+            END;
+            IF COL_LENGTH(N'dbo.LearningAttempts', N'LearnerAlias') IS NULL
+                ALTER TABLE dbo.LearningAttempts ADD LearnerAlias nvarchar(80) NOT NULL
+                    CONSTRAINT DF_LearningAttempts_LearnerAlias DEFAULT (N'Bank team');
+            IF COL_LENGTH(N'dbo.LearningAttempts', N'Confidence') IS NULL
+                ALTER TABLE dbo.LearningAttempts ADD Confidence int NOT NULL
+                    CONSTRAINT DF_LearningAttempts_Confidence DEFAULT (3);
+            IF OBJECT_ID(N'dbo.LearningRuns', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.LearningRuns (Id uniqueidentifier NOT NULL CONSTRAINT PK_LearningRuns PRIMARY KEY,
+                    BankId uniqueidentifier NOT NULL, MissionId nvarchar(40) NOT NULL, LearnerAlias nvarchar(80) NOT NULL,
+                    Rail nvarchar(30) NOT NULL, ItemType nvarchar(20) NULL, ItemId uniqueidentifier NULL,
+                    Prediction nvarchar(200) NULL, BaselineCustomerBalance decimal(19,4) NOT NULL,
+                    BaselineHeldBalance decimal(19,4) NOT NULL, BaselineMasterBalance decimal(19,4) NOT NULL,
+                    Status nvarchar(20) NOT NULL, EvidenceSummary nvarchar(2000) NULL, EvidenceScore int NOT NULL,
+                    StartedDate datetimeoffset NOT NULL, UpdatedDate datetimeoffset NOT NULL, CompletedDate datetimeoffset NULL,
+                    CONSTRAINT FK_LearningRuns_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id) ON DELETE CASCADE);
+                CREATE INDEX IX_LearningRuns_BankId_MissionId_StartedDate ON dbo.LearningRuns(BankId, MissionId, StartedDate);
+                CREATE INDEX IX_LearningRuns_BankId_ItemType_ItemId ON dbo.LearningRuns(BankId, ItemType, ItemId);
+            END;
+            IF OBJECT_ID(N'dbo.LearningAssignments', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.LearningAssignments (Id uniqueidentifier NOT NULL CONSTRAINT PK_LearningAssignments PRIMARY KEY,
+                    BankId uniqueidentifier NOT NULL, MissionId nvarchar(40) NOT NULL, Cohort nvarchar(80) NOT NULL,
+                    AssignedBy nvarchar(120) NOT NULL, DueDate datetimeoffset NULL, IsActive bit NOT NULL,
+                    CreatedDate datetimeoffset NOT NULL,
+                    CONSTRAINT FK_LearningAssignments_Banks_BankId FOREIGN KEY (BankId) REFERENCES dbo.Banks(Id) ON DELETE CASCADE);
+                CREATE INDEX IX_LearningAssignments_BankId_Cohort_MissionId_IsActive
+                    ON dbo.LearningAssignments(BankId, Cohort, MissionId, IsActive);
             END;
             """, token);
 

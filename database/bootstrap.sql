@@ -18,6 +18,9 @@ SET QUOTED_IDENTIFIER ON;
 :r database/tables/012_PaymentRouteSteps.sql
 :r database/tables/013_WireCases.sql
 :r database/tables/014_MessageExchanges.sql
+:r database/tables/015_OutboxMessages.sql
+:r database/tables/016_ConsumerInboxMessages.sql
+:r database/tables/017_DeadLetterMessages.sql
 :r database/tables/020_AchFiles.sql
 :r database/tables/021_AchBatches.sql
 :r database/tables/022_AchEntries.sql
@@ -32,5 +35,7 @@ SET QUOTED_IDENTIFIER ON;
 :r database/tables/035_CheckEvents.sql
 :r database/tables/040_LearningProgress.sql
 :r database/tables/041_LearningAttempts.sql
+:r database/tables/042_LearningRuns.sql
+:r database/tables/043_LearningAssignments.sql
 
 PRINT 'BankingDb baseline schema is ready.';

@@ -5,9 +5,10 @@ namespace Banking.Infrastructure;
 
 public static class Outbox
 {
-    public static OutboxMessage Message<T>(string queue, T message) => new()
+    public static OutboxMessage Message<T>(string queue, T message, Guid? bankId = null) => new()
     {
         Queue = queue,
+        BankId = bankId,
         Payload = JsonSerializer.Serialize(message)
     };
 }

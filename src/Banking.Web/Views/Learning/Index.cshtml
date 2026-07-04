@@ -6,6 +6,11 @@
     <div><div class="eyebrow">GUIDED CURRICULUM</div><h1>Learning Center</h1><p>Move from concepts to controlled practice. Every mission uses the live simulator and follows the same loop: predict, execute, inspect, and explain.</p></div>
     <div class="learning-progress"><strong>@Model.CompletedMissionIds.Count / @Model.Missions.Count</strong><span>missions complete</span><progress value="@Model.CompletedMissionIds.Count" max="@Model.Missions.Count"></progress></div>
 </div>
+<form class="surface d-flex flex-wrap align-items-end gap-3 mb-4 p-3" asp-action="SetLearner" method="post">
+    <div><label class="form-label" for="learnerAlias">Learner or cohort</label><input class="form-control" id="learnerAlias" name="learnerAlias" value="@ViewData["LearnerAlias"]" maxlength="80" /></div>
+    <button class="btn btn-outline-primary" type="submit">Use this identity</button>
+    <span class="form-text">Runs remain bank-scoped so maker-to-approver handoffs retain the same evidence.</span>
+</form>
 @if (recommended is not null) { <div class="recommended-mission mb-4"><div><span>Recommended next</span><strong>@recommended.Title</strong><small>@recommended.Summary</small></div><a class="btn btn-primary" asp-action="Mission" asp-route-id="@recommended.Id">Continue</a></div> }
 
 <div class="learning-tools mb-4">
@@ -13,6 +18,10 @@
     <a class="surface learning-tool" asp-action="IsoExplorer"><strong>Explore ISO 20022</strong><span>Annotated fields and message-type comparison</span></a>
     <a class="surface learning-tool" asp-action="Challenges"><strong>Diagnostic challenges</strong><span>Infer root causes from operational evidence</span></a>
     <a class="surface learning-tool" asp-action="Glossary"><strong>Payment glossary</strong><span>Contextual definitions for rails, messages, and accounting</span></a>
+    <a class="surface learning-tool" asp-action="Workbench"><strong>Evidence workbench</strong><span>State lens, event playback, balance comparison, and T-accounts</span></a>
+    <a class="surface learning-tool" asp-action="FaultLab"><strong>Controlled fault lab</strong><span>Safe scenario presets for rejection, malformed data, duplicates, and replay</span></a>
+    <a class="surface learning-tool" asp-action="RailCases"><strong>Rail decision cases</strong><span>Choose a rail from concrete business requirements</span></a>
+    <a class="surface learning-tool" asp-action="Branching"><strong>Exception decisions</strong><span>Choose retry, repair, reject, investigate, return, or escalate</span></a>
 </div>
 <div class="d-flex flex-wrap justify-content-between gap-2 mb-4">@if(User.IsInRole(BankSecurity.Operations)){<a class="btn btn-outline-secondary" asp-action="Instructor">Instructor dashboard</a>}<form asp-action="ResetProgress" method="post" onsubmit="return confirm('Reset learning progress for this bank? Payment records will be preserved.')"><button class="btn btn-outline-danger">Reset learning progress</button></form></div>
 

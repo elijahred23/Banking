@@ -27,7 +27,7 @@ public sealed class OutboxPublisher(IDbContextFactory<BankingDbContext> dbFactor
             try
             {
                 var payload = JsonSerializer.Deserialize<JsonElement>(item.Payload);
-                await bus.PublishAsync(item.Queue, payload, token);
+                await bus.PublishAsync(item.Queue, payload, token, item.Id.ToString("N"));
                 item.PublishedDate = DateTimeOffset.UtcNow;
                 item.NextAttemptDate = null;
                 item.LastError = null;

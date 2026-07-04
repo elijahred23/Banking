@@ -11,14 +11,24 @@
     <div class="col-lg-7">
         <section class="surface mission-section mb-4"><div class="eyebrow">LEARNING OBJECTIVES</div><h2 class="h4">What you will be able to explain</h2><ul class="objective-list">@foreach (var item in Model.Mission.Objectives) { <li>@item</li> }</ul></section>
         <section class="surface mission-section mb-4"><div class="eyebrow">EXERCISE</div><h2 class="h4">Run the mission</h2><ol class="mission-steps">@foreach (var item in Model.Mission.Steps) { <li>@item</li> }</ol>
-            <a class="btn btn-primary" asp-controller="@Model.Mission.ActionController" asp-action="@Model.Mission.ActionName" asp-route-learningMission="@Model.Mission.Id" asp-route-rail="@Model.Mission.Rail" asp-route-scenario="@Model.Mission.Scenario">@Model.Mission.ActionLabel</a>
+            <form asp-action="StartRun" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><button class="btn btn-primary" type="submit">@Model.Mission.ActionLabel</button></form>
         </section>
         <section class="surface mission-section mb-4"><div class="eyebrow">ROLE HANDOFFS</div><h2 class="h4">Coordinate the workflow</h2><div class="role-handoffs">@foreach (var item in Model.RoleHandoffs) { var parts = item.Split(':', 2); <div><strong>@parts[0]</strong><span>@(parts.Length > 1 ? parts[1] : "")</span></div> }</div></section>
         <section class="surface mission-section mb-4"><div class="eyebrow">PROGRESSIVE HINTS</div><h2 class="h4">Reveal only what you need</h2>@for (var i = 0; i < Model.Hints.Count; i++) { <details class="learning-hint"><summary>Hint @(i + 1)</summary><p>@Model.Hints[i]</p></details> }</section>
-        <section class="surface mission-section flow-section"><div class="eyebrow">SYSTEM FLOW</div><h2 class="h4">What to observe</h2>
+        <section class="surface mission-section flow-section mb-4"><div class="eyebrow">SYSTEM FLOW</div><h2 class="h4">What to observe</h2>
             <div class="payment-flow" aria-label="Payment processing flow"><span>Maker</span><b>→</b><span>Approver</span><b>→</b><span>Bank service</span><b>→</b><span>Rail</span><b>→</b><span>Settlement</span><b>→</b><span>Journal</span></div>
             <p class="section-help mb-0">The instruction and the money do not move at the same time. Use lifecycle events, ISO messages, and journals as separate evidence.</p>
         </section>
+        @if (Model.Run is not null)
+        {
+            <section class="surface mission-section"><div class="eyebrow">SIMULATOR EVIDENCE · @Model.Run.Score%</div><h2 class="h4">Expected versus observed</h2>
+                <p class="section-help">Run @Model.Run.Id.ToString()[..8] · @Model.Run.LearnerAlias · @Model.Run.Status</p>
+                <div class="table-responsive"><table class="table"><thead><tr><th>Layer</th><th>Check</th><th>Expected</th><th>Observed</th><th>Result</th></tr></thead><tbody>
+                @foreach (var item in Model.Run.Evidence) { <tr><td>@item.Layer</td><th>@item.Label</th><td>@item.Expected</td><td>@item.Observed</td><td>@(item.Passed ? "Verified" : "Pending")</td></tr> }
+                </tbody></table></div>
+                <a class="btn btn-outline-primary" asp-action="Workbench">Open playback and accounting workbench</a>
+            </section>
+        }
     </div>
     <aside class="col-lg-5">
         <section class="surface mission-section mb-4"><div class="eyebrow">PREDICT BEFORE RUNNING</div><h2 class="h5">@Model.Mission.PredictionPrompt</h2>
@@ -27,9 +37,9 @@
             } else { <div class="saved-prediction"><span>Your prediction</span><strong>@Model.Prediction</strong></div> }
         </section>
         <section class="surface mission-section mb-4"><div class="eyebrow">DEBRIEF</div><h2 class="h5">Explain the result</h2><p>@Model.Mission.Debrief</p><p class="section-help">Do not mark the mission complete until you can support the explanation with evidence from the timeline, messages, or journal.</p>
-            @if (!Model.IsComplete) { <form asp-action="Complete" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><button class="btn btn-success" type="submit">I verified the evidence</button></form> } else { <div class="mission-complete">✓ Mission complete</div> }
+            @if (!Model.IsComplete && Model.Run?.CanComplete == true) { <form asp-action="Complete" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><input type="hidden" name="runId" value="@Model.Run.Id" /><button class="btn btn-success" type="submit">Complete verified mission</button></form> } else if (!Model.IsComplete && Model.Run is not null) { <button class="btn btn-success" type="button" disabled>Evidence still pending</button> } else if (Model.IsComplete) { <div class="mission-complete">✓ Mission complete</div> } else { <p class="section-help">Start a run to collect evidence.</p> }
         </section>
-        <section class="surface mission-section mb-4"><div class="eyebrow">KNOWLEDGE CHECK</div><h2 class="h5">@Model.Question.Prompt</h2><form asp-action="Answer" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><div class="prediction-options">@foreach (var choice in Model.Question.Choices) { <label><input type="radio" name="answer" value="@choice" required /><span>@choice</span></label> }</div><button class="btn btn-outline-primary">Check answer</button></form>@if (Model.LastAttempt is not null) { <p class="attempt-result @(Model.LastAttempt.IsCorrect ? "correct" : "incorrect")">Last answer: @(Model.LastAttempt.IsCorrect ? "Correct" : "Review and retry")</p> }</section>
+        <section class="surface mission-section mb-4"><div class="eyebrow">KNOWLEDGE CHECK · ROTATING POOL</div><h2 class="h5">@Model.Question.Prompt</h2><form asp-action="Answer" method="post"><input type="hidden" name="id" value="@Model.Mission.Id" /><input type="hidden" name="questionId" value="@Model.Question.Id" /><div class="prediction-options">@foreach (var choice in Model.Question.Choices) { <label><input type="radio" name="answer" value="@choice" required /><span>@choice</span></label> }</div><label class="form-label mt-3" for="confidence">Confidence (1–5)</label><input class="form-range" id="confidence" type="range" name="confidence" min="1" max="5" value="3" /><button class="btn btn-outline-primary">Check answer</button></form>@if (Model.LastAttempt is not null) { <p class="attempt-result @(Model.LastAttempt.IsCorrect ? "correct" : "incorrect")">Last answer: @(Model.LastAttempt.IsCorrect ? "Correct" : "Review and retry") · confidence @Model.LastAttempt.Confidence/5</p> }@if(Model.NextReviewDate is not null){<p class="section-help">Scheduled review: @Model.NextReviewDate.Value.ToLocalTime().ToString("g")</p>}</section>
         <aside class="production-callout"><strong>Lab versus production</strong><span>@Model.ProductionNote</span></aside>
     </aside>
 </div>

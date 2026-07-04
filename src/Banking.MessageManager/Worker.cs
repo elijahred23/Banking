@@ -143,7 +143,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             await SendNextSwiftRouteStepAsync(wire.Id, message.PaymentXml, message.Scenario, token);
             return;
         }
-        wire.Status = WireStatus.SentToFed;
+        WireWorkflow.Transition(wire, WireStatus.SentToFed);
         var destination = DestinationFor(wire.Rail);
         db.WireEvents.Add(Event(wire.Id, "SentToFed",
             $"Message Manager delivered {message.MessageType} to {destination}."));
@@ -193,7 +193,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         step.Status = PaymentRouteStepStatuses.Sent;
         step.MessageId = messageId;
         route.RouteStatus = PaymentRouteStatuses.InProgress;
-        wire.Status = WireStatus.SentToFed;
+        WireWorkflow.Transition(wire, WireStatus.SentToFed);
         db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteStepStarted,
             $"Route step {step.StepNumber}: {banks[step.FromBankId].Name} sent pacs.008 to " +
             $"{banks[step.ToBankId].Name} (message {messageId[..8]})."));
@@ -227,7 +227,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             step.Status = PaymentRouteStepStatuses.Pending;
             step.MessageId = null;
             route.RouteStatus = PaymentRouteStatuses.Selected;
-            wire.Status = WireStatus.ReadyForFed;
+            WireWorkflow.Transition(wire, WireStatus.ReadyForFed);
             await db.SaveChangesAsync(token);
             throw;
         }
@@ -272,7 +272,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
         if (message.StatusCode is "PDNG" or "ACTC" or "ACCP" or "ACWP" or "ACSP")
         {
-            wire.Status = WireStatus.PendingAtFed;
+            WireWorkflow.Transition(wire, WireStatus.PendingAtFed);
             if (routeStep is not null)
             {
                 routeStep.Status = PaymentRouteStepStatuses.Accepted;
@@ -294,7 +294,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                     && routeStep.StepNumber == route.Steps.Max(x => x.StepNumber);
                 if (!isFinal)
                 {
-                    wire.Status = WireStatus.PendingAtFed;
+                    WireWorkflow.Transition(wire, WireStatus.PendingAtFed);
                     db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.IntermediaryForwarded,
                         $"Intermediary completed route step {routeStep.StepNumber}; the original UETR will continue to the next bank."));
                 }
@@ -310,7 +310,6 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                     return;
                 }
             }
-            wire.Status = WireStatus.Settled;
             var reference = wire.Rail == PaymentRail.Fedwire
                 ? $"IMAD {message.Imad}"
                 : $"network reference {message.Imad}";
@@ -322,14 +321,14 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             if (wire.FromAccountId is Guid accountId)
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
-                account.HeldBalance = Math.Max(0, account.HeldBalance - wire.Amount);
-                account.Balance -= wire.Amount;
+                WirePostingPolicy.SettleCustomerPayment(wire, account);
                 AddOutgoingJournal(db, wire, account);
                 db.WireEvents.Add(Event(wire.Id, "Posted",
                     $"Customer debit posted; {wire.Amount:C} hold removed."));
             }
             else if (wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
             {
+                WireWorkflow.Transition(wire, WireStatus.Settled);
                 AddInstitutionOutgoingJournal(db, wire);
                 db.WireEvents.Add(Event(wire.Id, "Posted",
                     $"{wire.Amount:C} posted against the sending bank's master-account liquidity."));
@@ -337,7 +336,6 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         }
         else
         {
-            wire.Status = WireStatus.Rejected;
             if (routeStep is not null && route is not null)
             {
                 routeStep.Status = PaymentRouteStepStatuses.Rejected;
@@ -349,10 +347,11 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             if (wire.FromAccountId is Guid accountId)
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
-                account.HeldBalance = Math.Max(0, account.HeldBalance - wire.Amount);
+                WirePostingPolicy.RejectCustomerPayment(wire, account);
                 db.WireEvents.Add(Event(wire.Id, "HoldReleased",
                     $"Network rejection released the {wire.Amount:C} customer funds hold; no debit posted."));
             }
+            else WireWorkflow.Transition(wire, WireStatus.Rejected);
         }
         await db.SaveChangesAsync(token);
         await bus.PublishAsync(Queues.WireStatusReceived, new { wire.Id, message.StatusCode }, token);
@@ -383,7 +382,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         if (outgoing.TransferType == WireTransferType.FinancialInstitutionCreditTransfer)
         {
             AddInstitutionIncomingJournal(db, incoming);
-            incoming.Status = WireStatus.Completed;
+            WireWorkflow.Transition(incoming, WireStatus.Completed);
             incoming.Events.Add(Event(Guid.Empty, "Posted",
                 $"{incoming.Amount:C} credited to the receiving bank's master-account liquidity."));
             incoming.Events.Add(Event(Guid.Empty, "Completed",
@@ -399,7 +398,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 incoming.ToAccountId = account.Id;
                 account.Balance += incoming.Amount;
                 AddIncomingJournal(db, incoming, account);
-                incoming.Status = WireStatus.Completed;
+                WireWorkflow.Transition(incoming, WireStatus.Completed);
                 incoming.Events.Add(Event(Guid.Empty, "Posted", $"Funds posted to account ending {account.AccountNumber[^4..]}."));
                 incoming.Events.Add(Event(Guid.Empty, "Completed", "Incoming wire processing completed."));
             }
@@ -430,7 +429,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddOutgoingJournal(BankingDbContext db, WireTransfer wire, Account account)
     {
         var journal = Guid.NewGuid();
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             Entry(journal, wire.Id, $"CUSTOMER:{account.AccountNumber}", "Customer deposits",
                 wire.Amount, 0, "Debit customer deposit liability"),
             Entry(journal, wire.Id,
@@ -443,7 +442,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddIncomingJournal(BankingDbContext db, WireTransfer wire, Account account)
     {
         var journal = Guid.NewGuid();
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             Entry(journal, wire.Id,
                 wire.Rail == PaymentRail.SwiftCbprPlus
                     ? $"CORRESPONDENT:{wire.ReceiverBankId:N}" : $"FEDMASTER:{wire.ReceiverBankId:N}",
@@ -456,7 +455,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddInstitutionOutgoingJournal(BankingDbContext db, WireTransfer wire)
     {
         var journal = Guid.NewGuid();
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             Entry(journal, wire.Id, $"FI_CLEARING:{wire.ReceiverBankId:N}",
                 "Financial institution transfer clearing", wire.Amount, 0,
                 "Debit outgoing institution transfer clearing"),
@@ -467,7 +466,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddInstitutionIncomingJournal(BankingDbContext db, WireTransfer wire)
     {
         var journal = Guid.NewGuid();
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             Entry(journal, wire.Id, $"FEDMASTER:{wire.ReceiverBankId:N}", "Fed master account",
                 wire.Amount, 0, "Debit master-account liquidity received"),
             Entry(journal, wire.Id, $"FI_CLEARING:{wire.SenderBankId:N}",
@@ -525,7 +524,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddAchCreditJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit originator deposit liability"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit outgoing ACH clearing"),
             AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", entry.Amount, 0, "Debit incoming FedACH settlement"),
@@ -535,7 +534,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddAchDebitJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit receiver deposit liability"),
             AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", 0, entry.Amount, "Credit outgoing FedACH settlement"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit incoming ACH clearing"),
@@ -545,7 +544,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddEftpsJournal(BankingDbContext db, AchEntry entry, Account origin)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit taxpayer deposit liability"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit simulated Treasury tax payment settlement"));
     }
@@ -553,7 +552,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddAchCreditReturnJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"CUSTOMER:{receiver.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit receiver for ACH return"),
             AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", 0, entry.Amount, "Credit returning RDFI settlement"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit returned ACH clearing"),
@@ -563,7 +562,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddAchDebitReturnJournal(BankingDbContext db, AchEntry entry, Account origin, Account receiver)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", entry.Amount, 0, "Debit originator for ACH debit return"),
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", 0, entry.Amount, "Credit returned ACH clearing"),
             AchJournal(journal, entry.Id, $"FEDACH_SETTLEMENT:{entry.ReceivingBankId:N}", "FedACH settlement", entry.Amount, 0, "Debit returning RDFI settlement"),
@@ -573,7 +572,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     private static void AddEftpsReturnJournal(BankingDbContext db, AchEntry entry, Account origin)
     {
         var journal = Guid.NewGuid();
-        db.AchLedgerEntries.AddRange(
+        db.AchLedgerEntries.AddBalanced(
             AchJournal(journal, entry.Id, $"ACH_CLEARING:{entry.OriginatingBankId:N}", "ACH clearing", entry.Amount, 0, "Debit returned Treasury tax payment"),
             AchJournal(journal, entry.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits", 0, entry.Amount, "Credit taxpayer for ACH return"));
     }

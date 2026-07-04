@@ -10,6 +10,7 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<WireUpdateTracker>();
 builder.Services.AddHostedService<WireUpdateBroadcaster>();
 builder.Services.AddHostedService<OutboxPublisher>();
+builder.Services.AddScoped<LearningEvidenceService>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {

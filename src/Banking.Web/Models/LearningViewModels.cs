@@ -37,16 +37,21 @@ public sealed record MissionPageViewModel(
     IReadOnlyList<string> RoleHandoffs,
     KnowledgeQuestionViewModel Question,
     LearningAttempt? LastAttempt,
-    string ProductionNote);
+    string ProductionNote,
+    LearningRunViewModel? Run,
+    DateTimeOffset? NextReviewDate);
 
 public sealed record KnowledgeQuestionViewModel(string Id, string Prompt,
-    IReadOnlyList<string> Choices, string CorrectAnswer, string Explanation);
+    IReadOnlyList<string> Choices, string CorrectAnswer, string Explanation,
+    IReadOnlyDictionary<string, string> OptionFeedback);
 public sealed record DiagnosticChallengeViewModel(string Id, string Title, string Evidence,
-    IReadOnlyList<string> Suspects, string Diagnosis, string Verification);
+    IReadOnlyList<string> Suspects, string Diagnosis, string Verification, Guid? ItemId = null,
+    string? ItemType = null);
 public sealed record InstructorBankViewModel(string Bank, int Started, int Completed,
     int Correct, int Answered, DateTimeOffset? LastActivity);
 public sealed record InstructorDashboardViewModel(IReadOnlyList<InstructorBankViewModel> Banks,
-    IReadOnlyList<LearningAttempt> RecentAttempts, IReadOnlyList<LearningMissionViewModel> Missions);
+    IReadOnlyList<LearningAttempt> RecentAttempts, IReadOnlyList<LearningMissionViewModel> Missions,
+    IReadOnlyList<LearningRun> RecentRuns, IReadOnlyList<LearningAssignment> Assignments);
 
 public sealed record RailComparisonViewModel(IReadOnlyList<RailProfileViewModel> Rails);
 
@@ -69,3 +74,25 @@ public sealed record MessageTypeComparisonViewModel(
 
 public sealed record LearningDebriefViewModel(
     string Outcome, string Explanation, string ProductionNote, IReadOnlyList<string> Checkpoints);
+
+public sealed record LearningEvidenceViewModel(string Code, string Label, string Expected,
+    string Observed, bool Passed, string Layer);
+
+public sealed record LearningRunViewModel(Guid Id, string Status, string LearnerAlias,
+    string Rail, string? ItemType, Guid? ItemId, int Score, DateTimeOffset StartedDate,
+    decimal BaselineCustomerBalance, decimal CurrentCustomerBalance,
+    decimal BaselineHeldBalance, decimal CurrentHeldBalance,
+    decimal BaselineMasterBalance, decimal CurrentMasterBalance,
+    IReadOnlyList<LearningEvidenceViewModel> Evidence, IReadOnlyList<LearningEventViewModel> Events,
+    IReadOnlyList<LearningJournalLineViewModel> Journal, bool CanComplete);
+
+public sealed record LearningEventViewModel(int Sequence, string Stage, string Owner,
+    string Description, DateTimeOffset CreatedDate);
+
+public sealed record LearningJournalLineViewModel(string AccountCode, string AccountName,
+    decimal Debit, decimal Credit);
+
+public sealed record LearningWorkbenchViewModel(IReadOnlyList<LearningRunViewModel> Runs);
+
+public sealed record RailDecisionCaseViewModel(string Id, string Requirement,
+    IReadOnlyList<string> Choices, string Answer, string Explanation);

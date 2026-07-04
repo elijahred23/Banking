@@ -35,11 +35,15 @@ Open the URL printed by `Banking.Web`. The login page lets you select a bank and
 
 ## Guided learning
 
-After signing in, open **Learn** to use the guided curriculum. The Learning Center includes role- and topic-based paths, explicit objectives, prediction checkpoints, live simulator exercises, evidence-based debriefs, diagnostic challenges, progressive hints, knowledge checks, a payment-rail comparison, a visual processing flow, and an ISO 20022 field and message explorer. Progress and assessment attempts are stored durably per bank so maker-to-approver role changes preserve the exercise. Operations users can open instructor mode; reset removes only learning records and preserves payment data.
+After signing in, open **Learn** to use the guided curriculum. The Learning Center includes role- and topic-based paths across wires, ACH, checks, accounting, non-value messages, and reliability. Durable mission runs capture before-state balances, attach to bank-scoped simulator records, and verify transport, business acceptance, settlement, and accounting independently. The evidence workbench provides presentation-only event replay, expected-versus-observed balances, and journal reconstruction; the ISO explorer provides message comparison and a browser-only malformed-XML sandbox. Controlled fault presets, live diagnostic cases, rail-selection cases, confidence-rated assessments, cohort attribution, assignments, and evidence exports support individual or instructor-led use. Progress remains bank-scoped so maker-to-approver role changes preserve coordinated exercises. Reset removes only learning records and preserves payment data.
 
 Configuration can be overridden with standard .NET environment variables, for example `ConnectionStrings__DefaultConnection`, `RabbitMq__HostName`, `RabbitMq__UserName`, and `RabbitMq__Password`.
 
 Version-controlled table definitions and the location for future migration scripts are documented in [`database/README.md`](database/README.md).
+
+Run `bash tests/run-external-integration.sh` to start disposable SQL Server and RabbitMQ
+containers and exercise the durable inbox, broker delivery, settlement posting, and balanced
+journal path. The containers and integration database are removed when the test exits.
 
 ## Projects
 

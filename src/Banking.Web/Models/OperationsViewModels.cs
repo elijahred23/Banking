@@ -22,6 +22,12 @@ public sealed record JournalSummaryViewModel(
 
 public sealed record RailHealthViewModel(string Rail, string Status, string Detail);
 
+public sealed record DeadLetterViewModel(Guid Id, string Queue, int Attempts, string Error,
+    DateTimeOffset FailedDate);
+
+public sealed record StuckOutboxViewModel(Guid Id, string Queue, int Attempts, string? Error,
+    DateTimeOffset CreatedDate);
+
 public sealed record OperationsDashboardViewModel(
     Bank Bank,
     PaymentStatusSummary Payments,
@@ -30,4 +36,7 @@ public sealed record OperationsDashboardViewModel(
     IReadOnlyList<SettlementMovementViewModel> SettlementMovements,
     IReadOnlyList<JournalSummaryViewModel> Journals,
     IReadOnlyList<RailHealthViewModel> Rails,
+    IReadOnlyList<DeadLetterViewModel> DeadLetters,
+    IReadOnlyList<StuckOutboxViewModel> StuckOutbox,
+    PaymentReconciliationResult Reconciliation,
     DateTimeOffset RefreshedDate);

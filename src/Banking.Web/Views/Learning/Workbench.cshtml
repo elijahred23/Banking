@@ -1,0 +1,23 @@
+@model LearningWorkbenchViewModel
+@{ ViewData["Title"] = "Evidence workbench"; }
+<div class="page-heading mb-4"><div><div class="eyebrow">OBSERVABILITY LAB</div><h1>Evidence workbench</h1><p class="text-secondary mb-0">Replay durable events without reprocessing payments. Compare transport, business acceptance, settlement, and accounting.</p></div><a asp-action="Index">Learning Center</a></div>
+@if (Model.Runs.Count == 0) { <div class="surface p-4">Start a mission to create an evidence run.</div> }
+@foreach (var run in Model.Runs)
+{
+<article class="surface mission-section mb-4">
+    <div class="d-flex flex-wrap justify-content-between gap-2"><div><div class="eyebrow">@run.Rail · RUN @run.Id.ToString()[..8]</div><h2 class="h4">@run.ItemType @(run.ItemId?.ToString()[..8])</h2><p>@run.LearnerAlias · @run.Status · evidence @run.Score%</p></div><span class="mission-duration">@run.StartedDate.ToLocalTime().ToString("g")</span></div>
+    <h3 class="h5">Four-state lens</h3>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Layer</th><th>Expected</th><th>Observed</th><th>Status</th></tr></thead><tbody>@foreach(var item in run.Evidence){<tr><th>@item.Layer</th><td>@item.Expected</td><td>@item.Observed</td><td>@(item.Passed ? "Verified" : "Pending")</td></tr>}</tbody></table></div>
+    <h3 class="h5 mt-4">Expected versus observed balances</h3>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Balance</th><th class="text-end">Before</th><th class="text-end">After/current</th><th class="text-end">Change</th></tr></thead><tbody>
+        <tr><th>Customer balances</th><td class="text-end">@run.BaselineCustomerBalance.ToString("C")</td><td class="text-end">@run.CurrentCustomerBalance.ToString("C")</td><td class="text-end">@((run.CurrentCustomerBalance-run.BaselineCustomerBalance).ToString("C"))</td></tr>
+        <tr><th>Held balances</th><td class="text-end">@run.BaselineHeldBalance.ToString("C")</td><td class="text-end">@run.CurrentHeldBalance.ToString("C")</td><td class="text-end">@((run.CurrentHeldBalance-run.BaselineHeldBalance).ToString("C"))</td></tr>
+        <tr><th>Master account</th><td class="text-end">@run.BaselineMasterBalance.ToString("C")</td><td class="text-end">@run.CurrentMasterBalance.ToString("C")</td><td class="text-end">@((run.CurrentMasterBalance-run.BaselineMasterBalance).ToString("C"))</td></tr>
+    </tbody></table></div>
+    <h3 class="h5 mt-4">Event playback</h3>
+    @if(run.Events.Count == 0){<p class="text-secondary">No durable events have been attached yet.</p>}else{<ol class="mission-steps">@foreach(var item in run.Events){<li><div><strong>@item.Sequence. @item.Stage · @item.Owner</strong><span>@item.Description · @item.CreatedDate.ToLocalTime().ToString("T")</span></div></li>}</ol>}
+    <h3 class="h5 mt-4">Accounting workbench</h3>
+    @if(run.Journal.Count == 0){<p class="text-secondary">No value journal exists for this item. That is expected for rejected and non-value workflows.</p>}else{<div class="table-responsive"><table class="table"><thead><tr><th>Account</th><th>Name</th><th class="text-end">Debit</th><th class="text-end">Credit</th></tr></thead><tbody>@foreach(var line in run.Journal){<tr><td><code>@line.AccountCode</code></td><td>@line.AccountName</td><td class="text-end">@line.Debit.ToString("C")</td><td class="text-end">@line.Credit.ToString("C")</td></tr>}<tr><th colspan="2">Control totals</th><th class="text-end">@run.Journal.Sum(x=>x.Debit).ToString("C")</th><th class="text-end">@run.Journal.Sum(x=>x.Credit).ToString("C")</th></tr></tbody></table></div>}
+</article>
+}
+<aside class="production-callout"><strong>Presentation-only replay</strong><span>This page reads durable lab records. It does not republish messages, rerun consumers, or claim production reconciliation coverage.</span></aside>

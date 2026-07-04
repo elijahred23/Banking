@@ -57,3 +57,11 @@ for request-for-payment, account-reporting, and system-event conversations.
 
 `202607021800_learning_progress.sql` adds durable mission progress and knowledge-check attempts
 for the guided curriculum and instructor dashboard.
+
+`202607022100_message_reliability.sql` adds bank-attributable outbox records, a durable consumer
+inbox, and an operations dead-letter store. Consumers retry three times; operations users may
+replay only failed messages owned by their active bank.
+
+`202607031800_learning_evidence.sql` adds evidence-backed mission runs, learner/cohort attribution,
+confidence ratings, and instructor assignments. Runs retain before-state balance snapshots and
+links to bank-scoped simulator items; they do not duplicate or alter payment truth.

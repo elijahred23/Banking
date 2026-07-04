@@ -223,7 +223,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         });
         exchange.UpdatedDate = DateTimeOffset.UtcNow;
         if (wire is not null)
-            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id), bankId));
         try
         {
             await db.SaveChangesAsync(token);
@@ -435,9 +435,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
         wire.ApprovedBy = User.Identity.Name;
         wire.ApprovedDate = DateTimeOffset.UtcNow;
-        wire.Status = approve ? WireStatus.Created : WireStatus.Rejected;
+        WireWorkflow.Transition(wire, approve ? WireStatus.Created : WireStatus.Rejected);
         if (approve)
-            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id), bankId));
         db.WireEvents.Add(new WireEvent
         {
             WireTransferId = wire.Id,
@@ -479,7 +479,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             : NormalizeDecisionReason(reason);
         wire.ComplianceReviewedBy = User.Identity!.Name;
         wire.ComplianceReviewedDate = DateTimeOffset.UtcNow;
-        wire.Status = clear ? WireStatus.Created : WireStatus.Rejected;
+        WireWorkflow.Transition(wire, clear ? WireStatus.Created : WireStatus.Rejected);
         db.WireEvents.Add(new WireEvent
         {
             WireTransferId = wire.Id,
@@ -489,7 +489,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 + $": {wire.ComplianceReason}"
         });
         if (clear)
-            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id)));
+            db.OutboxMessages.Add(Outbox.Message(Queues.WireCreated, new WireCreated(wire.Id), bankId));
         try { await db.SaveChangesAsync(token); }
         catch (DbUpdateConcurrencyException)
         {
@@ -880,7 +880,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             ? $"CORRESPONDENT:{outgoing.SenderBankId:N}" : $"FEDMASTER:{outgoing.SenderBankId:N}";
         var incomingSettlement = incoming.Rail == PaymentRail.SwiftCbprPlus
             ? $"CORRESPONDENT:{incoming.ReceiverBankId:N}" : $"FEDMASTER:{incoming.ReceiverBankId:N}";
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             ReturnEntry(outgoingJournal, outgoing.Id, outgoingSettlement, "Settlement cash",
                 outgoing.Amount, 0, "Debit cash received for returned payment"),
             ReturnEntry(outgoingJournal, outgoing.Id, $"CUSTOMER:{origin.AccountNumber}", "Customer deposits",
@@ -896,7 +896,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     {
         var outgoingJournal = Guid.NewGuid();
         var incomingJournal = Guid.NewGuid();
-        db.LedgerEntries.AddRange(
+        db.LedgerEntries.AddBalanced(
             ReturnEntry(outgoingJournal, outgoing.Id, $"FEDMASTER:{outgoing.SenderBankId:N}",
                 "Fed master account", outgoing.Amount, 0, "Debit returned master-account liquidity"),
             ReturnEntry(outgoingJournal, outgoing.Id, $"FI_CLEARING:{outgoing.ReceiverBankId:N}",

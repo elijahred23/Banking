@@ -12,6 +12,8 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<IsoMessage> IsoMessages => Set<IsoMessage>();
     public DbSet<MessageExchange> MessageExchanges => Set<MessageExchange>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<ConsumerInboxMessage> ConsumerInboxMessages => Set<ConsumerInboxMessage>();
+    public DbSet<DeadLetterMessage> DeadLetterMessages => Set<DeadLetterMessage>();
     public DbSet<WireEvent> WireEvents => Set<WireEvent>();
     public DbSet<WireCase> WireCases => Set<WireCase>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
@@ -34,6 +36,8 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<CheckEvent> CheckEvents => Set<CheckEvent>();
     public DbSet<LearningProgress> LearningProgress => Set<LearningProgress>();
     public DbSet<LearningAttempt> LearningAttempts => Set<LearningAttempt>();
+    public DbSet<LearningRun> LearningRuns => Set<LearningRun>();
+    public DbSet<LearningAssignment> LearningAssignments => Set<LearningAssignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -69,6 +73,18 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<MessageExchange>().HasOne(x => x.CounterpartyBank).WithMany()
             .HasForeignKey(x => x.CounterpartyBankId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<OutboxMessage>().HasIndex(x => new { x.PublishedDate, x.NextAttemptDate });
+        modelBuilder.Entity<OutboxMessage>().HasIndex(x => new { x.BankId, x.PublishedDate });
+        modelBuilder.Entity<OutboxMessage>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ConsumerInboxMessage>().HasIndex(x => new { x.Queue, x.MessageId }).IsUnique();
+        modelBuilder.Entity<ConsumerInboxMessage>().HasIndex(x => new { x.BankId, x.CompletedDate });
+        modelBuilder.Entity<ConsumerInboxMessage>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<DeadLetterMessage>().HasIndex(x => new { x.BankId, x.ReplayedDate, x.FailedDate });
+        modelBuilder.Entity<DeadLetterMessage>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<DeadLetterMessage>().HasOne<ConsumerInboxMessage>().WithMany()
+            .HasForeignKey(x => x.ConsumerInboxMessageId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<MessageDelivery>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Scenario).HasConversion<string>();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Rail).HasConversion<string>();
@@ -166,5 +182,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<LearningProgress>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<LearningAttempt>().HasIndex(x => new { x.BankId, x.MissionId, x.CreatedDate });
         modelBuilder.Entity<LearningAttempt>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<LearningRun>().Property(x => x.BaselineCustomerBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<LearningRun>().Property(x => x.BaselineHeldBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<LearningRun>().Property(x => x.BaselineMasterBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<LearningRun>().HasIndex(x => new { x.BankId, x.MissionId, x.StartedDate });
+        modelBuilder.Entity<LearningRun>().HasIndex(x => new { x.BankId, x.ItemType, x.ItemId });
+        modelBuilder.Entity<LearningRun>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<LearningAssignment>().HasIndex(x => new { x.BankId, x.Cohort, x.MissionId, x.IsActive });
+        modelBuilder.Entity<LearningAssignment>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Cascade);
     }
 }

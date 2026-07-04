@@ -67,7 +67,8 @@ public sealed record FedEnvelope(FedMessageKind Kind, Guid WireId, Guid Correlat
 
 public interface IMessageBus
 {
-    Task PublishAsync<T>(string queue, T message, CancellationToken cancellationToken = default);
+    Task PublishAsync<T>(string queue, T message, CancellationToken cancellationToken = default,
+        string? messageId = null);
     Task ConsumeAsync<T>(string queue, Func<T, CancellationToken, Task> handler,
         CancellationToken cancellationToken);
 }

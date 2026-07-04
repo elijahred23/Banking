@@ -172,6 +172,63 @@
     }
 </section>
 
+<div class="row g-4 mt-1">
+    <section class="col-xl-5" aria-labelledby="reconciliation-heading">
+        <div class="surface operations-panel h-100">
+            <div class="panel-heading">
+                <div><div class="eyebrow">RECONCILIATION</div><h2 id="reconciliation-heading" class="h4 mb-0">Durable-state controls</h2></div>
+                <span class="journal-control @(Model.Reconciliation.IsClear ? "is-balanced" : "is-unbalanced")">@(Model.Reconciliation.IsClear ? "Clear" : "Review")</span>
+            </div>
+            <dl class="row mb-0">
+                <dt class="col-8">Pending outbox</dt><dd class="col-4 text-end">@Model.Reconciliation.PendingOutboxMessages</dd>
+                <dt class="col-8">Incomplete inbox</dt><dd class="col-4 text-end">@Model.Reconciliation.IncompleteInboxMessages</dd>
+                <dt class="col-8">Unreplayed dead letters</dt><dd class="col-4 text-end">@Model.Reconciliation.DeadLetterMessages</dd>
+                <dt class="col-8">Unbalanced journals</dt><dd class="col-4 text-end">@Model.Reconciliation.UnbalancedJournals</dd>
+                <dt class="col-8">Customer hold mismatches</dt><dd class="col-4 text-end">@Model.Reconciliation.HoldMismatches</dd>
+                <dt class="col-8">Settled wires without journals</dt><dd class="col-4 text-end">@Model.Reconciliation.SettledWiresWithoutJournals</dd>
+            </dl>
+            <p class="form-text mt-3 mb-0">Lab control only. It compares payment state, transport records, holds, and journals for the active bank.</p>
+        </div>
+    </section>
+    <section class="col-xl-7" aria-labelledby="recovery-heading">
+        <div class="surface operations-panel h-100">
+            <div class="eyebrow">RECOVERY</div><h2 id="recovery-heading" class="h4 mb-3">Failed message replay</h2>
+            @if (Model.DeadLetters.Count == 0)
+            {
+                <div class="operations-empty">No unreplayed dead letters owned by this bank.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table operations-table mb-0">
+                        <thead><tr><th>Queue</th><th>Failure</th><th class="text-end">Action</th></tr></thead>
+                        <tbody>
+                        @foreach (var item in Model.DeadLetters)
+                        {
+                            <tr>
+                                <td><code>@item.Queue</code><small>@item.Attempts attempts · @item.FailedDate.ToLocalTime().ToString("MMM d, HH:mm")</small></td>
+                                <td>@item.Error</td>
+                                <td class="text-end"><form asp-action="ReplayDeadLetter" method="post"><input type="hidden" name="id" value="@item.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Replay once</button></form></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (Model.StuckOutbox.Count > 0)
+            {
+                <h3 class="h6 mt-4">Outbox awaiting publication</h3>
+                <ul class="mb-0">
+                    @foreach (var item in Model.StuckOutbox)
+                    {
+                        <li><code>@item.Queue</code> · @item.Attempts attempts · @(item.Error ?? "waiting for publisher")</li>
+                    }
+                </ul>
+            }
+        </div>
+    </section>
+</div>
+
 @section Scripts {
 <script>
 (() => {

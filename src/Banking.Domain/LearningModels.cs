@@ -6,6 +6,7 @@ public sealed class LearningProgress
     public Bank Bank { get; set; } = null!; [MaxLength(40)] public required string MissionId { get; set; }
     [MaxLength(200)] public string? Prediction { get; set; } public bool IsComplete { get; set; }
     public int CorrectAnswers { get; set; } public int AnsweredQuestions { get; set; }
+    public DateTimeOffset? NextReviewDate { get; set; }
     public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
 }
 public sealed class LearningAttempt
@@ -14,5 +15,42 @@ public sealed class LearningAttempt
     public Bank Bank { get; set; } = null!; [MaxLength(40)] public required string MissionId { get; set; }
     [MaxLength(40)] public required string QuestionId { get; set; }
     [MaxLength(200)] public required string SelectedAnswer { get; set; } public bool IsCorrect { get; set; }
+    [MaxLength(80)] public string LearnerAlias { get; set; } = "Bank team";
+    public int Confidence { get; set; } = 3;
+    public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class LearningRun
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid BankId { get; set; }
+    public Bank Bank { get; set; } = null!;
+    [MaxLength(40)] public required string MissionId { get; set; }
+    [MaxLength(80)] public string LearnerAlias { get; set; } = "Bank team";
+    [MaxLength(30)] public required string Rail { get; set; }
+    [MaxLength(20)] public string? ItemType { get; set; }
+    public Guid? ItemId { get; set; }
+    [MaxLength(200)] public string? Prediction { get; set; }
+    public decimal BaselineCustomerBalance { get; set; }
+    public decimal BaselineHeldBalance { get; set; }
+    public decimal BaselineMasterBalance { get; set; }
+    [MaxLength(20)] public string Status { get; set; } = "Started";
+    [MaxLength(2000)] public string? EvidenceSummary { get; set; }
+    public int EvidenceScore { get; set; }
+    public DateTimeOffset StartedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedDate { get; set; }
+}
+
+public sealed class LearningAssignment
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid BankId { get; set; }
+    public Bank Bank { get; set; } = null!;
+    [MaxLength(40)] public required string MissionId { get; set; }
+    [MaxLength(80)] public required string Cohort { get; set; }
+    [MaxLength(120)] public required string AssignedBy { get; set; }
+    public DateTimeOffset? DueDate { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
 }

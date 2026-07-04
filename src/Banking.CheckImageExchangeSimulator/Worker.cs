@@ -94,7 +94,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         deposit.Events.Add(Event("Settled",
             "Paying account debited and depositor account credited through simulated check clearing."));
         var journal = Guid.NewGuid();
-        db.CheckLedgerEntries.AddRange(
+        db.CheckLedgerEntries.AddBalanced(
             Entry(journal, deposit.Id, $"CUSTOMER:{payingAccount.AccountNumber}",
                 "Paying customer deposits", deposit.Amount, 0, "Debit maker deposit liability"),
             Entry(journal, deposit.Id, $"CHECK_CLEARING:{payingBank.Id:N}",
