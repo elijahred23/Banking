@@ -13,6 +13,8 @@ BEGIN
         EntryDescription nvarchar(10) NOT NULL, EffectiveEntryDate date NOT NULL,
         Addenda05 nvarchar(80) NULL, ReturnCode nvarchar(3) NULL, TraceNumber nvarchar(15) NULL,
         Status nvarchar(max) NOT NULL, Purpose nvarchar(max) NOT NULL, Scenario nvarchar(max) NOT NULL,
+        CreatedBy nvarchar(120) NULL, ApprovedBy nvarchar(120) NULL,
+        ApprovedDate datetimeoffset NULL, ApprovalDecisionReason nvarchar(500) NULL,
         CreatedDate datetimeoffset NOT NULL,
         CONSTRAINT FK_AchEntries_Banks_OriginatingBankId FOREIGN KEY (OriginatingBankId) REFERENCES dbo.Banks(Id),
         CONSTRAINT FK_AchEntries_Banks_ReceivingBankId FOREIGN KEY (ReceivingBankId) REFERENCES dbo.Banks(Id),

@@ -4,7 +4,7 @@ namespace Banking.Domain;
 
 public enum AchStandardEntryClass { Ppd, Ccd, Ctx, Web, Tel, Iat }
 public enum AchTransactionCode { CheckingCredit = 22, CheckingDebit = 27, SavingsCredit = 32, SavingsDebit = 37 }
-public enum AchEntryStatus { Entered, Validated, Batched, SentToOperator, Settled, Returned, NocReceived, Posted, Rejected }
+public enum AchEntryStatus { PendingApproval, Entered, Validated, Batched, SentToOperator, Settled, Returned, NocReceived, Posted, Rejected }
 public enum AchPaymentPurpose { Payroll, VendorPayment, ConsumerDebit, TaxPaymentEftps }
 public enum AchProcessingScenario
 {
@@ -48,6 +48,10 @@ public sealed class AchEntry
     public AchEntryStatus Status { get; set; }
     public AchPaymentPurpose Purpose { get; set; }
     public AchProcessingScenario Scenario { get; set; }
+    [MaxLength(120)] public string? CreatedBy { get; set; }
+    [MaxLength(120)] public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedDate { get; set; }
+    [MaxLength(500)] public string? ApprovalDecisionReason { get; set; }
     public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
 }
 

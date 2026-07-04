@@ -119,6 +119,48 @@ public sealed class AchTests
         Assert.Contains(result.Errors, x => x.Contains("addenda indicator", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void AnnotatorExplainsEveryRecordAndControlTotals()
+    {
+        var payload = new NachaFileWriter().Write(TestFile());
+
+        var records = NachaRecordAnnotator.Annotate(payload);
+
+        Assert.Equal(payload.Split(Environment.NewLine).Length, records.Count);
+        Assert.Equal("File header", records[0].Name);
+        Assert.Contains(records, x => x.Name == "Entry detail"
+            && x.Fields.Any(field => field.Name == "Trace number" && field.RawValue == "101000010000001"));
+        Assert.Contains(records, x => x.Name == "File control"
+            && x.Fields.Any(field => field.Name == "Credit total" && field.Meaning.Contains("$10.00")));
+    }
+
+    [Fact]
+    public void BlindCasesMapToTheIntendedOperationalLayerWithoutMovingValueForNocs()
+    {
+        var nocScenario = AchLearningPolicy.SelectScenario(AchLearningCaseType.BlindNotificationOfChange,
+            Guid.Parse("10000000-0000-0000-0000-000000000000"));
+        var entry = ValidEntry();
+        entry.Scenario = nocScenario;
+        entry.Status = AchEntryStatus.NocReceived;
+
+        var decision = AchLearningPolicy.DecisionFor(entry);
+
+        Assert.Equal("RDFI notification of change", decision.Layer);
+        Assert.False(decision.MovesValue);
+    }
+
+    [Fact]
+    public void ApprovalIsDistinctFromValidationAndSettlement()
+    {
+        var entry = ValidEntry();
+        entry.Status = AchEntryStatus.PendingApproval;
+
+        var decision = AchLearningPolicy.DecisionFor(entry);
+
+        Assert.Equal("Bank authorization", decision.Layer);
+        Assert.False(decision.MovesValue);
+    }
+
     private static AchEntry ValidEntry() => new()
     {
         CompanyName = "ACME", CompanyId = "1234567890", SecCode = AchStandardEntryClass.Ppd,

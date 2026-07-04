@@ -1,0 +1,7 @@
+@model AchWindowsViewModel
+@{ ViewData["Title"] = "ACH processing clock"; var nowDate = DateOnly.FromDateTime(Model.SimulatedNow.UtcDateTime); var nowTime = TimeOnly.FromDateTime(Model.SimulatedNow.UtcDateTime); }
+<div class="mb-3"><div class="eyebrow">SIMULATED CLOCK</div><h1>ACH windows and effective dates</h1><p class="text-secondary">Current simulated UTC: <strong>@Model.SimulatedNow.ToString("u")</strong></p></div>
+<partial name="_AchNav" />
+<div class="alert alert-info">@Model.NextAction</div>
+<div class="row g-3 mb-4">@foreach (var window in Model.Windows) { var elapsed = !AchBusinessCalendar.IsBankingDay(nowDate) || window.Cutoff <= nowTime; <div class="col-md-4"><article class="surface p-4 h-100"><div class="eyebrow">@(window.SameDay ? "SAME-DAY TEACHING WINDOW" : "NEXT-DAY WINDOW")</div><h2 class="h4">@window.Name</h2><p class="display-6">@window.Cutoff</p><p>Settlement date: <strong>@window.SettlementDate</strong></p><span class="badge @(elapsed ? "text-bg-secondary" : "text-bg-success")">@(elapsed ? "Elapsed / unavailable" : "Eligible")</span></article></div> }</div>
+<section class="surface p-4"><h2 class="h4">Decision rule</h2><p>A missed cutoff does not authorize backdating or immediate customer posting. Move the instruction to the next eligible teaching window and preserve the effective-date evidence.</p><p class="form-text mb-0">These simplified windows teach timing concepts and are not a complete implementation of current Nacha or operator schedules.</p></section>

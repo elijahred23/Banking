@@ -175,8 +175,12 @@ public sealed class LearningEvidenceService(IDbContextFactory<BankingDbContext> 
         var noc = await db.AchNotificationsOfChange.AnyAsync(x => x.AchEntryId == id, token);
         journal.AddRange(lines.Select(x => new LearningJournalLineViewModel(x.AccountCode, x.AccountName, x.Debit, x.Credit)));
         events.Add(new(1, "Entry", "ODFI", $"{entry.SecCode} {entry.TransactionCode} entry recorded.", entry.CreatedDate));
-        if (entry.AchBatchId is not null) events.Add(new(2, "Batch", "ACH service", "Entry grouped into an effective-date batch.", entry.CreatedDate));
-        Add(evidence, "entry", "Entry validation", "Validated ACH entry", entry.Status.ToString(), entry.Status != AchEntryStatus.Entered, "Business acceptance");
+        if (entry.ApprovedDate is not null) events.Add(new(2, "Approval", "Approver", "Entry independently released for ODFI processing.", entry.ApprovedDate.Value));
+        if (entry.AchBatchId is not null) events.Add(new(3, "Batch", "ACH service", "Entry grouped into an effective-date batch.", entry.CreatedDate));
+        Add(evidence, "approval", "Independent authorization", "Approver release before ODFI processing",
+            entry.ApprovedDate is null ? "No approval" : $"Approved by {entry.ApprovedBy}", entry.ApprovedDate is not null, "Business acceptance");
+        Add(evidence, "entry", "Entry validation", "Validated ACH entry", entry.Status.ToString(),
+            entry.Status is not (AchEntryStatus.PendingApproval or AchEntryStatus.Entered), "Business acceptance");
         Add(evidence, "batch", "Batch/file boundary", "Trace and batch/file assignment", entry.TraceNumber ?? "No trace assigned",
             entry.AchBatchId is not null && entry.TraceNumber is not null, "Transport delivery");
         var expectedException = run.MissionId == "ach-return";

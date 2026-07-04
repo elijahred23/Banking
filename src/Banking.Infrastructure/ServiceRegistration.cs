@@ -290,6 +290,10 @@ public static class ServiceRegistration
                     Status nvarchar(max) NOT NULL,
                     Purpose nvarchar(max) NOT NULL,
                     Scenario nvarchar(max) NOT NULL,
+                    CreatedBy nvarchar(120) NULL,
+                    ApprovedBy nvarchar(120) NULL,
+                    ApprovedDate datetimeoffset NULL,
+                    ApprovalDecisionReason nvarchar(500) NULL,
                     CreatedDate datetimeoffset NOT NULL,
                     CONSTRAINT FK_AchEntries_Banks_OriginatingBankId FOREIGN KEY (OriginatingBankId) REFERENCES dbo.Banks(Id),
                     CONSTRAINT FK_AchEntries_Banks_ReceivingBankId FOREIGN KEY (ReceivingBankId) REFERENCES dbo.Banks(Id),
@@ -303,6 +307,13 @@ public static class ServiceRegistration
                 CREATE INDEX IX_AchEntries_OriginatingAccountId ON dbo.AchEntries(OriginatingAccountId);
                 CREATE INDEX IX_AchEntries_AchBatchId ON dbo.AchEntries(AchBatchId);
             END;
+            IF OBJECT_ID(N'dbo.AchEntries', N'U') IS NOT NULL
+                AND COL_LENGTH(N'dbo.AchEntries', N'CreatedBy') IS NULL
+                ALTER TABLE dbo.AchEntries ADD
+                    CreatedBy nvarchar(120) NULL,
+                    ApprovedBy nvarchar(120) NULL,
+                    ApprovedDate datetimeoffset NULL,
+                    ApprovalDecisionReason nvarchar(500) NULL;
             IF OBJECT_ID(N'dbo.AchReturns', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.AchReturns (Id uniqueidentifier NOT NULL CONSTRAINT PK_AchReturns PRIMARY KEY,

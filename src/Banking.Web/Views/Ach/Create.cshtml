@@ -32,7 +32,7 @@
 </div>
 <div class="row">
     <div class="col-md-6 mb-3"><div class="field-label-row"><label asp-for="EntryDescription" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.EntryDescription))" /></div><input asp-for="EntryDescription" class="form-control"><span asp-validation-for="EntryDescription" class="text-danger"></span></div>
-    <div class="col-md-6 mb-3"><div class="field-label-row"><label asp-for="Scenario" class="form-label">Learning scenario</label><partial name="_ValuePicker" model="Picker(nameof(Model.Scenario))" /></div><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<AchProcessingScenario>()" class="form-select"></select></div>
+    <div class="col-md-6 mb-3"><div class="field-label-row"><label asp-for="CaseType" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.CaseType))" /></div><select asp-for="CaseType" asp-items="Html.GetEnumSelectList<AchLearningCaseType>()" class="form-select"></select><div class="form-text">Blind modes conceal the injected condition. Use lifecycle and operations evidence to diagnose it.</div></div>
 </div>
 <div class="mb-4"><div class="field-label-row"><label asp-for="Addenda05" class="form-label">Addenda 05 (optional)</label><partial name="_ValuePicker" model="Picker(nameof(Model.Addenda05))" /></div><textarea asp-for="Addenda05" class="form-control" rows="2"></textarea><span asp-validation-for="Addenda05" class="text-danger"></span></div>
 <div class="form-actions"><button class="btn btn-primary">Queue ACH entry</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>

@@ -15,7 +15,7 @@ The lab emphasizes observable payment behavior rather than a single happy path:
 - selectable pending, network-rejection, and malformed-message learning scenarios.
 - bank-scoped maker, approver, compliance, and operations personas with dual-control release;
 - unique customer payment references, durable outbox publication, and human compliance review queues;
-- ACH entry validation, scheduled batch cutoff, fixed-width NACHA files, FedACH-style settlement, returns, notifications of change, and EFTPS-style CCD+ addenda.
+- ACH maker/approver release, entry validation, scheduled batch cutoff, annotated fixed-width NACHA files and sandbox validation, FedACH-style settlement, returns, notifications of change, accounting reconstruction, blind operations cases, and EFTPS-style CCD+ addenda.
 - check capture, MICR validation, front/back TIFF storage, simplified image cash letters, paying-bank presentment, settlement, and returns.
 - an operator dashboard with live RabbitMQ queue depth, cross-rail lifecycle counts, payment exceptions, master-account movements, balanced-journal controls, and rail health.
 
@@ -103,14 +103,14 @@ details, addenda records, settlement, returns, and notifications of change.
 Supported examples include PPD credits/debits, CCD credits/debits, and a narrow
 EFTPS-style CCD+ tax-payment addenda flow. ACH uses its own file contracts and
 `ACH.*` queues; it is not transported as an ISO 20022 or `FedEnvelope` message.
-Entry validation enforces supported SEC/purpose/direction combinations, ABA prefix
+Entry capture uses a teaching maker/approver boundary before ODFI processing. Entry validation enforces supported SEC/purpose/direction combinations, ABA prefix
 and check-digit rules, cent precision, and Federal Reserve banking-day effective
 dates. ODFI rejections remain distinct from operator file rejection and RDFI return
 files; simulated RDFI returns reverse the original settlement with balanced journals.
 
 This is not production ACH certification. It does not implement the full Nacha
-Operating Rules, FedLine connectivity, prefunding/risk controls, exposure limits,
-full Same Day ACH processing windows, OFAC compliance, account validation services,
+Operating Rules, FedLine connectivity, full prefunding/risk controls or production exposure management,
+authoritative Same Day ACH processing windows, OFAC compliance, account validation services,
 or Federal Reserve/Treasury certification.
 
 ## SWIFT CBPR+ scope

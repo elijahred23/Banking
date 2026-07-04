@@ -11,7 +11,8 @@ public static class LearningCatalog
         new("operations", "Payment operations", "Operations teams", "Practice approval, exception handling, observability, and reconciliation.", ["first-fedwire", "rejected-wire", "trace-payment", "ach-return", "check-duplicate"]),
         new("iso", "ISO 20022", "Analysts and engineers", "Connect business actions to pacs messages, identifiers, and status codes.", ["first-fedwire", "iso-message-chain", "swift-route", "liquidity-transfer", "nonvalue-request"]),
         new("accounting", "Settlement accounting", "Finance and operations", "Follow holds, master-account settlement, and balanced journals.", ["fednow-finality", "rejected-wire", "trace-payment", "accounting-journal", "ach-file", "check-clearing"]),
-        new("systems", "Distributed payment systems", "Software engineers", "Trace messages across services, queues, retries, and idempotent settlement.", ["trace-payment", "rejected-wire", "swift-route", "idempotent-replay", "nonvalue-request"])
+        new("systems", "Distributed payment systems", "Software engineers", "Trace messages across services, queues, retries, and idempotent settlement.", ["trace-payment", "rejected-wire", "swift-route", "idempotent-replay", "nonvalue-request"]),
+        new("ach", "ACH operations curriculum", "Originators, approvers, and operations", "Progress from entry classification through files, windows, settlement, exceptions, accounting, and duplicate-safe processing.", ["ach-basics", "ach-sec", "ach-approval", "ach-file", "ach-windows", "ach-controls", "ach-return", "ach-accounting", "ach-idempotency"])
     ];
 
     public static IReadOnlyList<LearningMissionViewModel> Missions { get; } =
@@ -61,6 +62,41 @@ public static class LearningCatalog
             ["Create an ACH return or NOC scenario", "Follow the original entry and exception record", "Explain whether value reversed"],
             "Does a notification of change itself reverse the payment?", ["Always", "Only after operator approval", "No; it communicates corrected information"],
             "A notification of change communicates corrected receiving information; a return sends value back through a distinct workflow.", "Ach", "Create", "Start ACH exception mission"),
+        new("ach-basics", "ach", "Classify ACH credits and debits", "Predict direction and account effects before creating an entry.", "Beginner", 10,
+            ["Identify the originator and receiver", "Distinguish push credits from pull debits", "Predict which customer position changes"],
+            ["Open the ACH instructions", "Compare payroll credit and consumer debit profiles", "Create one standard entry and inspect its lifecycle"],
+            "Which entry normally pushes payroll funds to a receiver?", ["A consumer debit", "A notification of change", "A PPD credit"],
+            "A credit pushes funds from the originator toward the receiver; a debit collects funds from the receiver under the modeled authorization.", "Ach", "Instructions", "Start ACH basics"),
+        new("ach-sec", "ach", "Choose a supported SEC profile", "Connect purpose, party type, SEC code, and transaction direction.", "Beginner", 12,
+            ["Use PPD for modeled consumer entries", "Use CCD or CTX for modeled corporate entries", "Recognize WEB and TEL debit constraints"],
+            ["Open Create ACH entry", "Inspect the valid entry profiles", "Explain why an invalid purpose/SEC/direction combination fails"],
+            "Which supported profile fits a modeled consumer internet debit?", ["CCD credit", "IAT credit", "WEB debit"],
+            "The lab supports WEB for consumer debit examples; its profile validation deliberately rejects WEB credits.", "Ach", "Create", "Start SEC mission"),
+        new("ach-approval", "ach", "Release ACH under dual control", "Separate maker capture, approver authorization, ODFI validation, and exposure acceptance.", "Intermediate", 14,
+            ["Enforce maker/approver separation", "Explain what approval does not prove", "Read projected ACH exposure"],
+            ["Create an entry as Maker", "Switch to a different Approver and review exposure", "Release it and observe the later validation boundary"],
+            "What value effect does ACH approval have by itself?", ["It settles the entry", "It posts the receiver", "None; it authorizes later processing"],
+            "Approval is an authorization boundary. ODFI validation, file acceptance, settlement, and posting remain separate.", "Ach", "Create", "Start approval mission"),
+        new("ach-windows", "ach", "Work an ACH cutoff decision", "Use simulated time, banking days, and effective dates to select the next eligible window.", "Intermediate", 12,
+            ["Read the simulated clock", "Identify elapsed and eligible windows", "Avoid backdating after a missed cutoff"],
+            ["Open the processing clock", "Find the next eligible window", "Explain the settlement-date consequence of missing every window"],
+            "What should happen after the selected cutoff has elapsed?", ["Backdate the file", "Post customers immediately", "Move to the next eligible teaching window"],
+            "Elapsed time is not settlement evidence. A missed cutoff moves the item to the next eligible window.", "Ach", "Windows", "Start window mission"),
+        new("ach-controls", "ach", "Diagnose NACHA control failures", "Read record layouts and predict parser rejection from control evidence.", "Intermediate", 16,
+            ["Identify record types", "Recalculate entry counts and totals", "Separate file rejection from an RDFI return"],
+            ["Open the annotated explorer", "Edit a presentation-only payload", "Predict and validate a control-total failure"],
+            "Where is a file-wide debit total carried?", ["Only in each entry", "A pacs.002 status", "The NACHA file control record"],
+            "The file control record carries file-wide counts, routing hash, and debit/credit totals that the teaching parser reconciles.", "Ach", "Explorer", "Start controls mission"),
+        new("ach-accounting", "ach", "Reconstruct ACH settlement accounting", "Use customer, clearing, and settlement lines to prove every journal balances.", "Advanced", 16,
+            ["Separate holds from posted balances", "Reconstruct a journal by correlation", "Identify a return reversal"],
+            ["Settle an ACH entry", "Open its lifecycle detail", "Explain each line and prove total debits equal credits"],
+            "What proves ACH value was posted in this lab?", ["A trace number", "A delivered file", "A correlated balanced journal"],
+            "A trace and delivered file prove processing evidence; the correlated balanced journal proves accounting movement.", "Ach", "Create", "Start accounting mission"),
+        new("ach-idempotency", "ach", "Reason about duplicate ACH delivery", "Distinguish repeated transport from repeated settlement and posting.", "Advanced", 18,
+            ["Identify retry boundaries", "Preserve at-most-once business effects", "Reconcile journal counts"],
+            ["Inspect ACH queue and entry correlation", "Compare delivery attempts with durable state", "Verify a replay cannot create a second value journal"],
+            "What may repeat safely during ACH recovery?", ["The customer debit", "The settlement journal", "Transport attempts, but not the business effect"],
+            "Idempotency allows delivery retry while durable state and correlated posting prevent a second business effect.", "Ach", "Operations", "Start idempotency mission"),
         new("check-clearing", "foundations", "Clear an image check", "Follow capture, image validation, cash-letter transport, presentment, and settlement.", "Intermediate", 20,
             ["Separate capture from paying-bank decision", "Identify the image cash letter", "Reconcile check settlement"],
             ["Generate test TIFFs and capture a check", "Inspect the event replay and cash letter", "Switch bank perspective and verify the journal"],
@@ -98,7 +134,7 @@ public static class LearningCatalog
 
     public static IReadOnlyList<string> Hints(string id) => id switch
     {
-        "ach-file" or "ach-return" => ["Start with the entry status and trace number.", "Then follow its batch and file; those are distinct durable layers.", "A return, NOC, and file rejection have different value effects."],
+        "ach-file" or "ach-return" or "ach-basics" or "ach-sec" or "ach-approval" or "ach-windows" or "ach-controls" or "ach-accounting" or "ach-idempotency" => ["Start with the entry status and trace number.", "Then follow authorization, batch, and file evidence as distinct layers.", "A return, NOC, file rejection, and settlement have different value effects."],
         "check-clearing" or "check-duplicate" => ["Use the MICR identity and image hashes to identify the item.", "Separate capture, cash-letter delivery, and paying-bank decision.", "A duplicate must not produce a second value journal."],
         "nonvalue-request" => ["Identify the request message and expected response type.", "Correlate the persisted conversation before interpreting status.", "Verify the absence of a settlement journal."],
         _ => ["Start with the latest lifecycle event; it identifies the current processing boundary.",
@@ -111,7 +147,7 @@ public static class LearningCatalog
         "first-fedwire" or "fednow-finality" or "rejected-wire" =>
             ["Maker: create and submit the instruction", "Approver: independently review and release", "Operations: verify messages, settlement, and accounting"],
         "swift-route" => ["Maker: capture cross-border party data", "Approver: release the instruction", "Operations: reconcile each correspondent leg"],
-        "ach-file" or "ach-return" => ["Originator: capture the entry", "ACH service: group and serialize the file", "Operations: reconcile settlement and exceptions"],
+        "ach-file" or "ach-return" or "ach-basics" or "ach-sec" or "ach-approval" or "ach-windows" or "ach-controls" or "ach-accounting" or "ach-idempotency" => ["Maker: capture the entry", "Approver: independently authorize release", "ACH service and operations: validate, serialize, settle, and reconcile"],
         "check-clearing" or "check-duplicate" => ["Depository bank: capture images and MICR", "Exchange: route the cash letter", "Paying bank: settle or return the item"],
         _ => ["Analyst: predict the outcome", "Operator: gather evidence", "Reviewer: challenge the explanation"]
     };
@@ -157,7 +193,7 @@ public static class LearningCatalog
     {
         "swift-route" => "Production CBPR+ requires private usage guidelines, signing, sanctions controls, and configured correspondent agreements.",
         "iso-message-chain" => "Lab profile validation is educational and is not network certification or authoritative MyStandards validation.",
-        "ach-file" or "ach-return" => "This narrow NACHA/FedACH-style model is not Nacha rules compliance, operator certification, or a complete risk and return-rights implementation.",
+        "ach-file" or "ach-return" or "ach-basics" or "ach-sec" or "ach-approval" or "ach-windows" or "ach-controls" or "ach-accounting" or "ach-idempotency" => "This narrow NACHA/FedACH-style model is not Nacha rules compliance, operator certification, or a complete risk and return-rights implementation.",
         "check-clearing" or "check-duplicate" => "The readable image-cash-letter format and image checks are teaching subsets, not licensed X9 conformance or Check 21 certification.",
         "nonvalue-request" => "Supported message conversations are learning profiles and do not represent network connectivity, signing, or authoritative usage-guideline validation.",
         _ => "Production processing adds formal operating rules, entitlements, risk controls, reconciliation, and exception procedures beyond this lab."

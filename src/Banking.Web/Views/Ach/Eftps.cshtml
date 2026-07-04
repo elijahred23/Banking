@@ -19,6 +19,6 @@
     <div class="col-md-6 mb-3"><div class="field-label-row"><label asp-for="Amount" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.Amount))" /></div><input asp-for="Amount" class="form-control"><span asp-validation-for="Amount" class="text-danger"></span></div>
     <div class="col-md-6 mb-3"><div class="field-label-row"><label asp-for="SettlementDate" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.SettlementDate))" /></div><input asp-for="SettlementDate" class="form-control"><span asp-validation-for="SettlementDate" class="text-danger"></span></div>
 </div>
-<div class="mb-4"><div class="field-label-row"><label asp-for="Scenario" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.Scenario))" /></div><select asp-for="Scenario" asp-items="Html.GetEnumSelectList<AchProcessingScenario>()" class="form-select"></select></div>
+<div class="mb-4"><div class="field-label-row"><label asp-for="CaseType" class="form-label"></label><partial name="_ValuePicker" model="Picker(nameof(Model.CaseType))" /></div><select asp-for="CaseType" asp-items="Html.GetEnumSelectList<AchLearningCaseType>()" class="form-select"></select><div class="form-text">Blind modes conceal the injected condition until processing evidence appears.</div></div>
 <div class="form-actions"><button class="btn btn-primary">Create tax payment</button><a class="btn btn-light" asp-action="Index">Cancel</a></div></form></div></div>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

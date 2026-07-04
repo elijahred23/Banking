@@ -1,0 +1,24 @@
+@model AchNachaSandboxViewModel
+@{ ViewData["Title"] = "NACHA explorer"; }
+<div class="mb-3"><div class="eyebrow">PRESENTATION-ONLY LAB</div><h1>Annotated NACHA explorer</h1><p class="text-secondary">Inspect field boundaries, then edit a browser-submitted copy and predict whether the teaching parser accepts it. Saved files are never changed.</p></div>
+<partial name="_AchNav" />
+<form asp-action="Explorer" method="post" class="surface p-4 mb-4">
+    <input asp-for="FileId" type="hidden" />
+    <div class="mb-3"><label asp-for="Payload" class="form-label">Fixed-width payload</label><textarea asp-for="Payload" class="form-control font-monospace" rows="12" spellcheck="false"></textarea><span asp-validation-for="Payload" class="text-danger"></span></div>
+    <div class="row align-items-end"><div class="col-md-5 mb-3"><label asp-for="Prediction" class="form-label"></label><select asp-for="Prediction" class="form-select"><option>Accepted</option><option>Rejected</option></select></div><div class="col-md-7 mb-3"><button class="btn btn-primary">Validate my prediction</button></div></div>
+</form>
+@if (Model.Result is not null)
+{
+    <div class="alert @(Model.PredictionCorrect == true ? "alert-success" : "alert-warning")"><strong>@(Model.PredictionCorrect == true ? "Prediction supported." : "Prediction did not match the parser.")</strong> Parser outcome: @(Model.Result.IsValid ? "accepted" : "rejected"). @Model.Result.BatchCount batch(es), @Model.Result.EntryCount entry record(s), @Model.Result.TotalDebits.ToString("C") debits, @Model.Result.TotalCredits.ToString("C") credits.</div>
+    @if (Model.Result.Errors.Count > 0) { <ul class="alert alert-danger">@foreach (var error in Model.Result.Errors) { <li>@error</li> }</ul> }
+}
+@foreach (var record in Model.Records)
+{
+    <details class="surface p-3 mb-3" open="@(record.Number <= 2)"><summary><strong>Record @record.Number · @record.Name</strong> <code>@record.Type</code></summary>
+        <pre class="bg-light p-3 mt-3 overflow-auto"><code>@record.Raw</code></pre>
+        <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Positions</th><th>Field</th><th>Raw value</th><th>Meaning</th></tr></thead><tbody>
+        @foreach (var field in record.Fields) { <tr><td>@field.Start–@(field.Start + field.Length - 1)</td><td>@field.Name</td><td><code>@field.RawValue</code></td><td>@field.Meaning</td></tr> }
+        </tbody></table></div>
+    </details>
+}
+@if (Model.Records.Count == 0) { <div class="surface p-4 text-secondary">Create an ACH file or paste a teaching payload into the sandbox.</div> }

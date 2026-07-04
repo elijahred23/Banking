@@ -9,14 +9,18 @@ using Microsoft.EntityFrameworkCore;
 namespace Banking.Web.Controllers;
 
 [Authorize]
-public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory, IMessageBus bus) : Controller
+public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
+    SimulationStateService simulation, NachaFileParser parser) : Controller
 {
     public async Task<IActionResult> Index(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
         var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
-        var entries = await db.AchEntries.Where(x => x.OriginatingBankId == bankId || x.ReceivingBankId == bankId)
+        var entries = await db.AchEntries.Where(x => x.OriginatingBankId == bankId
+                || x.ReceivingBankId == bankId && (x.Status == AchEntryStatus.SentToOperator
+                    || x.Status == AchEntryStatus.Settled || x.Status == AchEntryStatus.Posted
+                    || x.Status == AchEntryStatus.Returned || x.Status == AchEntryStatus.NocReceived))
             .OrderByDescending(x => x.CreatedDate).AsNoTracking().ToListAsync(token);
         return View(new AchIndexViewModel(bank, entries));
     }
@@ -48,7 +52,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         return View(new AchInstructionsViewModel(bank, sourceAccounts, destinations));
     }
 
-    [HttpGet]
+    [HttpGet, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Create(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -56,7 +60,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         return View(await PopulateAsync(new CreateAchViewModel(), bankId, db, token));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Create(CreateAchViewModel model, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -75,12 +79,11 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
                 ModelState.AddModelError(nameof(model.Amount), "The originating account has insufficient available funds.");
         }
         if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
-        await CreateEntryAsync(db, account!, bankId, model.CompanyName, model.CompanyId, model.SecCode,
+        var entryId = await CreateEntryAsync(db, account!, bankId, model.CompanyName, model.CompanyId, model.SecCode,
             model.ReceiverName, model.ReceivingRoutingNumber, model.ReceivingAccountNumber,
             model.TransactionCode, model.Amount, model.EntryDescription, model.EffectiveEntryDate,
-            model.Addenda05, model.Purpose, model.Scenario, token);
-        TempData["Notice"] = "ACH entry created. It will be included at the next simulated batch cutoff.";
-        return RedirectToAction(nameof(Index));
+            model.Addenda05, model.Purpose, model.CaseType, token);
+        return RedirectToAction(nameof(Details), new { id = entryId });
     }
 
     public async Task<IActionResult> Batches(CancellationToken token)
@@ -115,7 +118,174 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         return View(new AchExceptionIndexViewModel(bank, returns, nocs));
     }
 
+    public async Task<IActionResult> Details(Guid id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var entry = await db.AchEntries.Include(x => x.OriginatingAccount).ThenInclude(x => x.Customer)
+            .Include(x => x.Batch).ThenInclude(x => x!.File)
+            .AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && (x.OriginatingBankId == bankId
+                || x.ReceivingBankId == bankId && (x.Status == AchEntryStatus.SentToOperator
+                    || x.Status == AchEntryStatus.Settled || x.Status == AchEntryStatus.Posted
+                    || x.Status == AchEntryStatus.Returned || x.Status == AchEntryStatus.NocReceived)), token);
+        if (entry is null) return NotFound();
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        var returns = await db.AchReturns.Where(x => x.AchEntryId == id).OrderBy(x => x.ReceivedDate)
+            .AsNoTracking().ToListAsync(token);
+        var nocs = await db.AchNotificationsOfChange.Where(x => x.AchEntryId == id).OrderBy(x => x.ReceivedDate)
+            .AsNoTracking().ToListAsync(token);
+        var journal = await db.AchLedgerEntries.Where(x => x.AchEntryId == id).OrderBy(x => x.CreatedDate)
+            .AsNoTracking().ToListAsync(token);
+        var receiver = entry.ReceivingBankId is null ? null : await db.Accounts.Include(x => x.Customer)
+            .AsNoTracking().FirstOrDefaultAsync(x => x.Customer.BankId == entry.ReceivingBankId
+                && x.AccountNumber == entry.ReceivingAccountNumber, token);
+        var balances = new List<AchBalanceViewModel>
+        {
+            new($"Originator · {entry.OriginatingAccount.Customer.Name}", entry.OriginatingAccount.Balance,
+                entry.OriginatingAccount.HeldBalance, entry.OriginatingAccount.AvailableBalance)
+        };
+        if (receiver is not null) balances.Add(new($"Receiver · {receiver.Customer.Name}", receiver.Balance,
+            receiver.HeldBalance, receiver.AvailableBalance));
+        var currentExposure = await db.AchEntries.Where(x => x.OriginatingBankId == entry.OriginatingBankId
+                && x.Id != entry.Id && (x.Status == AchEntryStatus.Validated || x.Status == AchEntryStatus.Batched
+                    || x.Status == AchEntryStatus.SentToOperator)
+                && (x.TransactionCode == AchTransactionCode.CheckingCredit
+                    || x.TransactionCode == AchTransactionCode.SavingsCredit))
+            .SumAsync(x => x.Amount, token);
+        var proposed = currentExposure + (AchRules.IsCredit(entry.TransactionCode)
+            && entry.Status == AchEntryStatus.PendingApproval ? entry.Amount : 0m);
+        var exposure = new AchExposureViewModel(currentExposure, proposed,
+            await db.Banks.Where(x => x.Id == entry.OriginatingBankId).Select(x => x.AchExposureLimit).SingleAsync(token));
+        return View(new AchDetailsViewModel(bank, entry, entry.Batch, entry.Batch?.File,
+            returns, nocs, journal, BuildLifecycle(entry, returns, nocs, journal), balances,
+            exposure, AchLearningPolicy.DecisionFor(entry)));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentApprover)]
+    public async Task<IActionResult> DecideApproval(Guid id, bool approve, string? reason,
+        CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        await using var transaction = await db.Database.BeginTransactionAsync(token);
+        var entry = await db.AchEntries.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id
+            && x.OriginatingBankId == bankId, token);
+        if (entry is null) return NotFound();
+        if (entry.Status != AchEntryStatus.PendingApproval)
+        {
+            TempData["Error"] = "This ACH entry is no longer waiting for approval.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        var selfApproval = string.Equals(entry.CreatedBy, User.Identity!.Name, StringComparison.OrdinalIgnoreCase);
+        if (selfApproval && !User.HasAllPermissions())
+        {
+            TempData["Error"] = "The entry creator cannot approve their own ACH entry.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "Approver declined the ACH entry." : reason.Trim();
+        var decisionReason = approve ? null : normalizedReason[..Math.Min(500, normalizedReason.Length)];
+        var approvedBy = User.Identity.Name;
+        var approvedDate = DateTimeOffset.UtcNow;
+        var nextStatus = approve ? AchEntryStatus.Entered : AchEntryStatus.Rejected;
+        var updated = await db.AchEntries.Where(x => x.Id == id && x.OriginatingBankId == bankId
+                && x.Status == AchEntryStatus.PendingApproval)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.ApprovedBy, approvedBy)
+                .SetProperty(x => x.ApprovedDate, approvedDate)
+                .SetProperty(x => x.ApprovalDecisionReason, decisionReason)
+                .SetProperty(x => x.Status, nextStatus), token);
+        if (updated != 1)
+        {
+            TempData["Error"] = "Another approver already answered this ACH entry.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        if (approve) db.OutboxMessages.Add(Outbox.Message(Queues.AchEntryCreated,
+            new AchEntryCreated(entry.Id), bankId));
+        await db.SaveChangesAsync(token);
+        await transaction.CommitAsync(token);
+        TempData["Notice"] = approve
+            ? "ACH entry approved and durably queued for ODFI validation. Approval did not move funds."
+            : "ACH entry rejected before validation, batching, transport, or settlement; no funds moved.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
     [HttpGet]
+    public async Task<IActionResult> Explorer(Guid? id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var file = id is null
+            ? await db.AchFiles.Where(x => x.OriginatingBankId == bankId).OrderByDescending(x => x.CreatedDate)
+                .AsNoTracking().FirstOrDefaultAsync(token)
+            : await db.AchFiles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.OriginatingBankId == bankId, token);
+        if (id is not null && file is null) return NotFound();
+        var payload = file?.RawNachaPayload ?? "";
+        return View(new AchNachaSandboxViewModel { FileId = file?.Id, Payload = payload,
+            Records = NachaRecordAnnotator.Annotate(payload) });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Explorer(AchNachaSandboxViewModel model, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        if (model.FileId is not null && !await db.AchFiles.AnyAsync(x => x.Id == model.FileId
+            && x.OriginatingBankId == bankId, token)) return NotFound();
+        model.Result = parser.Validate(model.Payload);
+        model.Records = NachaRecordAnnotator.Annotate(model.Payload);
+        model.PredictionCorrect = string.Equals(model.Prediction, model.Result.IsValid ? "Accepted" : "Rejected",
+            StringComparison.OrdinalIgnoreCase);
+        return View(model);
+    }
+
+    public async Task<IActionResult> Windows(CancellationToken token)
+    {
+        var now = await simulation.UtcNowAsync(token);
+        var windows = AchOperatingPolicy.For(now);
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var time = TimeOnly.FromDateTime(now.UtcDateTime);
+        var next = AchBusinessCalendar.IsBankingDay(today) ? windows.FirstOrDefault(x => x.Cutoff > time) : null;
+        var nextDate = next?.SettlementDate ?? AchBusinessCalendar.NextBankingDay(today);
+        var action = next is null
+            ? $"All teaching cutoffs have passed or today is not a banking day. Move the item to {nextDate:yyyy-MM-dd}."
+            : $"Next eligible window: {next.Name} at {next.Cutoff}. Expected settlement date: {next.SettlementDate:yyyy-MM-dd}.";
+        return View(new AchWindowsViewModel(now, windows, action, nextDate));
+    }
+
+    [Authorize(Roles = BankSecurity.Operations)]
+    public async Task<IActionResult> Operations(Guid? answeredId, string? decision, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        var entries = await db.AchEntries.Where(x => x.OriginatingBankId == bankId
+                && (x.Scenario != AchProcessingScenario.Standard || x.Status == AchEntryStatus.Returned
+                    || x.Status == AchEntryStatus.NocReceived || x.Status == AchEntryStatus.Rejected))
+            .OrderByDescending(x => x.CreatedDate).Take(30).AsNoTracking().ToListAsync(token);
+        var cases = entries.Select(x =>
+        {
+            var expected = AchLearningPolicy.DecisionFor(x);
+            var selected = answeredId == x.Id ? decision : null;
+            return new AchOperationsCaseViewModel(x, CaseEvidence(x), expected, selected,
+                selected is null ? null : string.Equals(selected, expected.Layer, StringComparison.Ordinal));
+        }).ToList();
+        return View(new AchOperationsViewModel(bank, cases));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
+    public async Task<IActionResult> Replay(Guid id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var exists = await db.AchEntries.AnyAsync(x => x.Id == id && x.OriginatingBankId == bankId, token);
+        if (!exists) return NotFound();
+        db.OutboxMessages.Add(Outbox.Message(Queues.AchEntryCreated, new AchEntryCreated(id), bankId));
+        await db.SaveChangesAsync(token);
+        TempData["Notice"] = "A duplicate ACH validation delivery was durably queued. The consumer must preserve the current state and must not create another batch, hold, settlement, or journal.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpGet, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Eftps(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -123,7 +293,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         return View(await PopulateEftpsAsync(new CreateEftpsViewModel(), bankId, db, token));
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> Eftps(CreateEftpsViewModel model, CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
@@ -144,19 +314,77 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             catch (ArgumentException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
         }
         if (!ModelState.IsValid) return View(await PopulateEftpsAsync(model, bankId, db, token));
-        await CreateEntryAsync(db, account!, bankId, model.CompanyName, model.CompanyId, AchStandardEntryClass.Ccd,
+        var entryId = await CreateEntryAsync(db, account!, bankId, model.CompanyName, model.CompanyId, AchStandardEntryClass.Ccd,
             "US TREASURY EFTPS", "091036164", "234010000", AchTransactionCode.CheckingCredit,
             model.Amount, "TAXPAYMENT", model.SettlementDate, addenda, AchPaymentPurpose.TaxPaymentEftps,
-            model.Scenario, token);
-        TempData["Notice"] = "EFTPS-style CCD+ entry created for the next simulated batch cutoff.";
-        return RedirectToAction(nameof(Index));
+            model.CaseType, token);
+        return RedirectToAction(nameof(Details), new { id = entryId });
     }
 
-    private async Task CreateEntryAsync(BankingDbContext db, Account account, Guid bankId,
+    private static IReadOnlyList<AchLifecycleStepViewModel> BuildLifecycle(AchEntry entry,
+        IReadOnlyList<AchReturn> returns, IReadOnlyList<AchNotificationOfChange> nocs,
+        IReadOnlyList<AchLedgerEntry> journal)
+    {
+        var approved = entry.ApprovedDate is not null;
+        var approvalRejected = entry.Status == AchEntryStatus.Rejected
+            && !string.IsNullOrWhiteSpace(entry.ApprovalDecisionReason);
+        var validated = !approvalRejected && entry.Status is not (AchEntryStatus.PendingApproval or AchEntryStatus.Entered);
+        var batched = entry.AchBatchId is not null;
+        var file = entry.Batch?.File;
+        var operatorComplete = file?.Status is "Accepted" or "Rejected" or "Settled"
+            || entry.Status is AchEntryStatus.Settled or AchEntryStatus.Posted or AchEntryStatus.Returned or AchEntryStatus.NocReceived;
+        var settlement = entry.Status is AchEntryStatus.Settled or AchEntryStatus.Posted
+            or AchEntryStatus.Returned or AchEntryStatus.NocReceived;
+        var exceptionDate = returns.Select(x => (DateTimeOffset?)x.ReceivedDate)
+            .Concat(nocs.Select(x => (DateTimeOffset?)x.ReceivedDate)).OrderBy(x => x).FirstOrDefault();
+        return
+        [
+            new("Captured", "Maker", $"Created by {entry.CreatedBy ?? "legacy workflow"}.",
+                "No money moves and no hold is placed.", entry.CreatedDate, true),
+            new("Authorized", "Approver", approved
+                    ? $"Decision by {entry.ApprovedBy}." : "Independent approval is still required.",
+                "Approval authorizes processing but does not settle the entry.", entry.ApprovedDate, approved),
+            new("ODFI validation", "ACH service", validated
+                    ? $"Observed status: {entry.Status}." : "Waiting for validation after approval.",
+                AchRules.IsCredit(entry.TransactionCode) ? "A valid credit places an originator hold." : "No originator credit hold is required for a debit.",
+                entry.Batch?.Entries.FirstOrDefault(x => x.Id == entry.Id)?.CreatedDate, validated),
+            new("Batched", "ACH service", batched
+                    ? $"Grouped into batch {entry.Batch!.Id.ToString()[..8]} by company, SEC code, and effective date." : "No batch assignment yet.",
+                "Batching groups instructions; it does not itself move value.", entry.Batch?.File?.CreatedDate, batched),
+            new("File delivered", "ODFI / ACH operator", file is null
+                    ? "No NACHA file yet." : $"File {file.Id.ToString()[..8]} status: {file.Status}.",
+                "Transport delivery remains distinct from operator acceptance.", file?.CreatedDate, file is not null),
+            new("Operator outcome", "ACH operator", operatorComplete
+                    ? $"Entry status: {entry.Status}." : "No final operator evidence yet.",
+                settlement ? "Settlement became eligible only after acceptance." : "No settlement evidence is present.",
+                journal.FirstOrDefault()?.CreatedDate, operatorComplete),
+            new("RDFI outcome", "RDFI", returns.Count > 0 ? $"Return {returns[0].ReturnCode} received."
+                    : nocs.Count > 0 ? $"NOC {nocs[0].ChangeCode} received." : "No post-settlement exception observed.",
+                returns.Count > 0 ? "The return reverses value." : nocs.Count > 0
+                    ? "The NOC communicates corrected data and does not reverse value." : "No later value effect.",
+                exceptionDate, returns.Count > 0 || nocs.Count > 0 || settlement),
+            new("Accounting", "Posting service", journal.Count == 0 ? "No value journal present."
+                    : $"{journal.Select(x => x.JournalId).Distinct().Count()} journal(s); debits {journal.Sum(x => x.Debit):C}, credits {journal.Sum(x => x.Credit):C}.",
+                journal.Count > 0 && journal.Sum(x => x.Debit) == journal.Sum(x => x.Credit)
+                    ? "Observed journal lines balance." : "No balanced posting has been observed yet.",
+                journal.LastOrDefault()?.CreatedDate, journal.Count > 0)
+        ];
+    }
+
+    private static string CaseEvidence(AchEntry entry) => entry.Status switch
+    {
+        AchEntryStatus.PendingApproval => "The instruction exists, but no hold, batch, file, or settlement is present.",
+        AchEntryStatus.Rejected when entry.AchBatchId is not null => "A file was created, then processing stopped without settlement.",
+        AchEntryStatus.Returned => $"The original entry has return code {entry.ReturnCode ?? "pending"} after operator processing.",
+        AchEntryStatus.NocReceived => "The RDFI supplied corrected receiving information after processing.",
+        _ => $"Current status is {entry.Status}; trace number is {entry.TraceNumber ?? "not assigned"}."
+    };
+
+    private async Task<Guid> CreateEntryAsync(BankingDbContext db, Account account, Guid bankId,
         string companyName, string companyId, AchStandardEntryClass sec, string receiverName,
         string routing, string receiverAccount, AchTransactionCode code, decimal amount,
         string description, DateOnly effectiveDate, string? addenda, AchPaymentPurpose purpose,
-        AchProcessingScenario scenario, CancellationToken token)
+        AchLearningCaseType caseType, CancellationToken token)
     {
         var receivingBankId = await db.Banks.Where(x => x.RoutingNumber == routing).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(token);
         var entry = new AchEntry { OriginatingBankId = bankId, ReceivingBankId = receivingBankId,
@@ -164,11 +392,13 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             SecCode = sec, ReceiverName = receiverName.Trim(), ReceivingRoutingNumber = routing.Trim(),
             ReceivingAccountNumber = receiverAccount.Trim(), TransactionCode = code, Amount = amount,
             EntryDescription = description.Trim(), EffectiveEntryDate = effectiveDate, Addenda05 = addenda?.Trim(),
-            Purpose = purpose, Scenario = scenario, Status = AchEntryStatus.Entered };
+            Purpose = purpose, Status = AchEntryStatus.PendingApproval, CreatedBy = User.Identity!.Name };
+        entry.Scenario = AchLearningPolicy.SelectScenario(caseType, entry.Id);
         db.AchEntries.Add(entry);
         await db.SaveChangesAsync(token);
         await LearningRunLinker.AttachAsync(HttpContext, db, bankId, "ACH", entry.Id, token);
-        await bus.PublishAsync(Queues.AchEntryCreated, new AchEntryCreated(entry.Id), token);
+        TempData["Notice"] = $"ACH entry {entry.Id.ToString()[..8]} created. A different payment approver must release it; the exercise outcome remains hidden until evidence appears.";
+        return entry.Id;
     }
 
     private static AchEntry Candidate(CreateAchViewModel model, Account account, Guid bankId) => new()
@@ -177,8 +407,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         CompanyId = model.CompanyId, SecCode = model.SecCode, ReceiverName = model.ReceiverName,
         ReceivingRoutingNumber = model.ReceivingRoutingNumber, ReceivingAccountNumber = model.ReceivingAccountNumber,
         TransactionCode = model.TransactionCode, Amount = model.Amount, EntryDescription = model.EntryDescription,
-        EffectiveEntryDate = model.EffectiveEntryDate, Addenda05 = model.Addenda05, Purpose = model.Purpose,
-        Scenario = model.Scenario
+        EffectiveEntryDate = model.EffectiveEntryDate, Addenda05 = model.Addenda05, Purpose = model.Purpose
     };
 
     private static async Task<CreateAchViewModel> PopulateAsync(CreateAchViewModel model, Guid bankId,
@@ -259,7 +488,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             [nameof(CreateAchViewModel.EffectiveEntryDate)] = DateChoices(nameof(CreateAchViewModel.EffectiveEntryDate), "Banking-day effective dates"),
             [nameof(CreateAchViewModel.EntryDescription)] = Choices("Entry descriptions", "Use 1 to 10 characters.",
                 TextOptions(data.History.Select(x => x.EntryDescription).Concat(["PAYROLL", "VENDOR", "PAYMENT"]), nameof(CreateAchViewModel.EntryDescription))),
-            [nameof(CreateAchViewModel.Scenario)] = EnumChoices<AchProcessingScenario>(nameof(CreateAchViewModel.Scenario), "Learning scenarios", "Standard follows the normal flow; other values deliberately exercise exceptions."),
+            [nameof(CreateAchViewModel.CaseType)] = EnumChoices<AchLearningCaseType>(nameof(CreateAchViewModel.CaseType), "Exercise modes", "Blind modes choose a deterministic hidden condition. Predict the operational outcome from the resulting evidence."),
             [nameof(CreateAchViewModel.Addenda05)] = Choices("Addenda values", "Optional free-form payment information, up to 80 characters.",
                 TextOptions(data.History.Select(x => x.Addenda05).Where(x => !string.IsNullOrWhiteSpace(x))!, nameof(CreateAchViewModel.Addenda05)))
         };
@@ -294,7 +523,7 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
                     $"{x.AvailableBalance:C} available", (nameof(CreateEftpsViewModel.OriginatingAccountId), x.Id.ToString()),
                     (nameof(CreateEftpsViewModel.Amount), Math.Min(100m, x.AvailableBalance).ToString("0.00")))).ToList()),
             [nameof(CreateEftpsViewModel.SettlementDate)] = DateChoices(nameof(CreateEftpsViewModel.SettlementDate), "Banking-day settlement dates"),
-            [nameof(CreateEftpsViewModel.Scenario)] = EnumChoices<AchProcessingScenario>(nameof(CreateEftpsViewModel.Scenario), "Learning scenarios", "Standard follows the normal flow; other values deliberately exercise exceptions.")
+            [nameof(CreateEftpsViewModel.CaseType)] = EnumChoices<AchLearningCaseType>(nameof(CreateEftpsViewModel.CaseType), "Exercise modes", "Blind modes choose a deterministic hidden condition. Predict the outcome from the resulting evidence.")
         };
     }
 

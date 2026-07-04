@@ -1,5 +1,7 @@
 # Database
 
+ACH entry approval audit fields support the lab's maker/approver learning workflow. They record authorization evidence only; payment acceptance, file delivery, settlement, and accounting remain separate durable states.
+
 SQL Server assets for `BankingDb` live here.
 
 ## Layout

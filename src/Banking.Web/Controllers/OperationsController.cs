@@ -32,7 +32,7 @@ public sealed class OperationsController(
 
         var payments = new PaymentStatusSummary(
             wireStatuses.Count(x => x is WireStatus.PendingApproval or WireStatus.Created)
-                + achStatuses.Count(x => x == AchEntryStatus.Entered)
+                + achStatuses.Count(x => x is AchEntryStatus.PendingApproval or AchEntryStatus.Entered)
                 + checkStatuses.Count(x => x == CheckDepositStatus.Captured),
             wireStatuses.Count(x => x is WireStatus.PendingComplianceReview or WireStatus.Validated or WireStatus.ReadyForFed or WireStatus.SentToFed
                 or WireStatus.PendingAtFed or WireStatus.Received)
