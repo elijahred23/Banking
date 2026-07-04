@@ -30,6 +30,25 @@
     </div>
 </div>
 
+<div class="modal fade" id="wire-lifecycle-modal" tabindex="-1" aria-labelledby="wire-lifecycle-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable lifecycle-modal-dialog">
+        <div class="modal-content lifecycle-modal">
+            <div class="modal-header">
+                <div>
+                    <div class="eyebrow mb-1">Observed payment lifecycle</div>
+                    <h2 class="modal-title h5 mb-0" id="wire-lifecycle-modal-title">Wire lifecycle diagram</h2>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="wire-lifecycle-modal-body"></div>
+            <div class="modal-footer">
+                <span class="text-secondary small me-auto">Generated from this wire's current persisted events and evidence.</span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <script src="~/lib/signalr/signalr.min.js"></script>
     <script src="~/js/wire-details.js" asp-append-version="true"></script>

@@ -247,6 +247,17 @@
     }
 
     function wireMessageActions(root = content) {
+        root.querySelector(".open-lifecycle-diagram")?.addEventListener("click", () => {
+            const source = root.querySelector(".wire-lifecycle-diagram-source");
+            const modalElement = document.getElementById("wire-lifecycle-modal");
+            const modalBody = document.getElementById("wire-lifecycle-modal-body");
+            const modalTitle = document.getElementById("wire-lifecycle-modal-title");
+            if (!source || !modalElement || !modalBody || !modalTitle) return;
+
+            modalBody.replaceChildren(source.content.cloneNode(true));
+            modalTitle.textContent = source.dataset.diagramTitle || "Wire lifecycle diagram";
+            bootstrap.Modal.getOrCreateInstance(modalElement).show();
+        });
         root.querySelector(".replay-timeline")?.addEventListener("click", event => {
             const items = Array.from(root.querySelectorAll(".timeline-item"));
             items.forEach(item => item.classList.add("replay-hidden"));

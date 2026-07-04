@@ -1,0 +1,181 @@
+@model WireDetailsViewModel
+@{
+    var wire = Model.Wire;
+    var debitTotal = Model.LedgerEntries.Sum(x => x.Debit);
+    var creditTotal = Model.LedgerEntries.Sum(x => x.Credit);
+    var messageType = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer
+        ? "pacs.009" : "pacs.008";
+}
+
+<div class="lifecycle-diagram">
+    <div class="lifecycle-summary" aria-label="Wire lifecycle summary">
+        <div><span>Instruction</span><strong>@wire.Direction @wire.Rail</strong><small>@messageType · @wire.Amount.ToString("C")</small></div>
+        <div><span>Parties</span><strong>@wire.SenderName → @wire.ReceiverName</strong><small>Reference @(wire.CustomerReference ?? "not supplied")</small></div>
+        <div><span>Current business state</span><strong class="status status-@wire.Status.ToString().ToLowerInvariant()">@wire.Status</strong><small>@FormatDuration(Model.ProcessingDuration) observed duration</small></div>
+        <div><span>Evidence captured</span><strong>@Model.Stages.Count stages</strong><small>@Model.Messages.Count messages · @Model.Deliveries.Count deliveries · @Model.LedgerEntries.Count journal lines</small></div>
+    </div>
+
+    <div class="lifecycle-state-note">
+        <strong>How to read this lab diagram</strong>
+        <span>Queue delivery shows transport progress. A network response shows business acceptance or rejection. Balanced journal lines show that settlement accounting posted. These are deliberately separate signals.</span>
+    </div>
+
+    <section class="lifecycle-diagram-section" aria-labelledby="observed-flow-title">
+        <div class="lifecycle-diagram-heading">
+            <div><span>Observed path</span><h3 id="observed-flow-title">Persisted wire events</h3></div>
+            <div class="lifecycle-legend" aria-label="Diagram legend">
+                <span><i class="legend-mark observed"></i>Observed</span>
+                <span><i class="legend-mark final"></i>Final/posting</span>
+                <span><i class="legend-mark exception"></i>Exception/return</span>
+            </div>
+        </div>
+        @if (Model.Stages.Any())
+        {
+            <div class="lifecycle-flow" role="list" aria-label="Chronological wire lifecycle">
+                @for (var index = 0; index < Model.Stages.Count; index++)
+                {
+                    var stage = Model.Stages[index];
+                    <div class="lifecycle-flow-step" role="listitem">
+                        <article class="lifecycle-node @NodeClass(stage.Event.EventType)">
+                            <div class="lifecycle-node-topline">
+                                <span class="lifecycle-sequence">@(index + 1)</span>
+                                <span class="service-badge">@stage.Service</span>
+                            </div>
+                            <h4>@SplitName(stage.Event.EventType)</h4>
+                            <p>@stage.Event.Description</p>
+                            <dl>
+                                <div><dt>Recorded</dt><dd>@stage.Event.CreatedDate.ToLocalTime().ToString("MMM d, yyyy · HH:mm:ss.fff")</dd></div>
+                                <div><dt>Elapsed</dt><dd>@(stage.DurationSincePrevious is TimeSpan elapsed ? $"+{FormatDuration(elapsed)}" : "Lifecycle start")</dd></div>
+                            </dl>
+                        </article>
+                        @if (index < Model.Stages.Count - 1)
+                        {
+                            <div class="lifecycle-connector" aria-hidden="true"><span>→</span></div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="lifecycle-empty">No persisted processing event has been recorded for this wire.</div>
+        }
+    </section>
+
+    <div class="lifecycle-evidence-grid">
+        <section class="lifecycle-evidence-card">
+            <header><div><span>Transport</span><h3>Queue delivery evidence</h3></div><strong>@Model.Deliveries.Count</strong></header>
+            @if (Model.Deliveries.Any())
+            {
+                <div class="lifecycle-evidence-list">
+                    @foreach (var delivery in Model.Deliveries)
+                    {
+                        <article>
+                            <div><code>@delivery.Destination</code><span class="delivery-status delivery-@delivery.Status.ToString().ToLowerInvariant()">@delivery.Status</span></div>
+                            <small>@delivery.Attempts attempt@(delivery.Attempts == 1 ? "" : "s") · updated @delivery.UpdatedDate.ToLocalTime().ToString("MMM d · HH:mm:ss.fff")</small>
+                            @if (!string.IsNullOrWhiteSpace(delivery.LastError)) { <p class="lifecycle-error">@delivery.LastError</p> }
+                        </article>
+                    }
+                </div>
+            }
+            else { <p class="lifecycle-empty">No queue-delivery evidence has been persisted yet.</p> }
+        </section>
+
+        <section class="lifecycle-evidence-card">
+            <header><div><span>Business messages</span><h3>ISO 20022 conversation</h3></div><strong>@Model.Messages.Count</strong></header>
+            @if (Model.Messages.Any())
+            {
+                <div class="lifecycle-evidence-list">
+                    @foreach (var item in Model.Messages)
+                    {
+                        <article>
+                            <div><strong>@item.Message.MessageType</strong><span>@item.Message.Direction</span></div>
+                            <small>@item.Message.CreatedDate.ToLocalTime().ToString("MMM d · HH:mm:ss.fff")</small>
+                            <p class="@(item.IsWellFormed && item.HasExpectedNamespace ? "lifecycle-valid" : "lifecycle-error")">@item.ValidationMessage</p>
+                        </article>
+                    }
+                </div>
+            }
+            else { <p class="lifecycle-empty">No ISO message has been generated or received yet.</p> }
+        </section>
+
+        <section class="lifecycle-evidence-card">
+            <header><div><span>Settlement</span><h3>Accounting result</h3></div><strong>@Model.LedgerEntries.Select(x => x.JournalId).Distinct().Count() journal(s)</strong></header>
+            @if (Model.LedgerEntries.Any())
+            {
+                <div class="lifecycle-balance @(debitTotal == creditTotal ? "balanced" : "unbalanced")">
+                    <div><span>Debits</span><strong>@debitTotal.ToString("C")</strong></div>
+                    <div><span>Credits</span><strong>@creditTotal.ToString("C")</strong></div>
+                    <p>@(debitTotal == creditTotal ? "Balanced and correlated to this wire" : "Control exception: journal is not balanced")</p>
+                </div>
+                <div class="lifecycle-evidence-list">
+                    @foreach (var journal in Model.LedgerEntries.GroupBy(x => x.JournalId))
+                    {
+                        <article><div><code>@journal.Key</code><strong>@journal.Count() lines</strong></div><small>@journal.Min(x => x.CreatedDate).ToLocalTime().ToString("MMM d · HH:mm:ss.fff")</small></article>
+                    }
+                </div>
+            }
+            else { <p class="lifecycle-empty">No accounting journal has posted. A hold, if applicable, is not a journal entry.</p> }
+        </section>
+
+        <section class="lifecycle-evidence-card">
+            <header><div><span>Traceability</span><h3>Identifiers and outcome</h3></div><strong>@wire.Status</strong></header>
+            <dl class="lifecycle-identifiers">
+                <div><dt>Wire ID</dt><dd><code>@wire.Id</code></dd></div>
+                <div><dt>Correlation</dt><dd><code>@wire.CorrelationId</code></dd></div>
+                <div><dt>@(wire.Rail is PaymentRail.FedNow or PaymentRail.SwiftCbprPlus ? "Network reference" : "IMAD")</dt><dd>@(wire.Imad ?? "Not assigned")</dd></div>
+                @if (wire.Rail == PaymentRail.Fedwire) { <div><dt>OMAD</dt><dd>@(wire.Omad ?? "Not assigned")</dd></div> }
+                @if (Model.FailureReason is not null) { <div class="lifecycle-identifier-wide"><dt>Latest failure</dt><dd class="lifecycle-error">@Model.FailureReason</dd></div> }
+            </dl>
+        </section>
+    </div>
+
+    @if (Model.Route is { } route)
+    {
+        <section class="lifecycle-diagram-section">
+            <div class="lifecycle-diagram-heading"><div><span>Routing</span><h3>Correspondent path · @route.RouteStatus</h3></div></div>
+            <div class="lifecycle-route">
+                @foreach (var step in route.Steps.OrderBy(x => x.StepNumber))
+                {
+                    <article><span>Step @step.StepNumber · @step.StepType</span><strong>@step.FromBank.Name → @step.ToBank.Name</strong><small>@step.Status · message @(step.MessageId ?? "not assigned")</small></article>
+                }
+            </div>
+        </section>
+    }
+
+    @if (Model.Cases.Any())
+    {
+        <section class="lifecycle-diagram-section">
+            <div class="lifecycle-diagram-heading"><div><span>After-payment servicing</span><h3>Cases linked to this wire</h3></div></div>
+            <div class="lifecycle-route">
+                @foreach (var item in Model.Cases)
+                {
+                    <article><span>@item.Type · @item.Status</span><strong>@item.RequestMessageType@(item.ResponseMessageType is null ? "" : $" → {item.ResponseMessageType}")</strong><small>@item.CreatedDate.ToLocalTime().ToString("MMM d, yyyy · HH:mm:ss") · @item.Reason</small></article>
+                }
+            </div>
+        </section>
+    }
+
+    <p class="lifecycle-lab-note">This diagram reports the simulator's persisted evidence. It is a learning aid, not proof of payment-network certification or production settlement.</p>
+</div>
+
+@functions {
+    private static string NodeClass(string eventType)
+    {
+        if (eventType.Contains("Reject", StringComparison.OrdinalIgnoreCase)
+            || eventType.Contains("Return", StringComparison.OrdinalIgnoreCase)
+            || eventType.Contains("Fail", StringComparison.OrdinalIgnoreCase)) return "node-exception";
+        if (eventType is "Settled" or "Completed" or "Posted" or "AcceptedByFed") return "node-final";
+        return "node-observed";
+    }
+
+    private static string SplitName(string value) =>
+        System.Text.RegularExpressions.Regex.Replace(value, "([a-z0-9])([A-Z])", "$1 $2");
+
+    private static string FormatDuration(TimeSpan value)
+    {
+        if (value.TotalMinutes >= 1) return $"{(int)value.TotalMinutes}m {value.Seconds}s";
+        if (value.TotalSeconds >= 1) return $"{value.TotalSeconds:0.00}s";
+        return $"{value.TotalMilliseconds:0}ms";
+    }
+}

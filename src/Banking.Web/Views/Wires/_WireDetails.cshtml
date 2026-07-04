@@ -117,7 +117,11 @@
         <section class="surface section mb-4">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
                 <div><h2 class="h5 mb-1">Lifecycle</h2><div class="section-help">Every persisted processing stage.</div></div>
-                <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary replay-timeline" type="button">Replay</button><span class="duration-pill">@FormatDuration(Model.ProcessingDuration) total</span></div>
+                <div class="d-flex flex-wrap justify-content-end gap-2">
+                    <button class="btn btn-sm btn-primary open-lifecycle-diagram" type="button">Open detailed diagram</button>
+                    <button class="btn btn-sm btn-outline-primary replay-timeline" type="button">Replay</button>
+                    <span class="duration-pill">@FormatDuration(Model.ProcessingDuration) total</span>
+                </div>
             </div>
             <div class="timeline">
                 @foreach (var stage in Model.Stages)
@@ -318,6 +322,11 @@
         <p class="text-secondary mb-0">No messages generated yet. This page will update as the wire progresses.</p>
     }
 </section>
+
+<template class="wire-lifecycle-diagram-source"
+          data-diagram-title="@wire.Rail lifecycle · @wire.CustomerReference">
+    <partial name="_WireLifecycleDiagram" model="Model" />
+</template>
 
 @functions {
     private static string FormatDuration(TimeSpan value)
