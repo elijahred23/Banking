@@ -5,6 +5,7 @@ namespace Banking.Web;
 internal static class BankSecurity
 {
     public const string BankIdClaim = "bank_id";
+    public const string AllPermissionsClaim = "all_permissions";
     public const string PaymentCreator = "PaymentCreator";
     public const string PaymentApprover = "PaymentApprover";
     public const string ComplianceOfficer = "ComplianceOfficer";
@@ -13,4 +14,12 @@ internal static class BankSecurity
     public static Guid BankId(this ClaimsPrincipal user) =>
         Guid.TryParse(user.FindFirstValue(BankIdClaim), out var bankId)
             ? bankId : throw new InvalidOperationException("The signed-in user has no bank assignment.");
+
+    public static bool HasAllPermissions(this ClaimsPrincipal user) =>
+        string.Equals(user.FindFirstValue(AllPermissionsClaim), "true",
+            StringComparison.OrdinalIgnoreCase)
+        || user.IsInRole(PaymentCreator)
+        && user.IsInRole(PaymentApprover)
+        && user.IsInRole(ComplianceOfficer)
+        && user.IsInRole(Operations);
 }

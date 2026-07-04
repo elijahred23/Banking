@@ -428,7 +428,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             TempData["Error"] = "This payment is no longer waiting for approval.";
             return RedirectToAction(nameof(Details), new { id });
         }
-        if (string.Equals(wire.CreatedBy, User.Identity!.Name, StringComparison.OrdinalIgnoreCase))
+        var isSelfApproval = string.Equals(wire.CreatedBy, User.Identity!.Name,
+            StringComparison.OrdinalIgnoreCase);
+        if (!User.HasAllPermissions() && isSelfApproval)
         {
             TempData["Error"] = "The payment creator cannot approve their own payment.";
             return RedirectToAction(nameof(Details), new { id });
@@ -444,7 +446,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             WireTransferId = wire.Id,
             EventType = approve ? "Approved" : "ApprovalRejected",
             Description = approve
-                ? $"Payment released by {User.Identity.Name} under dual control."
+                ? User.HasAllPermissions() && isSelfApproval
+                    ? $"Payment released by {User.Identity.Name} using the lab all-permissions override."
+                    : $"Payment released by {User.Identity.Name} under dual control."
                 : $"Payment rejected by {User.Identity.Name}: {NormalizeDecisionReason(reason)}"
         });
         try

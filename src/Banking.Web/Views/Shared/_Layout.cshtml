@@ -4,11 +4,17 @@
     var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
     var activeBankName = User.FindFirst("bank_name")?.Value;
     var activeBankId = User.Identity?.IsAuthenticated == true ? User.BankId() : Guid.Empty;
-    var activeRoleKey = User.IsInRole(BankSecurity.PaymentCreator) ? "maker"
+    var hasAllPermissions = User.IsInRole(BankSecurity.PaymentCreator)
+        && User.IsInRole(BankSecurity.PaymentApprover)
+        && User.IsInRole(BankSecurity.ComplianceOfficer)
+        && User.IsInRole(BankSecurity.Operations);
+    var activeRoleKey = hasAllPermissions ? "all"
+        : User.IsInRole(BankSecurity.PaymentCreator) ? "maker"
         : User.IsInRole(BankSecurity.PaymentApprover) ? "approver"
         : User.IsInRole(BankSecurity.ComplianceOfficer) ? "compliance"
         : "operations";
-    var activeRoleLabel = char.ToUpperInvariant(activeRoleKey[0]) + activeRoleKey[1..];
+    var activeRoleLabel = activeRoleKey == "all" ? "All permissions"
+        : char.ToUpperInvariant(activeRoleKey[0]) + activeRoleKey[1..];
     var returnUrl = $"{Context.Request.PathBase}{Context.Request.Path}{Context.Request.QueryString}";
     var banks = new List<Bank>();
     if (User.Identity?.IsAuthenticated == true)
@@ -79,6 +85,7 @@
                                 <div class="mb-3">
                                     <label class="form-label" for="context-role">User</label>
                                     <select class="form-select form-select-sm" id="context-role" name="role">
+                                        <option value="all" selected="@(activeRoleKey == "all")">All permissions — access every lab workflow</option>
                                         <option value="maker" selected="@(activeRoleKey == "maker")">Maker — creates payments</option>
                                         <option value="approver" selected="@(activeRoleKey == "approver")">Approver — approves payments</option>
                                         <option value="compliance" selected="@(activeRoleKey == "compliance")">Compliance — reviews screening</option>

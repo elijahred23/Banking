@@ -5,6 +5,7 @@
 <div class="mb-3"><label asp-for="BankId" class="form-label">Bank</label><select asp-for="BankId" asp-items="Model.Banks" class="form-select"></select></div>
 <div class="mb-4"><label class="form-label">Lab password</label><input class="form-control" type="password" name="password" value="fedwire-lab" autocomplete="current-password"><div class="form-text">The shared password is prefilled for this learning tool.</div></div>
 <div class="persona-grid">
+<button class="persona-option" type="submit" name="Role" value="all"><strong>All permissions</strong><span>Create, approve, review compliance, and monitor operations.</span></button>
 <button class="persona-option" type="submit" name="Role" value="maker"><strong>Maker</strong><span>Create payments and submit them for approval.</span></button>
 <button class="persona-option" type="submit" name="Role" value="approver"><strong>Approver</strong><span>Approve or reject payments and payment requests.</span></button>
 <button class="persona-option" type="submit" name="Role" value="compliance"><strong>Compliance</strong><span>Review and disposition potential screening hits.</span></button>

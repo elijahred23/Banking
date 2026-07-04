@@ -25,16 +25,16 @@ public sealed class AuthController(IConfiguration configuration,
     {
         var expectedPassword = configuration["LabUser:Password"] ?? "fedwire-lab";
         var roleKey = model.Role?.Trim().ToLowerInvariant() ?? "";
-        var role = ResolveRole(roleKey);
+        var roles = ResolveRoles(roleKey);
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == model.BankId, token);
-        if (role is null || bank is null
+        if (roles is null || bank is null
             || !string.Equals(password, expectedPassword, StringComparison.Ordinal))
         {
             ModelState.AddModelError("", "Invalid lab credentials.");
             return View(await PopulateAsync(model, db, token));
         }
-        var principal = CreatePrincipal(roleKey, role, bank.Id, bank.Name, bank.RoutingNumber);
+        var principal = CreatePrincipal(roleKey, roles, bank.Id, bank.Name, bank.RoutingNumber);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
         return LocalRedirect(Url.IsLocalUrl(model.ReturnUrl) ? model.ReturnUrl! : "/");
     }
@@ -44,16 +44,16 @@ public sealed class AuthController(IConfiguration configuration,
         CancellationToken token = default)
     {
         var roleKey = role?.Trim().ToLowerInvariant() ?? "";
-        var roleName = ResolveRole(roleKey);
+        var roles = ResolveRoles(roleKey);
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == bankId, token);
-        if (roleName is null || bank is null)
+        if (roles is null || bank is null)
         {
             TempData["Error"] = "The selected lab bank or user is no longer available.";
             return LocalRedirect(Url.IsLocalUrl(returnUrl) ? returnUrl! : "/");
         }
 
-        var principal = CreatePrincipal(roleKey, roleName, bank.Id, bank.Name, bank.RoutingNumber);
+        var principal = CreatePrincipal(roleKey, roles, bank.Id, bank.Name, bank.RoutingNumber);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
         TempData["Notice"] = $"Switched to {RoleLabel(roleKey)} at {bank.Name}.";
         return LocalRedirect(Url.IsLocalUrl(returnUrl) ? returnUrl! : "/");
@@ -86,17 +86,20 @@ public sealed class AuthController(IConfiguration configuration,
         return model;
     }
 
-    private static string? ResolveRole(string roleKey) => roleKey switch
+    private static string[]? ResolveRoles(string roleKey) => roleKey switch
     {
-        "maker" => BankSecurity.PaymentCreator,
-        "approver" => BankSecurity.PaymentApprover,
-        "compliance" => BankSecurity.ComplianceOfficer,
-        "operations" => BankSecurity.Operations,
+        "all" => [BankSecurity.PaymentCreator, BankSecurity.PaymentApprover,
+            BankSecurity.ComplianceOfficer, BankSecurity.Operations],
+        "maker" => [BankSecurity.PaymentCreator],
+        "approver" => [BankSecurity.PaymentApprover],
+        "compliance" => [BankSecurity.ComplianceOfficer],
+        "operations" => [BankSecurity.Operations],
         _ => null
     };
 
     private static string RoleLabel(string roleKey) => roleKey switch
     {
+        "all" => "All permissions",
         "maker" => "Maker",
         "approver" => "Approver",
         "compliance" => "Compliance",
@@ -104,11 +107,19 @@ public sealed class AuthController(IConfiguration configuration,
         _ => roleKey
     };
 
-    private static ClaimsPrincipal CreatePrincipal(string roleKey, string role, Guid bankId,
-        string bankName, string routingNumber) => new(new ClaimsIdentity(
-        [new Claim(ClaimTypes.Name, $"{roleKey}@{routingNumber}"),
-            new Claim(ClaimTypes.Role, role),
-            new Claim(BankSecurity.BankIdClaim, bankId.ToString()),
-            new Claim("bank_name", bankName)],
-        CookieAuthenticationDefaults.AuthenticationScheme));
+    private static ClaimsPrincipal CreatePrincipal(string roleKey, IEnumerable<string> roles,
+        Guid bankId, string bankName, string routingNumber)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, $"{roleKey}@{routingNumber}"),
+            new(BankSecurity.BankIdClaim, bankId.ToString()),
+            new("bank_name", bankName)
+        };
+        if (roleKey == "all")
+            claims.Add(new Claim(BankSecurity.AllPermissionsClaim, "true"));
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims,
+            CookieAuthenticationDefaults.AuthenticationScheme));
+    }
 }
