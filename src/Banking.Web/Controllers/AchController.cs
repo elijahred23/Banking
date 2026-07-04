@@ -167,7 +167,6 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        await using var transaction = await db.Database.BeginTransactionAsync(token);
         var entry = await db.AchEntries.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id
             && x.OriginatingBankId == bankId, token);
         if (entry is null) return NotFound();
@@ -187,22 +186,36 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
         var approvedBy = User.Identity.Name;
         var approvedDate = DateTimeOffset.UtcNow;
         var nextStatus = approve ? AchEntryStatus.Entered : AchEntryStatus.Rejected;
-        var updated = await db.AchEntries.Where(x => x.Id == id && x.OriginatingBankId == bankId
-                && x.Status == AchEntryStatus.PendingApproval)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.ApprovedBy, approvedBy)
-                .SetProperty(x => x.ApprovedDate, approvedDate)
-                .SetProperty(x => x.ApprovalDecisionReason, decisionReason)
-                .SetProperty(x => x.Status, nextStatus), token);
-        if (updated != 1)
+        var strategy = db.Database.CreateExecutionStrategy();
+        var applied = await strategy.ExecuteAsync(async () =>
+        {
+            await using var writeDb = await dbFactory.CreateDbContextAsync(token);
+            await using var transaction = await writeDb.Database.BeginTransactionAsync(token);
+            var updated = await writeDb.AchEntries.Where(x => x.Id == id
+                    && x.OriginatingBankId == bankId && x.Status == AchEntryStatus.PendingApproval)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ApprovedBy, approvedBy)
+                    .SetProperty(x => x.ApprovedDate, approvedDate)
+                    .SetProperty(x => x.ApprovalDecisionReason, decisionReason)
+                    .SetProperty(x => x.Status, nextStatus), token);
+            if (updated != 1)
+            {
+                // A retry after an ambiguous commit observes its own completed decision.
+                return await writeDb.AchEntries.AsNoTracking().AnyAsync(x => x.Id == id
+                    && x.OriginatingBankId == bankId && x.Status == nextStatus
+                    && x.ApprovedBy == approvedBy && x.ApprovedDate == approvedDate, token);
+            }
+            if (approve) writeDb.OutboxMessages.Add(Outbox.Message(Queues.AchEntryCreated,
+                new AchEntryCreated(entry.Id), bankId));
+            await writeDb.SaveChangesAsync(token);
+            await transaction.CommitAsync(token);
+            return true;
+        });
+        if (!applied)
         {
             TempData["Error"] = "Another approver already answered this ACH entry.";
             return RedirectToAction(nameof(Details), new { id });
         }
-        if (approve) db.OutboxMessages.Add(Outbox.Message(Queues.AchEntryCreated,
-            new AchEntryCreated(entry.Id), bankId));
-        await db.SaveChangesAsync(token);
-        await transaction.CommitAsync(token);
         TempData["Notice"] = approve
             ? "ACH entry approved and durably queued for ODFI validation. Approval did not move funds."
             : "ACH entry rejected before validation, batching, transport, or settlement; no funds moved.";
