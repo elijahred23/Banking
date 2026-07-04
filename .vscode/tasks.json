@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build all services",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/Banking.slnx",
+        "--configuration",
+        "Debug"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "initialize debug database",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "${workspaceFolder}/src/Banking.Web/bin/Debug/net10.0/Banking.Web.dll",
+        "--initialize-only"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/src/Banking.Web",
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command": "Warning"
+        }
+      },
+      "dependsOn": "build all services",
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

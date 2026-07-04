@@ -25,6 +25,10 @@ builder.Services.AddBankingInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 await app.Services.InitializeDatabaseAsync(seed: true);
+if (args.Contains("--initialize-only", StringComparer.OrdinalIgnoreCase))
+{
+    return;
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

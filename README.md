@@ -31,6 +31,12 @@ The script builds the solution once, starts the web app before the worker servic
 and stops every project when you press Ctrl+C. Run `python3 run_all.py --help` for
 configuration and build options.
 
+To debug the complete stack in VS Code, open **Run and Debug**, select
+**Banking: All services**, and press F5. The compound configuration builds the solution
+once, starts every web/worker/simulator project under the debugger, opens the web app,
+and stops the full group when the debugging session ends. SQL Server and RabbitMQ must
+already be running at the addresses listed above.
+
 Open the URL printed by `Banking.Web`. The login page lets you select a bank and click the Maker, Approver, Compliance, or Operations persona; the shared lab password `fedwire-lab` is prefilled. Create a payment as the maker, click **Switch user**, and release it as the approver. Choose the receiving bank at login to inspect its received payments. Start the web project first on a fresh database because it creates and upgrades the schema.
 
 ## Guided learning

@@ -1,0 +1,149 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Banking.Web",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.Web/bin/Debug/net10.0/Banking.Web.dll",
+      "cwd": "${workspaceFolder}/src/Banking.Web",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5033"
+      },
+      "console": "internalConsole",
+      "justMyCode": true,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      }
+    },
+    {
+      "name": "Banking.AchService",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.AchService/bin/Debug/net10.0/Banking.AchService.dll",
+      "cwd": "${workspaceFolder}/src/Banking.AchService",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.CheckImageExchangeSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.CheckImageExchangeSimulator/bin/Debug/net10.0/Banking.CheckImageExchangeSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.CheckImageExchangeSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.CheckService",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.CheckService/bin/Debug/net10.0/Banking.CheckService.dll",
+      "cwd": "${workspaceFolder}/src/Banking.CheckService",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.FedAchSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.FedAchSimulator/bin/Debug/net10.0/Banking.FedAchSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.FedAchSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.FedNowSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.FedNowSimulator/bin/Debug/net10.0/Banking.FedNowSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.FedNowSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.FedwireSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.FedwireSimulator/bin/Debug/net10.0/Banking.FedwireSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.FedwireSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.MessageManager",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.MessageManager/bin/Debug/net10.0/Banking.MessageManager.dll",
+      "cwd": "${workspaceFolder}/src/Banking.MessageManager",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.SwiftSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.SwiftSimulator/bin/Debug/net10.0/Banking.SwiftSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.SwiftSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.WireService",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.WireService/bin/Debug/net10.0/Banking.WireService.dll",
+      "cwd": "${workspaceFolder}/src/Banking.WireService",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Banking: All services",
+      "configurations": [
+        "Banking.Web",
+        "Banking.AchService",
+        "Banking.CheckImageExchangeSimulator",
+        "Banking.CheckService",
+        "Banking.FedAchSimulator",
+        "Banking.FedNowSimulator",
+        "Banking.FedwireSimulator",
+        "Banking.MessageManager",
+        "Banking.SwiftSimulator",
+        "Banking.WireService"
+      ],
+      "preLaunchTask": "initialize debug database",
+      "stopAll": true
+    }
+  ]
+}
