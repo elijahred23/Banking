@@ -5,6 +5,9 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<StudioSettings> StudioSettings => Set<StudioSettings>();
+    public DbSet<PayrollMember> PayrollMembers => Set<PayrollMember>();
+    public DbSet<BalanceReceipt> BalanceReceipts => Set<BalanceReceipt>();
     public DbSet<Bank> Banks => Set<Bank>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Account> Accounts => Set<Account>();
@@ -207,5 +210,25 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<OperationsCase>().HasIndex(x => new { x.BankId, x.Rail, x.Reference });
         modelBuilder.Entity<OperationsCase>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId)
             .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioSettings>().HasIndex(x => new { x.BankId, x.Kind }).IsUnique();
+        modelBuilder.Entity<StudioSettings>().Property(x => x.Rail).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<StudioSettings>().Property(x => x.WireScenario).HasConversion<string>().HasMaxLength(32);
+        modelBuilder.Entity<StudioSettings>().Property(x => x.AchScenario).HasConversion<string>().HasMaxLength(32);
+        modelBuilder.Entity<StudioSettings>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PayrollMember>().HasIndex(x => new { x.BankId, x.EmployerAccountId, x.CheckingAccountId }).IsUnique();
+        modelBuilder.Entity<PayrollMember>().HasIndex(x => new { x.BankId, x.NextPayDate });
+        modelBuilder.Entity<PayrollMember>().Property(x => x.NetPay).HasPrecision(19, 4);
+        modelBuilder.Entity<PayrollMember>().Property(x => x.SavingsPercent).HasPrecision(5, 2);
+        modelBuilder.Entity<PayrollMember>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PayrollMember>().HasOne(x => x.EmployerAccount).WithMany().HasForeignKey(x => x.EmployerAccountId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PayrollMember>().HasOne(x => x.CheckingAccount).WithMany().HasForeignKey(x => x.CheckingAccountId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PayrollMember>().HasOne(x => x.SavingsAccount).WithMany().HasForeignKey(x => x.SavingsAccountId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BalanceReceipt>().HasIndex(x => new { x.BankId, x.PaymentKey, x.AccountCode, x.Movement }).IsUnique();
+        modelBuilder.Entity<BalanceReceipt>().HasIndex(x => new { x.BankId, x.CreatedDate });
+        modelBuilder.Entity<BalanceReceipt>().Property(x => x.Rail).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<BalanceReceipt>().Property(x => x.Before).HasPrecision(19, 4);
+        modelBuilder.Entity<BalanceReceipt>().Property(x => x.Delta).HasPrecision(19, 4);
+        modelBuilder.Entity<BalanceReceipt>().Property(x => x.After).HasPrecision(19, 4);
+        modelBuilder.Entity<BalanceReceipt>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
     }
 }

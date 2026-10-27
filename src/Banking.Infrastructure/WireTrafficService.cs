@@ -20,6 +20,7 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
             var state = await db.SimulationStates.SingleOrDefaultAsync(x => x.Name == name, token);
             if (state is null || state.IsPaused) return;
             var now = DateTimeOffset.UtcNow;
+            var settings = await db.StudioSettings.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire", token);
             // Release only this bank's simulator-made wires, on a later tick than creation.
             var pending = await db.WireTransfers.Include(x => x.Events).Where(x =>
                 x.BankId == bankId && x.CreatedBy == WireTraffic.Maker
@@ -33,19 +34,51 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
             var outstanding = await db.WireTransfers.CountAsync(x => x.BankId == bankId
                 && x.CreatedBy == WireTraffic.Maker && x.Status != WireStatus.Settled
                 && x.Status != WireStatus.Rejected && x.Status != WireStatus.Returned, token);
-            if (state.CurrentUtc <= now && outstanding < 5)
+            if (settings?.RemainingRuns == 0) state.IsPaused = true;
+            if (!state.IsPaused && state.CurrentUtc <= now && outstanding < 5)
             {
+                var rail = settings?.Rail ?? PaymentRail.Fedwire;
+                if (settings?.Preset == "RailComparison")
+                {
+                    rail = new[] { PaymentRail.Fedwire, PaymentRail.FedNow, PaymentRail.SwiftCbprPlus }[(3 - (settings.RemainingRuns ?? 3)) % 3];
+                }
                 var sources = await db.Accounts.Include(x => x.Customer).ThenInclude(x => x.Bank)
-                    .Where(x => x.Customer.BankId == bankId && x.Customer.Bank.CountryCode == "US"
+                    .Where(x => x.Customer.BankId == bankId && (rail == PaymentRail.SwiftCbprPlus || x.Customer.Bank.CountryCode == "US")
                         && x.Status == AccountStatus.Open).ToListAsync(token);
                 var destinations = await db.Accounts.Include(x => x.Customer).ThenInclude(x => x.Bank)
-                    .Where(x => x.Customer.BankId != bankId && x.Customer.Bank.CountryCode == "US"
+                    .Where(x => x.Customer.BankId != bankId && (rail == PaymentRail.SwiftCbprPlus || x.Customer.Bank.CountryCode == "US")
                         && x.Status == AccountStatus.Open).ToListAsync(token);
+                if (rail == PaymentRail.FedNow)
+                {
+                    sources = sources.Where(x => x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowSendEnabled).ToList();
+                    destinations = destinations.Where(x => x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowReceiveEnabled && x.Customer.Bank.FedNowOnline).ToList();
+                }
+                if (rail == PaymentRail.SwiftCbprPlus)
+                {
+                    sources = sources.Where(x => x.Customer.Bank.SwiftEnabled).ToList();
+                    destinations = destinations.Where(x => x.Customer.Bank.SwiftEnabled).ToList();
+                }
                 var eligible = sources.Where(x => WireTraffic.Amount(x) >= 1m
-                    && PaymentRiskPolicy.WithinFedwireLiquidity(x.Customer.Bank, WireTraffic.Amount(x))).ToList();
+                    && (rail == PaymentRail.SwiftCbprPlus || PaymentRiskPolicy.WithinFedwireLiquidity(x.Customer.Bank, WireTraffic.Amount(x)))).ToList();
                 if (eligible.Count > 0 && destinations.Count > 0)
-                    db.WireTransfers.Add(WireTraffic.Create(eligible[Random.Shared.Next(eligible.Count)],
-                        destinations[Random.Shared.Next(destinations.Count)], now));
+                {
+                    var source = eligible[Random.Shared.Next(eligible.Count)];
+                    var destination = destinations[Random.Shared.Next(destinations.Count)];
+                    if (rail == PaymentRail.SwiftCbprPlus)
+                    {
+                        var resolver = new PaymentRouteResolver(factory);
+                        foreach (var candidate in destinations.OrderBy(_ => Random.Shared.Next()))
+                        {
+                            try { await resolver.ResolveRouteAsync(bankId, candidate.Customer.BankId, "USD", CorrespondentRails.Swift, token); destination = candidate; break; }
+                            catch (InvalidOperationException) { /* The normal wire service records unavailable-route rejections. */ }
+                        }
+                    }
+                    var wire = WireTraffic.Create(source, destination, now, rail: rail,
+                        scenario: settings is null ? ProcessingScenario.PendingThenAccepted : StudioPolicy.Scenario(settings.WireScenario),
+                        complianceReview: settings?.WireScenario == StudioWireScenario.ComplianceReview);
+                    db.WireTransfers.Add(wire);
+                    if (settings?.RemainingRuns is > 0) settings.RemainingRuns--;
+                }
                 state.CurrentUtc = now.AddSeconds(60d / (double)Math.Clamp(state.SpeedMultiplier, 1m, 12m));
             }
             state.UpdatedDate = now;

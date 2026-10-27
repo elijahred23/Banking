@@ -83,6 +83,8 @@ public sealed class Worker(
                 {
                     debitBank.MasterAccountBalance -= payment.Amount;
                     creditBank.MasterAccountBalance += payment.Amount;
+                    BalanceReceipts.Bank(db, payment.CorrelationId, payment.Rail, debitBank, -payment.Amount);
+                    BalanceReceipts.Bank(db, payment.CorrelationId, payment.Rail, creditBank, payment.Amount);
                 }
                 db.FedSettlements.Add(settlement);
             }

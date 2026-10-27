@@ -67,6 +67,7 @@ public static class ServiceRegistration
             await EnsureInternationalBanksAsync(db, cancellationToken);
             await EnsureCorrespondentRoutesAsync(db, cancellationToken);
             await TrafficPopulation.SeedAsync(factory, cancellationToken);
+            await PayrollRosterSeeder.SeedAsync(factory, cancellationToken);
         }
     }
 

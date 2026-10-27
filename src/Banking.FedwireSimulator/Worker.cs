@@ -36,6 +36,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 {
                     sender.MasterAccountBalance -= payment.Amount;
                     receiver.MasterAccountBalance += payment.Amount;
+                    BalanceReceipts.Bank(db, payment.CorrelationId, payment.Rail, sender, -payment.Amount);
+                    BalanceReceipts.Bank(db, payment.CorrelationId, payment.Rail, receiver, payment.Amount);
                 }
                 settlement = new FedSettlement
                 {

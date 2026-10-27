@@ -795,6 +795,16 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
         var incomingWire = incoming!;
         WireReturnPosting.Complete(wire, incomingWire, origin, beneficiary, sender, receiver);
+        if (origin is not null && beneficiary is not null)
+        {
+            BalanceReceipts.Customer(db, wire.BankId, wire.CorrelationId, wire.Rail, origin, wire.Amount, "Return");
+            BalanceReceipts.Customer(db, incomingWire.BankId, wire.CorrelationId, wire.Rail, beneficiary, -wire.Amount, "Return");
+        }
+        if (wire.Rail != PaymentRail.SwiftCbprPlus)
+        {
+            BalanceReceipts.Bank(db, wire.CorrelationId, wire.Rail, sender, wire.Amount, "Return");
+            BalanceReceipts.Bank(db, wire.CorrelationId, wire.Rail, receiver, -wire.Amount, "Return");
+        }
         wireCase.Status = WireCaseStatus.ReturnCompleted;
         wireCase.Resolution = "The receiving institution accepted the request and returned the full payment amount.";
         var response = CreateCamt029(wire, wireCase, receiver, sender, true);

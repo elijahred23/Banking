@@ -10,8 +10,10 @@ public static class WireTraffic
     public static bool IsGenerated(WireTransfer wire) => wire.CreatedBy == Maker;
     public static decimal Amount(Account source) => Math.Min(250m, decimal.Floor(source.AvailableBalance / 10m));
 
-    public static WireTransfer Create(Account source, Account destination, DateTimeOffset now, Random? random = null)
+    public static WireTransfer Create(Account source, Account destination, DateTimeOffset now, Random? random = null, PaymentRail rail = PaymentRail.Fedwire,
+        ProcessingScenario scenario = ProcessingScenario.PendingThenAccepted, bool complianceReview = false)
     {
+        if (!StudioPolicy.WireRail(rail)) throw new InvalidOperationException("Choose a wire rail.");
         if (source.Customer.BankId == destination.Customer.BankId)
             throw new InvalidOperationException("Traffic must cross banks.");
         var amount = TrafficAmounts.Sample(1m, 250m, Amount(source), random);
@@ -23,10 +25,10 @@ public static class WireTraffic
             BankId = source.Customer.BankId, SenderBankId = source.Customer.BankId,
             ReceiverBankId = destination.Customer.BankId, FromAccountId = source.Id,
             BeneficiaryAccountNumber = destination.AccountNumber,
-            SenderName = source.Customer.Name, ReceiverName = destination.Customer.Name,
-            Amount = amount, Direction = WireDirection.Outgoing, Rail = PaymentRail.Fedwire,
+            SenderName = source.Customer.Name, ReceiverName = complianceReview ? "SANCTIONED PARTY (lab)" : destination.Customer.Name,
+            Amount = amount, Direction = WireDirection.Outgoing, Rail = rail,
             Status = WireStatus.PendingApproval, CreatedBy = Maker, CreatedDate = now,
-            Scenario = ProcessingScenario.PendingThenAccepted
+            Scenario = scenario
         };
         wire.Events.Add(new WireEvent { WireTransferId = wire.Id, EventType = "Created",
             Description = "Lab traffic maker generated a customer wire. No money has moved." });

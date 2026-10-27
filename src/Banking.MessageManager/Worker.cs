@@ -80,6 +80,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 receiver.Balance += entry.Amount;
                 originBank.MasterAccountBalance -= entry.Amount;
                 receiverBank.MasterAccountBalance += entry.Amount;
+                BalanceReceipts.Customer(db, entry.OriginatingBankId, entry.Id, PaymentRail.Ach, origin, -entry.Amount);
+                BalanceReceipts.Customer(db, receiver.Customer.BankId, entry.Id, PaymentRail.Ach, receiver, entry.Amount);
+                BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, originBank, -entry.Amount);
+                BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, receiverBank, entry.Amount);
                 AddAchCreditJournal(db, entry, origin, receiver);
             }
             else
@@ -88,6 +92,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 origin.Balance += entry.Amount;
                 receiverBank.MasterAccountBalance -= entry.Amount;
                 originBank.MasterAccountBalance += entry.Amount;
+                BalanceReceipts.Customer(db, entry.OriginatingBankId, entry.Id, PaymentRail.Ach, origin, entry.Amount);
+                BalanceReceipts.Customer(db, receiver.Customer.BankId, entry.Id, PaymentRail.Ach, receiver, -entry.Amount);
+                BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, originBank, entry.Amount);
+                BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, receiverBank, -entry.Amount);
                 AddAchDebitJournal(db, entry, origin, receiver);
             }
             entry.Status = AchEntryStatus.Posted;
@@ -322,6 +330,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             {
                 var account = await db.Accounts.SingleAsync(x => x.Id == accountId, token);
                 WirePostingPolicy.SettleCustomerPayment(wire, account);
+                BalanceReceipts.Customer(db, wire.BankId, wire.CorrelationId, wire.Rail, account, -wire.Amount);
                 AddOutgoingJournal(db, wire, account);
                 db.WireEvents.Add(Event(wire.Id, "Posted",
                     $"Customer debit posted; {wire.Amount:C} hold removed."));
@@ -397,6 +406,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             {
                 incoming.ToAccountId = account.Id;
                 account.Balance += incoming.Amount;
+                BalanceReceipts.Customer(db, incoming.BankId, incoming.CorrelationId, incoming.Rail, account, incoming.Amount);
                 AddIncomingJournal(db, incoming, account);
                 WireWorkflow.Transition(incoming, WireStatus.Completed);
                 incoming.Events.Add(Event(Guid.Empty, "Posted", $"Funds posted to account ending {account.AccountNumber[^4..]}."));
@@ -509,6 +519,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             receiver.Balance -= entry.Amount;
             originBank.MasterAccountBalance += entry.Amount;
             receiverBank.MasterAccountBalance -= entry.Amount;
+            BalanceReceipts.Customer(db, entry.OriginatingBankId, entry.Id, PaymentRail.Ach, origin, entry.Amount, "Return");
+            BalanceReceipts.Customer(db, receiver.Customer.BankId, entry.Id, PaymentRail.Ach, receiver, -entry.Amount, "Return");
+            BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, originBank, entry.Amount, "Return");
+            BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, receiverBank, -entry.Amount, "Return");
             AddAchCreditReturnJournal(db, entry, origin, receiver);
         }
         else
@@ -517,6 +531,10 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             origin.Balance -= entry.Amount;
             receiverBank.MasterAccountBalance += entry.Amount;
             originBank.MasterAccountBalance -= entry.Amount;
+            BalanceReceipts.Customer(db, entry.OriginatingBankId, entry.Id, PaymentRail.Ach, origin, -entry.Amount, "Return");
+            BalanceReceipts.Customer(db, receiver.Customer.BankId, entry.Id, PaymentRail.Ach, receiver, entry.Amount, "Return");
+            BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, originBank, -entry.Amount, "Return");
+            BalanceReceipts.Bank(db, entry.Id, PaymentRail.Ach, receiverBank, entry.Amount, "Return");
             AddAchDebitReturnJournal(db, entry, origin, receiver);
         }
     }

@@ -6,6 +6,12 @@ namespace Banking.Infrastructure;
 /// </summary>
 public sealed class LabSchemaUpgradeRunner
 {
-    public Task UpgradeAsync(BankingDbContext db, CancellationToken token = default) =>
-        ServiceRegistration.ApplyLabSchemaUpgradeAsync(db, token);
+    public async Task UpgradeAsync(BankingDbContext db, CancellationToken token = default)
+    {
+        await ServiceRegistration.ApplyLabSchemaUpgradeAsync(db, token);
+        using var stream = typeof(LabSchemaUpgradeRunner).Assembly.GetManifestResourceStream("StudioSupport.sql")!;
+        using var reader = new StreamReader(stream);
+        await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(
+            db.Database, await reader.ReadToEndAsync(token), token);
+    }
 }
