@@ -1,7 +1,12 @@
 @model AchBatchIndexViewModel
 @{ ViewData["Title"] = "ACH batches"; }
 <div class="mb-3"><div class="eyebrow">@Model.Bank.Name</div><h1>ACH batches</h1></div><partial name="_AchNav" />
-<div class="surface table-responsive"><table class="table mb-0"><thead><tr><th>Batch</th><th>Company</th><th>SEC</th><th>Effective</th><th>Entries</th><th>Totals</th><th>Status</th></tr></thead><tbody>
-@foreach (var batch in Model.Batches) { <tr><td><code>@batch.Id.ToString()[..8]</code> / @batch.BatchNumber</td><td>@batch.CompanyName<br><span class="text-secondary">@batch.CompanyId</span></td><td>@batch.SecCode</td><td>@batch.EffectiveEntryDate</td><td>@batch.Entries.Count</td><td>@batch.Entries.Sum(x => x.Amount).ToString("C")</td><td>@batch.Status</td></tr> }
-@if (Model.Batches.Count == 0) { <tr><td colspan="7" class="text-center text-secondary py-4">No ACH batches.</td></tr> }
+<div class="surface table-responsive"><table class="table mb-0"><thead><tr><th>Batch</th><th>Company</th><th>SEC</th><th>Effective</th><th>Entries</th><th>Totals</th><th>Status</th><th>NACHA learning file</th></tr></thead><tbody>
+@foreach (var batch in Model.Batches) { <tr><td><code>@batch.Id.ToString()[..8]</code> / @batch.BatchNumber</td><td>@batch.CompanyName<br><span class="text-secondary">@batch.CompanyId</span></td><td>@batch.SecCode</td><td>@batch.EffectiveEntryDate</td><td>@batch.Entries.Count</td><td>@batch.Entries.Sum(x => x.Amount).ToString("C")</td><td>@batch.Status</td><td>
+@if (batch.AchFileId is Guid fileId)
+{ <a asp-action="Explorer" asp-route-id="@fileId">Inspect saved file</a><br /><a asp-action="DownloadNacha" asp-route-id="@fileId">Download .ach</a> }
+else if (batch.Entries.Count > 0)
+{ <a asp-action="Explorer" asp-route-batchId="@batch.Id">Inspect draft preview</a><br /><a asp-action="DownloadNacha" asp-route-batchId="@batch.Id">Download draft .ach</a> }
+</td></tr> }
+@if (Model.Batches.Count == 0) { <tr><td colspan="8" class="text-center text-secondary py-4">No ACH batches.</td></tr> }
 </tbody></table></div>

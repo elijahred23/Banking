@@ -2,8 +2,21 @@
 @{ ViewData["Title"] = "NACHA explorer"; }
 <div class="mb-3"><div class="eyebrow">PRESENTATION-ONLY LAB</div><h1>Annotated NACHA explorer</h1><p class="text-secondary">Inspect field boundaries, then edit a browser-submitted copy and predict whether the teaching parser accepts it. Saved files are never changed.</p></div>
 <partial name="_AchNav" />
+@if (Model.DraftBatchId is not null)
+{
+    <div class="alert alert-info"><strong>Draft preview · not submitted.</strong> This batch is waiting for its eligible file cutoff (effective @Model.EffectiveEntryDate?.ToString("yyyy-MM-dd")). These preview trace numbers and the file header are illustrative; the actual file may combine several batches. Inspecting or downloading this copy does not change the batch, reserve more funds, or send anything.</div>
+}
+@if (Model.FileId is not null || Model.DraftBatchId is not null)
+{
+    <div class="d-flex flex-wrap gap-3 align-items-center mb-3">
+        <strong>@(Model.DraftBatchId is not null ? "Draft batch" : "Saved NACHA file") · @Model.FileStatus</strong>
+        <a class="btn btn-outline-primary" asp-action="DownloadNacha" asp-route-id="@Model.FileId" asp-route-batchId="@Model.DraftBatchId">Download @(Model.DraftBatchId is not null ? "draft " : "").ach file</a>
+        <span class="small text-secondary">94-character records · header → batch → entries / addenda → controls → padding. The download is the original preview/saved payload, not your sandbox edits.</span>
+    </div>
+}
 <form asp-action="Explorer" method="post" class="surface p-4 mb-4">
     <input asp-for="FileId" type="hidden" />
+    <input asp-for="DraftBatchId" type="hidden" />
     <div class="mb-3"><label asp-for="Payload" class="form-label">Fixed-width payload</label><textarea asp-for="Payload" class="form-control font-monospace" rows="12" spellcheck="false"></textarea><span asp-validation-for="Payload" class="text-danger"></span></div>
     <div class="row align-items-end"><div class="col-md-5 mb-3"><label asp-for="Prediction" class="form-label"></label><select asp-for="Prediction" class="form-select"><option>Accepted</option><option>Rejected</option></select></div><div class="col-md-7 mb-3"><button class="btn btn-primary">Validate my prediction</button></div></div>
 </form>

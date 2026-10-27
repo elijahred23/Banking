@@ -244,3 +244,21 @@ This test uses a uniquely named temporary database and prefixed RabbitMQ queues,
 checks all three activities through the actual workers, validates NACHA payloads,
 verifies balanced journals and conserved balances, and redelivers final results to
 verify no duplicate posting. It cleans up only its own test database and queues.
+
+### Inspecting an ACH file before its cutoff
+
+ACH batches with future effective dates have not been submitted yet. The studio,
+batch list, and originating bank's entry details now offer **Inspect draft NACHA
+file** and **Download draft .ach** after ODFI batching. The draft uses a separate
+in-memory copy with illustrative trace numbers and file header values. Viewing,
+validating, or downloading it never assigns durable traces, creates a saved file,
+changes a payment status, or sends the batch. The actual file may combine batches
+and receive different trace numbers when the eligible cutoff runs.
+
+After a saved file exists, the same batch inspection links resolve to its exact
+stored payload. The annotated explorer explains field positions in the file
+header, batch header, entry details, addenda, batch/file controls, and padding.
+Downloads contain the original draft/saved payload rather than edited sandbox
+text. Full file access remains scoped to the originating bank; receiving banks
+can switch lab context to inspect that originator's file. The Files page retains
+saved payloads and now also offers direct `.ach` downloads.

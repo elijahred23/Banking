@@ -32,6 +32,31 @@
             var batched = run.All(x => x.AchBatchId is not null);
             var filed = run.All(x => x.Batch?.File is not null);
             var mode = first.Purpose == AchPaymentPurpose.Payroll ? AchTrafficMode.Payroll : first.Purpose == AchPaymentPurpose.ConsumerDebit ? AchTrafficMode.Utilities : AchTrafficMode.Suppliers;
+            @if (first.OriginatingBankId == Model.Bank.Id)
+            {
+                <div class="studio-nacha-links">
+                @foreach (var batch in run.Where(x => x.AchBatchId != null).Select(x => x.Batch!).DistinctBy(x => x.Id))
+                {
+                    @if (batch.AchFileId is Guid attachedFile)
+                    {
+                        <a class="btn btn-sm btn-outline-primary" asp-controller="Ach" asp-action="Explorer" asp-route-id="@attachedFile">Inspect NACHA file</a>
+                        <a asp-controller="Ach" asp-action="DownloadNacha" asp-route-id="@attachedFile">Download .ach</a>
+                    }
+                    else
+                    {
+                        <a class="btn btn-sm btn-outline-primary" asp-controller="Ach" asp-action="Explorer" asp-route-batchId="@batch.Id">Inspect draft NACHA file</a>
+                        <a asp-controller="Ach" asp-action="DownloadNacha" asp-route-batchId="@batch.Id">Download draft .ach</a>
+                        <span>Draft only · waiting for effective date / file cutoff</span>
+                    }
+                }
+                @if (run.All(x => x.AchBatchId is null))
+                { <span>NACHA preview becomes available after approval and ODFI batching.</span> }
+                </div>
+            }
+            @if (first.OriginatingBankId != Model.Bank.Id)
+            {
+                <p class="traffic-caption">The full NACHA file belongs to @first.OriginatingBank.Name. Switch to that bank to inspect its file or draft; this bank can inspect its own entry lifecycle below.</p>
+            }
             <details class="traffic-wire @(rejected ? "traffic-rejected" : "")" data-wire-id="@run.Key">
                 <summary>
                     <span class="traffic-wire-top"><span class="traffic-direction">@AchTraffic.Title(mode).ToUpperInvariant()</span><strong>@run.Sum(x => x.Amount).ToString("C")</strong><span class="traffic-pill">@(rejected ? "Review outcome" : paid == run.Count() ? "Posted" : batched && first.EffectiveEntryDate > date ? "Scheduled" : approved ? "Processing" : "Awaiting lab approval")</span></span>
@@ -47,7 +72,7 @@
                         <article class="ach-entry" data-entry-id="@entry.Id" data-status="@entry.Status" data-amount="@entry.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)">
                             <div><strong>@entry.ReceiverName</strong><span>@entry.ReceivingBank?.Name · •••• @entry.ReceivingAccountNumber.Substring(Math.Max(0, entry.ReceivingAccountNumber.Length - 4))</span></div>
                             <div><strong>@entry.Amount.ToString("C")</strong><span class="traffic-pill">@entry.Status</span></div>
-                            <dl class="traffic-reference"><dt>Trace</dt><dd>@(entry.TraceNumber ?? "Assigned at file cutoff")</dd><dt>Approval</dt><dd>@(entry.ApprovedBy ?? "Waiting for separate simulated approver")</dd><dt>NACHA file</dt><dd>@(entry.Batch?.File is null ? "Not yet built" : $"{entry.Batch.File.Id.ToString()[..8]} · {entry.Batch.File.Status}")</dd><dt>Posting evidence</dt><dd>@(posting is null ? "No journal posted yet" : $"{posting.PostedAt.ToLocalTime():HH:mm:ss} · debits {posting.Debits:C} / credits {posting.Credits:C}")</dd></dl>
+                            <dl class="traffic-reference"><dt>Trace</dt><dd>@(entry.TraceNumber ?? "Assigned at file cutoff")</dd><dt>Approval</dt><dd>@(entry.ApprovedBy ?? "Waiting for separate simulated approver")</dd><dt>NACHA file</dt><dd>@(entry.Batch?.File is null ? "Draft available above once batched; saved file waits for eligible cutoff" : $"{entry.Batch.File.Id.ToString()[..8]} · {entry.Batch.File.Status}")</dd><dt>Posting evidence</dt><dd>@(posting is null ? "No journal posted yet" : $"{posting.PostedAt.ToLocalTime():HH:mm:ss} · debits {posting.Debits:C} / credits {posting.Credits:C}")</dd></dl>
                             <a asp-controller="Ach" asp-action="Details" asp-route-id="@entry.Id">Inspect lifecycle &amp; accounting →</a>
                             @if (entry.OriginatingBankId == Model.Bank.Id && entry.Batch?.AchFileId is Guid fileId)
                             { <a asp-controller="Ach" asp-action="Explorer" asp-route-id="@fileId">Explore NACHA records →</a> }

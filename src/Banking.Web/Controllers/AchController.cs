@@ -223,18 +223,63 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
     }
 
     [HttpGet]
-    public async Task<IActionResult> Explorer(Guid? id, CancellationToken token)
+    public async Task<IActionResult> Explorer(Guid? id, CancellationToken token, Guid? batchId = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var model = await LoadNachaAsync(db, bankId, id, batchId, token);
+        if (model is null) return NotFound();
+        return View(model);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DownloadNacha(Guid? id, Guid? batchId, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        if (id is null && batchId is null) return BadRequest("Choose a saved file or a draft batch.");
+        var model = await LoadNachaAsync(db, bankId, id, batchId, token);
+        if (model is null) return NotFound();
+        var name = model.DraftBatchId is Guid draft
+            ? $"NACHA-DRAFT-{draft:N}.ach" : $"NACHA-{model.FileId:N}.ach";
+        Response.Headers.CacheControl = "no-store";
+        return File(System.Text.Encoding.UTF8.GetBytes(model.Payload), "text/plain; charset=utf-8", name);
+    }
+
+    private static async Task<AchNachaSandboxViewModel?> LoadNachaAsync(BankingDbContext db, Guid bankId,
+        Guid? id, Guid? batchId, CancellationToken token)
+    {
+        if (id is not null && batchId is not null) return null;
+        if (batchId is Guid draftId)
+        {
+            var batch = await db.AchBatches.AsNoTracking().Include(x => x.Entries).Include(x => x.OriginatingBank)
+                .SingleOrDefaultAsync(x => x.Id == draftId && x.OriginatingBankId == bankId, token);
+            if (batch is null || batch.Entries.Count == 0) return null;
+            // A saved file always wins once the cutoff has run: inspection must show the exact transmitted payload.
+            if (batch.AchFileId is Guid saved) id = saved;
+            else
+            {
+                var payload = new NachaDraftPreview(new NachaFileWriter()).Create(batch.OriginatingBank, batch, DateTimeOffset.UtcNow);
+                return new AchNachaSandboxViewModel { DraftBatchId = batch.Id, Payload = payload,
+                    FileStatus = "Draft — not submitted", EffectiveEntryDate = batch.EffectiveEntryDate,
+                    Records = NachaRecordAnnotator.Annotate(payload) };
+            }
+        }
         var file = id is null
-            ? await db.AchFiles.Where(x => x.OriginatingBankId == bankId).OrderByDescending(x => x.CreatedDate)
-                .AsNoTracking().FirstOrDefaultAsync(token)
+            ? await db.AchFiles.AsNoTracking().Where(x => x.OriginatingBankId == bankId)
+                .OrderByDescending(x => x.CreatedDate).FirstOrDefaultAsync(token)
             : await db.AchFiles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.OriginatingBankId == bankId, token);
-        if (id is not null && file is null) return NotFound();
-        var payload = file?.RawNachaPayload ?? "";
-        return View(new AchNachaSandboxViewModel { FileId = file?.Id, Payload = payload,
-            Records = NachaRecordAnnotator.Annotate(payload) });
+        if (id is not null && file is null) return null;
+        if (file is null && id is null)
+        {
+            var waiting = await db.AchBatches.AsNoTracking().Where(x => x.OriginatingBankId == bankId
+                    && x.AchFileId == null && x.Entries.Any())
+                .OrderByDescending(x => x.EffectiveEntryDate).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(token);
+            if (waiting is not null) return await LoadNachaAsync(db, bankId, null, waiting, token);
+        }
+        var savedPayload = file?.RawNachaPayload ?? "";
+        return new AchNachaSandboxViewModel { FileId = file?.Id, Payload = savedPayload, FileStatus = file?.Status,
+            Records = NachaRecordAnnotator.Annotate(savedPayload) };
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -242,8 +287,21 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
-        if (model.FileId is not null && !await db.AchFiles.AnyAsync(x => x.Id == model.FileId
-            && x.OriginatingBankId == bankId, token)) return NotFound();
+        if (model.FileId is not null)
+        {
+            var savedFile = await db.AchFiles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == model.FileId
+                && x.OriginatingBankId == bankId, token);
+            if (savedFile is null) return NotFound();
+            model.FileStatus = savedFile.Status;
+        }
+        if (model.DraftBatchId is Guid draftId)
+        {
+            var batch = await db.AchBatches.AsNoTracking().SingleOrDefaultAsync(x => x.Id == draftId && x.OriginatingBankId == bankId, token);
+            if (batch is null) return NotFound();
+            model.FileId = null;
+            model.EffectiveEntryDate = batch.EffectiveEntryDate;
+            model.FileStatus = "Edited draft copy — not submitted";
+        }
         model.Result = parser.Validate(model.Payload);
         model.Records = NachaRecordAnnotator.Annotate(model.Payload);
         model.PredictionCorrect = string.Equals(model.Prediction, model.Result.IsValid ? "Accepted" : "Rejected",

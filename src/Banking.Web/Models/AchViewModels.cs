@@ -76,6 +76,9 @@ public sealed record AchDetailsViewModel(Bank Bank, AchEntry Entry, AchBatch? Ba
 public sealed class AchNachaSandboxViewModel
 {
     public Guid? FileId { get; set; }
+    public Guid? DraftBatchId { get; set; }
+    public DateOnly? EffectiveEntryDate { get; set; }
+    public string? FileStatus { get; set; }
     [Required] public string Payload { get; set; } = "";
     [Display(Name = "Predict the result")] public string Prediction { get; set; } = "Accepted";
     public NachaValidationResult? Result { get; set; }

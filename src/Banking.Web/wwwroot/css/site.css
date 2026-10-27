@@ -404,3 +404,5 @@ textarea.form-control { min-height:auto; }
 .ach-entry>dl { width:100%; margin:0; } .ach-entry>a { font-size:.7rem; }
 .traffic-account-scroll { max-height:55rem; overflow-y:auto; scrollbar-width:thin; padding-right:.4rem; }
 @media(max-width:650px) { .ach-activity-grid { grid-template-columns:1fr; } .ach-activity-grid article { padding:1rem; } .traffic-account-scroll { max-height:35rem; } }
+.studio-nacha-links { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .85rem; margin:.9rem 0 .3rem; font-size:.75rem; }
+.studio-nacha-links>span { color:#59768b; }

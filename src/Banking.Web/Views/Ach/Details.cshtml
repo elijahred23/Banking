@@ -5,6 +5,30 @@
     <span class="badge text-bg-light align-self-start">@entry.Status</span>
 </div>
 <partial name="_AchNav" />
+@if (entry.OriginatingBankId == Model.Bank.Id && entry.AchBatchId is Guid batchId)
+{
+    <section class="surface p-3 mb-4 d-flex flex-wrap align-items-center gap-3">
+        @if (Model.File is not null)
+        {
+            <strong>Attached NACHA file · @Model.File.Status</strong>
+            <a class="btn btn-outline-primary" asp-action="Explorer" asp-route-id="@Model.File.Id">Inspect records &amp; fields</a>
+            <a asp-action="DownloadNacha" asp-route-id="@Model.File.Id">Download .ach</a>
+        }
+        else
+        {
+            <strong>Draft NACHA preview · not submitted</strong>
+            <a class="btn btn-outline-primary" asp-action="Explorer" asp-route-batchId="@batchId">Inspect draft records &amp; fields</a>
+            <a asp-action="DownloadNacha" asp-route-batchId="@batchId">Download draft .ach</a>
+            <span class="text-secondary small">The saved file is built at the eligible cutoff; previewing changes no payment state.</span>
+        }
+    </section>
+}
+
+
+@if (entry.OriginatingBankId != Model.Bank.Id)
+{
+    <p class="text-secondary small">Full NACHA files and draft previews belong to the originating bank. Switch to that bank's lab context to inspect its file; this view shows your bank's entry lifecycle.</p>
+}
 
 @if (entry.Status == AchEntryStatus.PendingApproval)
 {
