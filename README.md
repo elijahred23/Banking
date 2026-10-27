@@ -146,3 +146,101 @@ dotnet test Banking.slnx
 ```
 
 The domain tests verify generated headers and UETRs, catalog coverage, generic construction of every supported wire-message type, Fed and CBPR+ statuses, semantic profile validation, and malformed XML handling. Generic construction validates the ISO envelope, message identity, and header consistency; authoritative scheme XSD and MyStandards validation remain external requirements.
+
+## Live wire traffic studio
+
+Sign in as **Operations** (or **All permissions**) and open **Wire studio** at
+`/Simulator`. Choose a pace and start traffic for the active bank. The new
+`Banking.WireTrafficSimulator` service is discovered by `python3 run_all.py`.
+It generates domestic Fedwire customer wires between open US-bank accounts,
+then releases them on a later tick with a distinct simulated approver identity.
+This is an explicit lab automation policy; it cannot approve human-created wires
+or bypass compliance review. Customer amounts are capped at $250 and adapt to
+available funds. Five outstanding wires per originating bank bound the backlog.
+The usual WireService, MessageManager, FedwireSimulator, and web outbox publisher
+must be running. Accepted wires generate the destination bank's incoming record
+through the existing settlement and accounting path.
+
+The page refreshes every 1.5 seconds, highlights changed balances, and shows
+expandable payment timelines with links to ISO messages and accounting details.
+Cash, customers, and wire records remain scoped to the active bank; switch bank
+from the header to follow the receiving side. The latest 40 generated incoming
+and outgoing wire records are shown. Generation starts paused and continues
+while the page is closed until paused explicitly. Pause stops new generation
+and simulated approvals; already released payments finish normally. No history,
+payments, or journals are deleted.
+
+Traffic schedules reuse the existing `SimulationStates` store with names
+`wire-traffic:{bankId:N}`. For those names only, `CurrentUtc` means next generation
+time and `SpeedMultiplier` means wires per minute (1–12); `UpdatedDate` is the
+worker heartbeat. The `default` learning clock remains independent. Schedules,
+wire creation, approval, and outbox insertion are transactional, with serializable
+coordination across generator instances. Failed ticks retry on the next pass;
+committed approvals enqueue once and the existing inbox/outbox handles delivery
+retries. This adds no schema migration and never connects to real wire rails.
+
+## ACH city studio and expanded lab customers
+
+Open `/AchSimulator` as **Operations** or **All permissions**, or choose **ACH studio**
+in the navigation. The new `Banking.AchTrafficSimulator` service starts automatically
+with `python3 run_all.py` and is included in the VS Code all-services configuration.
+Enable an activity for the active bank:
+
+- **Payroll:** PPD checking credits; random paychecks from $650–$2,400.
+- **Supplier payments:** CCD checking credits; random invoices from $125–$1,800.
+- **Utility collections:** WEB checking debits; random bills from $35–$220 using
+  explicitly fictional teaching authorizations.
+- **City mix:** randomly chooses one of those activities for each run.
+
+Each run has up to four entries with a common run identifier in addenda 05. Amounts
+have random cents and are capped by available funds. Dedicated seeded company
+accounts originate activity; recipient accounts are open fictional customer accounts
+at other domestic banks. Generation and approval use distinct simulator identities.
+Human-created ACH entries cannot be approved by this generator. No new money moves
+until the usual ACH workers accept, settle, and post the generated NACHA files.
+
+The studio shows bank cash, customer balances and holds, expandable runs, per-entry
+status, trace numbers, NACHA file status, and posting evidence. Originating banks can
+open the NACHA explorer; both authorized sides can open their entry lifecycle.
+The latest 80 visible generated entries are displayed, with refreshes every 1.5 seconds.
+All balances and records stay scoped to the active bank. Changes highlight while
+expanded cards and keyboard focus remain preserved during refreshes.
+
+ACH uses the existing **shared lab clock**, not wall-clock settlement dates.
+Weekend and holiday runs receive the next banking day's effective date and wait
+until the shared clock reaches that date. The studio displays this explicitly and
+links to Operations clock controls. Starting a generator never advances the shared
+clock. The normal lab file cutoff is five seconds for eligible batches; this is a
+teaching approximation rather than a production ACH schedule.
+
+The ACH schedule uses `SimulationStates` names `ach-traffic:{bankId:N}:{mode}`;
+only one mode per bank runs at a time. As with wire schedules, `CurrentUtc` means
+next generation time, `SpeedMultiplier` means runs per minute (1–4), and
+`UpdatedDate` is the heartbeat. A bank is limited to 24 outstanding generated entries.
+Pause stops generation and simulator approvals; released entries and future-dated
+batches remain durable and finish when eligible. The web outbox, AchService,
+MessageManager, and FedAchSimulator must also run. New entries, separate approvals,
+and outbox publication are coordinated transactionally; failed ticks retry with
+fresh contexts and existing inbox/outbox rules handle transport redelivery.
+
+Web startup now adds **44 fictional customers and 76 accounts** across the four
+original domestic banks: three businesses and eight people per bank, with checking
+and savings for each person. Opening balances are inserted only for missing accounts.
+Rerunning startup or SQL seeds preserves existing balances, holds, payments, and
+journals. These are customer profiles; the existing bank/persona sign-in stays the
+same. The repeatable SQL dataset is `database/seeds/002_traffic_population.sql`.
+
+Wire traffic now also samples random whole-cent amounts from $1 to its existing
+$250 / available-funds cap. The wire studio and ACH studio share live balance
+highlighting and refresh behavior.
+
+To exercise the full generated ACH workflow against SQL Server and RabbitMQ:
+
+```bash
+BANKING_RUN_EXTERNAL_INTEGRATION=1 dotnet test Banking.slnx --filter FullyQualifiedName~AchTrafficIntegrationTests
+```
+
+This test uses a uniquely named temporary database and prefixed RabbitMQ queues,
+checks all three activities through the actual workers, validates NACHA payloads,
+verifies balanced journals and conserved balances, and redelivers final results to
+verify no duplicate posting. It cleans up only its own test database and queues.

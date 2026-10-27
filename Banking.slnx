@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Banking.AchService/Banking.AchService.csproj" />
+    <Project Path="src/Banking.AchTrafficSimulator/Banking.AchTrafficSimulator.csproj" />
     <Project Path="src/Banking.CheckService/Banking.CheckService.csproj" />
     <Project Path="src/Banking.CheckImageExchangeSimulator/Banking.CheckImageExchangeSimulator.csproj" />
     <Project Path="src/Banking.Domain/Banking.Domain.csproj" />
@@ -12,6 +13,7 @@
     <Project Path="src/Banking.SwiftSimulator/Banking.SwiftSimulator.csproj" />
     <Project Path="src/Banking.Web/Banking.Web.csproj" />
     <Project Path="src/Banking.WireService/Banking.WireService.csproj" />
+    <Project Path="src/Banking.WireTrafficSimulator/Banking.WireTrafficSimulator.csproj" />
     <Project Path="tests/Banking.Domain.Tests/Banking.Domain.Tests.csproj" />
   </Folder>
 </Solution>

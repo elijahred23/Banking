@@ -1,0 +1,72 @@
+@model AchTrafficDashboardViewModel
+@{
+    var running = Model.State is { IsPaused: false };
+    var heartbeat = running && Model.State!.UpdatedDate > Model.CapturedAt.AddSeconds(-8);
+    var posted = Model.Entries.Where(x => x.Status == AchEntryStatus.Posted).ToList();
+    var date = DateOnly.FromDateTime(Model.LabTime.UtcDateTime);
+    var nextDate = AchBusinessCalendar.IsBankingDay(date) ? date : AchBusinessCalendar.NextBankingDay(date);
+    var groups = Model.Entries.GroupBy(x => x.Addenda05 ?? x.Id.ToString()).OrderByDescending(x => x.Max(y => y.CreatedDate));
+}
+<div class="traffic-context"><div><strong>@Model.Bank.Name</strong><span>Routing @Model.Bank.RoutingNumber</span></div><span class="traffic-pill">@(running ? heartbeat ? "Activity enabled · worker active" : "Enabled · waiting for worker heartbeat" : "Activity paused")</span></div>
+<div class="ach-clock-note"><strong>Lab business date: @date.ToString("MMM dd, yyyy")</strong><span>Next eligible date: @nextDate.ToString("MMM dd"). @(nextDate != date ? "Weekend / holiday entries wait for the shared lab clock to advance." : "Today's entries are eligible for the next lab file cutoff.")</span><a asp-controller="Operations" asp-action="Index">Open shared clock controls →</a></div>
+<div class="traffic-metrics">
+    <article><span>Bank settlement cash</span><strong data-money="bank">@Model.Bank.MasterAccountBalance.ToString("C")</strong><small>Changes when ACH settles</small></article>
+    <article><span>Customer ledger balances</span><strong data-money="deposits">@Model.Accounts.Sum(x => x.Balance).ToString("C")</strong><small>@Model.Accounts.Count accounts · this bank</small></article>
+    <article><span>Funds reserved</span><strong data-money="holds">@Model.Accounts.Sum(x => x.HeldBalance).ToString("C")</strong><small>Includes all active payment holds</small></article>
+    <article><span>Recent ACH posted</span><strong>@posted.Sum(x => x.Amount).ToString("C")</strong><small>@posted.Count posted · latest @Model.Entries.Count entries</small></article>
+</div>
+<div class="traffic-grid">
+    <section class="traffic-panel">
+        <div class="traffic-panel-heading"><h2>The batch board</h2><span>Expand a run to follow every entry</span></div>
+        <p class="traffic-caption">Instructions → approval → ODFI validation → NACHA batch / file → operator outcome → account posting.</p>
+        @if (Model.Entries.Count == 0)
+        {
+            <div class="traffic-empty"><strong>A little city. A lot of money in motion.</strong><p>Start payroll to pay fictional employees across the lab banks, send supplier payments, collect utility bills, or select City mix to rotate activities.</p></div>
+        }
+        @foreach (var run in groups)
+        {
+            var first = run.First();
+            var paid = run.Count(x => x.Status == AchEntryStatus.Posted);
+            var rejected = run.Any(x => x.Status is AchEntryStatus.Rejected or AchEntryStatus.Returned);
+            var approved = run.All(x => x.ApprovedDate is not null);
+            var batched = run.All(x => x.AchBatchId is not null);
+            var filed = run.All(x => x.Batch?.File is not null);
+            var mode = first.Purpose == AchPaymentPurpose.Payroll ? AchTrafficMode.Payroll : first.Purpose == AchPaymentPurpose.ConsumerDebit ? AchTrafficMode.Utilities : AchTrafficMode.Suppliers;
+            <details class="traffic-wire @(rejected ? "traffic-rejected" : "")" data-wire-id="@run.Key">
+                <summary>
+                    <span class="traffic-wire-top"><span class="traffic-direction">@AchTraffic.Title(mode).ToUpperInvariant()</span><strong>@run.Sum(x => x.Amount).ToString("C")</strong><span class="traffic-pill">@(rejected ? "Review outcome" : paid == run.Count() ? "Posted" : batched && first.EffectiveEntryDate > date ? "Scheduled" : approved ? "Processing" : "Awaiting lab approval")</span></span>
+                    <span class="traffic-route">@first.CompanyName <span aria-hidden="true">→</span> @run.Count() @(mode == AchTrafficMode.Utilities ? "bill payers" : "recipients")</span>
+                    <span class="traffic-party">@first.SecCode.ToString().ToUpperInvariant() · @(AchRules.IsCredit(first.TransactionCode) ? "Company pays recipients" : "Company collects from payers") · @first.CreatedDate.ToLocalTime().ToString("HH:mm:ss") · effective @first.EffectiveEntryDate.ToString("MMM dd")</span>
+                    <span class="traffic-stages"><span class="done">Captured</span><span class="@(approved ? "done" : "")">Approved</span><span class="@(batched ? "done" : "")">Batched</span><span class="@(filed ? "done" : "")">File built</span><span class="@(paid == run.Count() ? "done" : "")">@paid / @run.Count() posted</span></span>
+                </summary>
+                <div class="traffic-wire-body">
+                    <p class="traffic-caption">@run.Key · visible entries at this bank. A run can span several banks.</p>
+                    @foreach (var entry in run.OrderBy(x => x.ReceiverName))
+                    {
+                        var posting = Model.Postings.GetValueOrDefault(entry.Id);
+                        <article class="ach-entry" data-entry-id="@entry.Id" data-status="@entry.Status" data-amount="@entry.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+                            <div><strong>@entry.ReceiverName</strong><span>@entry.ReceivingBank?.Name · •••• @entry.ReceivingAccountNumber.Substring(Math.Max(0, entry.ReceivingAccountNumber.Length - 4))</span></div>
+                            <div><strong>@entry.Amount.ToString("C")</strong><span class="traffic-pill">@entry.Status</span></div>
+                            <dl class="traffic-reference"><dt>Trace</dt><dd>@(entry.TraceNumber ?? "Assigned at file cutoff")</dd><dt>Approval</dt><dd>@(entry.ApprovedBy ?? "Waiting for separate simulated approver")</dd><dt>NACHA file</dt><dd>@(entry.Batch?.File is null ? "Not yet built" : $"{entry.Batch.File.Id.ToString()[..8]} · {entry.Batch.File.Status}")</dd><dt>Posting evidence</dt><dd>@(posting is null ? "No journal posted yet" : $"{posting.PostedAt.ToLocalTime():HH:mm:ss} · debits {posting.Debits:C} / credits {posting.Credits:C}")</dd></dl>
+                            <a asp-controller="Ach" asp-action="Details" asp-route-id="@entry.Id">Inspect lifecycle &amp; accounting →</a>
+                            @if (entry.OriginatingBankId == Model.Bank.Id && entry.Batch?.AchFileId is Guid fileId)
+                            { <a asp-controller="Ach" asp-action="Explorer" asp-route-id="@fileId">Explore NACHA records →</a> }
+                        </article>
+                    }
+                </div>
+            </details>
+        }
+    </section>
+    <aside class="traffic-panel">
+        <div class="traffic-panel-heading"><h2>Your neighborhood</h2><span>@Model.Accounts.Select(x => x.CustomerId).Distinct().Count() customers</span></div>
+        <p class="traffic-caption">Business operating accounts, personal checking, and savings. Updated balances highlight live. Switch banks to see the receiving side.</p>
+        <div class="traffic-account-scroll">
+        @foreach (var account in Model.Accounts)
+        {
+            <article class="traffic-account"><div class="traffic-avatar" aria-hidden="true">@account.Customer.Name[..1]</div><div class="traffic-account-main"><strong>@account.Customer.Name</strong><span>•••• @account.AccountNumber.Substring(Math.Max(0, account.AccountNumber.Length - 4)) · @TrafficPopulation.AccountLabel(account) · @account.Status</span></div><strong data-money="account-@account.Id">@account.Balance.ToString("C")</strong><dl><dt>Available</dt><dd data-money="available-@account.Id">@account.AvailableBalance.ToString("C")</dd><dt>On hold</dt><dd data-money="hold-@account.Id">@account.HeldBalance.ToString("C")</dd></dl></article>
+        }
+        </div>
+        <div class="traffic-explainer"><h3>It's a file, not an instant wire</h3><p>Each company has its own SEC / effective-date batch. The ACH service closes eligible batches on the configured cutoff (five seconds by default). Future dates wait for the shared lab clock.</p><p>Payroll and supplier credits reserve company funds, then debit the company and credit recipients after acceptance. Utility debits collect from fictional payers and credit the utility. Every posted journal must balance.</p><p>The generator limits outstanding activity to 24 entries per bank. Keep AchTrafficSimulator, AchService, MessageManager, FedAchSimulator, and the web outbox running. Pausing preserves all entries, files, and journals.</p></div>
+    </aside>
+</div>
+<p class="traffic-caption">Snapshot @Model.CapturedAt.ToLocalTime().ToString("HH:mm:ss") · latest 80 generated entries · fictional learning activity, not payroll compliance or live ACH connectivity.</p>

@@ -125,6 +125,30 @@
       },
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "Banking.WireTrafficSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.WireTrafficSimulator/bin/Debug/net10.0/Banking.WireTrafficSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.WireTrafficSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Banking.AchTrafficSimulator",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/Banking.AchTrafficSimulator/bin/Debug/net10.0/Banking.AchTrafficSimulator.dll",
+      "cwd": "${workspaceFolder}/src/Banking.AchTrafficSimulator",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
     }
   ],
   "compounds": [
@@ -140,7 +164,9 @@
         "Banking.FedwireSimulator",
         "Banking.MessageManager",
         "Banking.SwiftSimulator",
-        "Banking.WireService"
+        "Banking.WireService",
+        "Banking.WireTrafficSimulator",
+        "Banking.AchTrafficSimulator"
       ],
       "preLaunchTask": "initialize debug database",
       "stopAll": true

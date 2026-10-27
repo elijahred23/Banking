@@ -75,3 +75,24 @@ teaching controls and do not represent regulatory compliance or a production cor
 `202607032230_learning_explanation_rubric.sql` stores learner explanations and transparent rubric
 scores. `202607032245_individual_learning_progress.sql` separates individual/cohort progress while
 keeping payment evidence and role handoffs bank-scoped.
+
+## Fictional traffic population
+
+`seeds/002_traffic_population.sql` and the forward-only data migration
+`migrations/202610261800_traffic_population.sql` add 44 fictional customers and 76
+accounts across the four original domestic banks. Each bank receives an employer,
+a supplier business, a utility company, and eight people with checking and savings.
+The same catalog is applied idempotently by `TrafficPopulation.SeedAsync` during
+web startup. SQL seed numbers and opening balances match that catalog.
+
+Account numbers use the reserved lab pattern `90{routingNumber}{profileNumber:00}`.
+Profiles 01–03 are business operating accounts, 04–11 personal checking, and
+12–19 personal savings. Labels are teaching metadata inferred from this seed catalog;
+no new account-product schema or authentication users are introduced. Only missing
+accounts get an opening balance. Existing balances, holds, customers, and payment
+history are never reset. The existing EF entities and baseline table definitions
+are unchanged because this is an additive dataset, not a schema change.
+
+ACH generator schedules reuse `SimulationStates` under `ach-traffic:{bankId:N}:{mode}`
+and never change the `default` learning clock. Effective dates continue to follow
+that shared clock and the domain banking-day calendar.

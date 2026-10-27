@@ -44,6 +44,16 @@
                 <ul class="navbar-nav ms-xl-4 me-auto">
                     <li class="nav-item"><a class="nav-link @(currentController == "Home" ? "active" : "")" asp-controller="Home" asp-action="Index">Overview</a></li>
                     <li class="nav-item"><a class="nav-link @(currentController == "Operations" ? "active" : "")" asp-controller="Operations" asp-action="Index">Operations</a></li>
+                    @if (User.IsInRole(BankSecurity.Operations))
+                    {
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle @(currentController is "Simulator" or "AchSimulator" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Studios</a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" asp-controller="Simulator" asp-action="Index">Wire studio</a></li>
+                                <li><a class="dropdown-item" asp-controller="AchSimulator" asp-action="Index">ACH city studio</a></li>
+                            </ul>
+                        </li>
+                    }
                     <li class="nav-item"><a class="nav-link @(currentController == "Learning" ? "active" : "")" asp-controller="Learning" asp-action="Index">Learn</a></li>
                     <li class="nav-item"><a class="nav-link @(currentController == "Wires" && currentAction == "Index" && !Context.Request.Query.ContainsKey("direction") ? "active" : "")" asp-controller="Wires" asp-action="Index">All wires</a></li>
                     <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Outgoing" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>

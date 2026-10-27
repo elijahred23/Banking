@@ -1,0 +1,70 @@
+@model TrafficDashboardViewModel
+@{
+    var running = Model.State is { IsPaused: false };
+    var heartbeat = running && Model.State!.UpdatedDate > Model.CapturedAt.AddSeconds(-8);
+    var outgoing = Model.Wires.Where(x => x.Direction == WireDirection.Outgoing).ToList();
+}
+<div class="traffic-context">
+    <div><strong>@Model.Bank.Name</strong> <span>Routing @Model.Bank.RoutingNumber</span></div>
+    <span class="traffic-pill">@(running ? heartbeat ? "Generating · worker active" : "Enabled · waiting for worker heartbeat" : "Generation paused")</span>
+</div>
+<div class="traffic-metrics">
+    <article><span>Bank settlement cash</span><strong data-money="bank">@Model.Bank.MasterAccountBalance.ToString("C")</strong><small>Simulated Fed master account</small></article>
+    <article><span>Customer ledger balances</span><strong data-money="deposits">@Model.Accounts.Sum(x => x.Balance).ToString("C")</strong><small>@Model.Accounts.Count accounts at this bank</small></article>
+    <article><span>Funds on hold</span><strong data-money="holds">@Model.Accounts.Sum(x => x.HeldBalance).ToString("C")</strong><small>Reserved until acceptance or rejection</small></article>
+    <article><span>Recent traffic</span><strong>@Model.Wires.Count <em>wires</em></strong><small>@outgoing.Count outgoing · @Model.Wires.Count(x => x.Direction == WireDirection.Incoming) incoming · latest 40</small></article>
+</div>
+<div class="traffic-grid">
+    <section class="traffic-panel">
+        <div class="traffic-panel-heading"><h2>Payment flight deck</h2><span>Newest first · expand to inspect</span></div>
+        <p class="traffic-caption">Transport delivery → business acceptance → settlement → customer posting. These are separate events.</p>
+        @if (Model.Wires.Count == 0)
+        {
+            <div class="traffic-empty"><strong>Your first wire is ready for takeoff.</strong><p>Start traffic for this bank. The new service will generate outgoing payments; destination banks receive matching incoming wires automatically. Switch bank to follow the receiving side.</p></div>
+        }
+        @foreach (var wire in Model.Wires)
+        {
+            var rejected = wire.Status == WireStatus.Rejected;
+            var delivered = wire.Events.Any(x => x.EventType == "Delivered");
+            var complete = wire.Status == WireStatus.Completed || delivered;
+            var settled = wire.Status is WireStatus.Settled or WireStatus.Completed;
+            var sent = wire.Status is WireStatus.SentToFed or WireStatus.PendingAtFed || settled;
+            var approved = wire.ApprovedBy is not null || wire.Direction == WireDirection.Incoming;
+            <details class="traffic-wire @(rejected ? "traffic-rejected" : "")" data-wire-id="@wire.Id">
+                <summary>
+                    <span class="traffic-wire-top"><span class="traffic-direction">@(wire.Direction == WireDirection.Outgoing ? "↗ OUTGOING" : "↙ INCOMING")</span><strong>@wire.Amount.ToString("C")</strong><span class="traffic-pill">@wire.Status</span></span>
+                    <span class="traffic-route">@Model.BankNames[wire.SenderBankId] <span aria-hidden="true">→</span> @Model.BankNames[wire.ReceiverBankId]</span>
+                    <span class="traffic-party">@wire.SenderName → @wire.ReceiverName <span>· @wire.CreatedDate.ToLocalTime().ToString("HH:mm:ss") · Fedwire</span></span>
+                    <span class="traffic-stages" aria-label="Lifecycle progress">
+                        <span class="done">Created</span><span class="@(approved ? "done" : "")">Approved</span><span class="@(sent ? "done" : "")">Sent</span><span class="@(settled ? "done" : "")">Settled</span><span class="@(complete ? "done" : "")">Received / posted</span>
+                    </span>
+                </summary>
+                <div class="traffic-wire-body">
+                    <p><a asp-controller="Wires" asp-action="Details" asp-route-id="@wire.Id">Open full lifecycle, ISO messages &amp; accounting →</a></p>
+                    <dl class="traffic-reference"><dt>Correlation</dt><dd>@wire.CorrelationId</dd><dt>Maker / approver</dt><dd>@(wire.CreatedBy ?? "Receiving bank") / @(wire.ApprovedBy ?? "—")</dd><dt>IMAD</dt><dd>@(wire.Imad ?? "Awaiting acceptance")</dd></dl>
+                    <ol class="traffic-timeline">
+                        @foreach (var item in wire.Events.OrderBy(x => x.CreatedDate))
+                        { <li><time>@item.CreatedDate.ToLocalTime().ToString("HH:mm:ss")</time><div><strong>@item.EventType</strong><p>@item.Description</p></div></li> }
+                    </ol>
+                </div>
+            </details>
+        }
+    </section>
+    <aside class="traffic-panel">
+        <div class="traffic-panel-heading"><h2>People &amp; balances</h2><span>Live ledger</span></div>
+        <p class="traffic-caption">Balances are scoped to @Model.Bank.Name. Use the bank switcher to inspect another bank's cash, customers, and incoming wires.</p>
+        <div class="traffic-account-scroll">
+        @foreach (var account in Model.Accounts)
+        {
+            <article class="traffic-account">
+                <div class="traffic-avatar" aria-hidden="true">@account.Customer.Name[..1]</div>
+                <div class="traffic-account-main"><strong>@account.Customer.Name</strong><span>•••• @account.AccountNumber.Substring(Math.Max(0, account.AccountNumber.Length - 4)) · @TrafficPopulation.AccountLabel(account) · @account.Status</span></div>
+                <strong data-money="account-@account.Id">@account.Balance.ToString("C")</strong>
+                <dl><dt>Available</dt><dd data-money="available-@account.Id">@account.AvailableBalance.ToString("C")</dd><dt>On hold</dt><dd data-money="hold-@account.Id">@account.HeldBalance.ToString("C")</dd></dl>
+            </article>
+        }
+        </div>
+        <div class="traffic-explainer"><h3>Watch the accounting</h3><p>Creation leaves balances unchanged. Validation reserves a hold. Final acceptance moves settlement cash and debits the sender. Receipt credits the beneficiary with a balanced journal.</p><p>If traffic waits, check that WireTrafficSimulator, WireService, MessageManager, and FedwireSimulator are running. Five outstanding wires per bank limit backlog. Open, funded domestic accounts are required. Compliance alerts still require human review.</p></div>
+    </aside>
+</div>
+<p class="traffic-caption">Snapshot @Model.CapturedAt.ToLocalTime().ToString("HH:mm:ss") · automatically refreshed · simulated learning activity, not a production wire connection.</p>

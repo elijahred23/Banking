@@ -1,0 +1,25 @@
+@model TrafficDashboardViewModel
+@{ ViewData["Title"] = "Wire traffic studio"; }
+<section class="traffic-studio" data-snapshot-url="@Url.Action("Snapshot")">
+    <div class="traffic-heading">
+        <div><span class="traffic-eyebrow">PAYMENTS IN MOTION · SIMULATION LAB</span>
+            <h1>Wire traffic studio<span class="traffic-dot" aria-hidden="true"></span></h1>
+            <p>Follow the money. Watch a wire become a message, a settlement, and a credit.</p>
+        </div>
+        <span class="traffic-live" id="traffic-connection" role="status">Connecting to live view…</span>
+    </div>
+    <div class="traffic-controls">
+        <form asp-action="Control" method="post">
+            <label for="traffic-rate">Traffic pace</label>
+            <select id="traffic-rate" name="rate" class="form-select">
+                @foreach (var rate in new[] { 1, 3, 6, 12 })
+                { <option value="@rate" selected="@(rate == (int)(Model.State?.SpeedMultiplier ?? 6))">@rate wires / min</option> }
+            </select>
+            <button class="btn btn-primary" name="running" value="true">▶ Start / update traffic</button>
+            <button class="btn btn-outline-secondary" name="running" value="false">Ⅱ Pause generation</button>
+        </form>
+        <p>Opt-in lab automation uses a simulated maker and a separate simulated approver. Generates domestic Fedwire customer payments with random amounts from $1 up to $250 with a brief pending stage. Bank and account balances are real lab ledger values. Pausing leaves released payments processing.</p>
+    </div>
+    <div id="traffic-snapshot"><partial name="_Snapshot" model="Model" /></div>
+</section>
+@section Scripts { <script src="~/js/wire-traffic.js" asp-append-version="true"></script> }

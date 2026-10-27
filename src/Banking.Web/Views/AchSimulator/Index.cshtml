@@ -1,0 +1,34 @@
+@model AchTrafficDashboardViewModel
+@{ ViewData["Title"] = "ACH city studio"; var selected = Model.State is null ? AchTrafficMode.Payroll : AchTraffic.Mode(Model.State.Name); }
+<section class="traffic-studio ach-studio" data-snapshot-url="@Url.Action("Snapshot")">
+    <div class="traffic-heading">
+        <div><span class="traffic-eyebrow">THE EVERYDAY MONEY NETWORK · SIMULATION LAB</span>
+            <h1>ACH city studio<span class="traffic-dot" aria-hidden="true"></span></h1>
+            <p>Payday, suppliers, and the bills in between. Watch a city move money, one batch at a time.</p>
+        </div><span class="traffic-live" id="traffic-connection" role="status">Connecting to live view…</span>
+    </div>
+    <div class="ach-activity-grid">
+        <article><span aria-hidden="true">↗</span><h2>Make it payday</h2><p>PPD credits · random paychecks from $650–$2,400, subject to available company funds.</p></article>
+        <article><span aria-hidden="true">▦</span><h2>Keep business moving</h2><p>CCD credits · supplier invoices from $125–$1,800, with remittance addenda.</p></article>
+        <article><span aria-hidden="true">↙</span><h2>Run the neighborhood</h2><p>WEB debits · $35–$220 utility bills using synthetic lab authorizations.</p></article>
+    </div>
+    <div class="traffic-controls">
+        <form asp-action="Control" method="post">
+            <label for="ach-mode">Activity</label>
+            <select id="ach-mode" name="mode" class="form-select">
+                @foreach (var mode in Enum.GetValues<AchTrafficMode>())
+                { <option value="@mode" selected="@(mode == selected)">@AchTraffic.Title(mode)</option> }
+            </select>
+            <label for="ach-rate">Pace</label>
+            <select id="ach-rate" name="rate" class="form-select">
+                @foreach (var rate in new[] { 1, 2, 4 })
+                { <option value="@rate" selected="@(rate == (int)(Model.State?.SpeedMultiplier ?? 2))">@rate runs / min</option> }
+            </select>
+            <button class="btn btn-primary" name="running" value="true">▶ Start / update activity</button>
+            <button class="btn btn-outline-secondary" name="running" value="false">Ⅱ Pause</button>
+        </form>
+        <p>Each run generates up to four instructions, then a separate simulated approver releases them. ACH service groups them into NACHA batches and files before operator acceptance and posting. Dollar amounts include random cents and adjust to funds. This is a learning approximation; no real employees, mandates, or banking connections are used.</p>
+    </div>
+    <div id="traffic-snapshot"><partial name="_Snapshot" model="Model" /></div>
+</section>
+@section Scripts { <script src="~/js/wire-traffic.js" asp-append-version="true"></script> }
