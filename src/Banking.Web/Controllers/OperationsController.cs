@@ -138,6 +138,11 @@ public sealed class OperationsController(
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
         var item = await db.OperationsCases.SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
         if (item is null) return NotFound();
+        if (await db.StudioDays.AnyAsync(x => x.BankId == bankId && x.PendingIncidentCaseId == item.Id, token))
+        {
+            TempData["Error"] = "This simulated incident is queued. Let it generate or close its banking day to cancel it.";
+            return RedirectToAction(nameof(Index));
+        }
         item.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? User.Identity?.Name : assignedTo.Trim();
         item.Notes = string.IsNullOrWhiteSpace(notes) ? item.Notes : notes.Trim();
         item.Status = resolve ? OperationsCaseStatus.Resolved : OperationsCaseStatus.Investigating;

@@ -9,9 +9,12 @@ public sealed class LabSchemaUpgradeRunner
     public async Task UpgradeAsync(BankingDbContext db, CancellationToken token = default)
     {
         await ServiceRegistration.ApplyLabSchemaUpgradeAsync(db, token);
-        using var stream = typeof(LabSchemaUpgradeRunner).Assembly.GetManifestResourceStream("StudioSupport.sql")!;
-        using var reader = new StreamReader(stream);
-        await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(
-            db.Database, await reader.ReadToEndAsync(token), token);
+        foreach (var resource in new[] { "StudioSupport.sql", "StudioDays.sql" })
+        {
+            using var stream = typeof(LabSchemaUpgradeRunner).Assembly.GetManifestResourceStream(resource)!;
+            using var reader = new StreamReader(stream);
+            await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(
+                db.Database, await reader.ReadToEndAsync(token), token);
+        }
     }
 }

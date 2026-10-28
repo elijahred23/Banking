@@ -4,7 +4,23 @@
     const target = document.getElementById('traffic-snapshot');
     const connection = document.getElementById('traffic-connection');
     let stopped = false;
+    function editingSnapshot() {
+        return !!target.querySelector('form[data-studio-dirty]') || !!document.activeElement?.closest('#traffic-snapshot form');
+    }
+    target.addEventListener('input', event => {
+        const form = event.target.closest('form');
+        if (form) form.dataset.studioDirty = 'true';
+    });
+    target.addEventListener('change', event => {
+        const form = event.target.closest('form');
+        if (form) form.dataset.studioDirty = 'true';
+    });
+    target.addEventListener('reset', event => { delete event.target.dataset.studioDirty; });
     async function refresh() {
+        if (editingSnapshot()) {
+            connection.textContent = 'Live updates paused for your draft · submit or discard, then leave the form to resume';
+            schedule(); return;
+        }
         if (document.hidden || target.querySelector('[data-studio-filter]') === document.activeElement) { schedule(); return; }
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
@@ -17,16 +33,16 @@
             const fragment = document.createElement('template');
             fragment.innerHTML = await response.text();
             if (!fragment.content.querySelector('.traffic-context')) throw new Error('Invalid snapshot');
-            const open = new Set([...target.querySelectorAll('details[open]')].map(x => x.dataset.wireId));
+            const open = new Set([...target.querySelectorAll('details[data-wire-id][open]')].map(x => x.dataset.wireId));
             const money = new Map([...target.querySelectorAll('[data-money]')].map(x => [x.dataset.money, x.textContent]));
             const focused = target.contains(document.activeElement) ? document.activeElement : null;
             // Avoid replacing an open native workload select while a refresh is in flight.
-            if (focused?.matches('[data-studio-filter]')) return;
+            if (focused?.matches('[data-studio-filter]') || editingSnapshot()) return;
             const focusedShowAll = focused?.matches('[data-studio-show-all]');
             const focusedCard = focused?.closest('details[data-wire-id]');
             const focusKey = focusedCard?.dataset.wireId;
             const focusHref = focused?.closest('a')?.getAttribute('href');
-            for (const card of fragment.content.querySelectorAll('details')) card.open = open.has(card.dataset.wireId);
+            for (const card of fragment.content.querySelectorAll('details[data-wire-id]')) card.open = open.has(card.dataset.wireId);
             for (const value of fragment.content.querySelectorAll('[data-money]')) {
                 if (money.has(value.dataset.money) && money.get(value.dataset.money) !== value.textContent)
                     value.classList.add('traffic-money-changed');

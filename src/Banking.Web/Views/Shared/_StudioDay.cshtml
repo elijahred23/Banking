@@ -1,0 +1,112 @@
+@model StudioDayPanelViewModel
+@{
+    var day = Model.Day;
+    var active = day is { EndedAt: null };
+    var controller = Model.Kind == "Wire" ? "Wires" : "Ach";
+}
+<section class="traffic-panel studio-day my-3" aria-labelledby="studio-day-heading">
+    <div class="studio-experience-heading"><div><span class="traffic-eyebrow">SIMULATED BANKING DAY</span><h2 class="h4" id="studio-day-heading">A day at @Model.Bank.Name</h2></div><span>Shared lab clock: @Model.LabTime.ToString("MMM dd HH:mm 'UTC'")</span></div>
+    <p>Run bounded morning, afternoon, and deadline activity, then close and reconcile. Phases are a scenario agenda you advance; actual file eligibility and rail processing still use the shared lab clock and configured rules. No real banking connections are used.</p>
+    @if (!active)
+    {
+        <form asp-controller="StudioDays" asp-action="Start" method="post" class="d-flex gap-3 flex-wrap align-items-center">
+            <input type="hidden" name="kind" value="@Model.Kind" />
+            @if (Model.Kind == "Ach")
+            {
+                <label><input type="checkbox" name="useRoster" value="true" disabled="@(Model.RosterCount == 0)" /> Use enabled payroll roster (@Model.RosterCount members)</label>
+            }
+            <button class="btn btn-primary">Start a simulated banking day</button>
+        </form>
+        <p class="form-text">Starting enables this bank's generator and records opening balances. It preserves existing payments, balances, and cases. Wire days use Fedwire; ACH days rotate payroll, suppliers, and utility collections.</p>
+    }
+    @if (day is not null)
+    {
+        <ol class="studio-day-agenda" aria-label="Banking day agenda">
+            @for (var i = 0; i < StudioDayPolicy.Phases.Count; i++)
+            { <li aria-current="@(active && day.Phase == i ? "step" : null)"><strong>@StudioDayPolicy.Phases[i].Title</strong><span>@(i < day.Phase ? "Phase passed" : i == day.Phase ? active ? "Current phase" : "Generation closed" : "Upcoming")</span></li> }
+        </ol>
+        <p><strong>@(active ? "Active" : "Closed") day:</strong> @day.BusinessDate.ToString("MMM dd, yyyy") · started by @day.StartedBy · @day.StartedAt.ToLocalTime().ToString("g")</p>
+        <p>@StudioDayPolicy.Phases[day.Phase].Objective</p>
+        @if (active)
+        {
+            <p><strong>@(Model.Settings?.RemainingRuns ?? 0)</strong> remaining @(Model.Kind == "Wire" ? "wires" : "runs") in this phase. Generation can wait for available funds, eligible accounts, worker availability, or backlog capacity.</p>
+            <div class="d-flex gap-3 flex-wrap">
+                <form asp-controller="StudioDays" asp-action="Advance" method="post"><input type="hidden" name="id" value="@day.Id" /><input type="hidden" name="phase" value="@day.Phase" /><button class="btn btn-outline-primary" disabled="@(Model.Settings?.RemainingRuns > 0 || day.PendingIncident != "None")">@(day.Phase == 3 ? "Finish day and retain debrief" : "Advance to next phase")</button></form>
+                <form asp-controller="StudioDays" asp-action="Advance" method="post"><input type="hidden" name="id" value="@day.Id" /><input type="hidden" name="phase" value="@day.Phase" /><input type="hidden" name="close" value="true" /><button class="btn btn-outline-secondary">Close generation and carry work forward</button></form>
+            </div>
+            <p class="form-text">Closing cancels any queued incident and remaining generation. Released payments and investigations keep processing; pending simulator approvals wait until generation resumes. All records are retained.</p>
+            <details data-wire-id="director-@day.Id" class="mt-3">
+                <summary>Incident director · next generated @(Model.Kind == "Wire" ? "wire" : "ACH run")</summary>
+                @if (day.PendingIncident != "None")
+                { <p role="status">Queued: @StudioDayPolicy.Incident(Model.Kind, day.PendingIncident)?.Title. Waiting for eligible generation; the incident is consumed once in the same transaction that creates the payment/run.</p> }
+                else if (day.Phase < 3 && Model.Settings?.RemainingRuns > 0)
+                {
+                    <form asp-controller="StudioDays" asp-action="Incident" method="post" class="mt-3">
+                        <input type="hidden" name="id" value="@day.Id" /><label for="studio-incident" class="form-label">Controlled simulated incident</label>
+                        <select id="studio-incident" name="incident" class="form-select">@foreach (var item in StudioDayPolicy.Incidents(Model.Kind)) { <option value="@item.Id">@item.Title</option> }</select>
+                        <button class="btn btn-outline-primary mt-2">Queue one incident</button>
+                        <button type="reset" class="btn btn-link mt-2">Discard selection</button>
+                    </form>
+                }
+                else { <p>Advance to a phase with remaining activity to queue an incident.</p> }
+                <p class="form-text">Faults affect newly generated instructions through the normal worker/simulator pipeline. ACH incidents apply to a whole generated run and can affect a shared file. Already released payments are not rewritten. This director does not stop real workers or the broker.</p>
+                <div data-studio-learning><p>Predict the expected transport outcome, business outcome, hold release, and journal count before queuing the incident. Then inspect the linked incident case and correlated payment.</p></div>
+            </details>
+        }
+        <details data-wire-id="debrief-@day.Id" class="mt-3">
+            <summary>Session debrief, liquidity, and reconciliation</summary>
+            <p>All generated source instructions created during this day are included, beyond the live board's recent-item limit. Values refresh while late outcomes arrive. Bank-wide balance changes also include manual payments and other rails, so they are observations rather than proof that this day reconciles.</p>
+            <div class="studio-workload-counts"><span><strong>@Model.Generated</strong> instructions</span><span><strong>@Model.Settled</strong> currently settled / posted</span><span><strong>@Model.Outstanding</strong> outstanding</span><span><strong>@Model.InFlightAmount.ToString("C")</strong> in-flight face amount</span></div>
+            <div class="table-responsive"><table class="table"><caption>Bank-wide balances at opening and now</caption><thead><tr><th>Measure</th><th>Opening</th><th>Current</th><th>Change</th></tr></thead><tbody>
+                <tr><th>Settlement cash</th><td>@day.OpeningCash.ToString("C")</td><td>@Model.Bank.MasterAccountBalance.ToString("C")</td><td>@((Model.Bank.MasterAccountBalance-day.OpeningCash).ToString("C"))</td></tr>
+                <tr><th>Customer posted balances</th><td>@day.OpeningCustomerBalance.ToString("C")</td><td>@Model.CustomerBalance.ToString("C")</td><td>@((Model.CustomerBalance-day.OpeningCustomerBalance).ToString("C"))</td></tr>
+                <tr><th>Customer holds</th><td>@day.OpeningHolds.ToString("C")</td><td>@Model.Holds.ToString("C")</td><td>@((Model.Holds-day.OpeningHolds).ToString("C"))</td></tr>
+            </tbody></table></div>
+            <p>Fedwire cash plus configured credit limit: <strong>@((Model.Bank.MasterAccountBalance + Model.Bank.FedwireCreditLimit).ToString("C"))</strong>. ACH exposure limit: <strong>@Model.Bank.AchExposureLimit.ToString("C")</strong>. In-flight face amount is not a reservation or an available-liquidity calculation; the normal payment services enforce liquidity and exposure rules.</p>
+            <p><strong>@Model.Journals.Count</strong> journal groups observed · <strong>@Model.Journals.Count(x => !x.Balanced)</strong> groups need balance review · <strong>@Model.AcceptedWithoutJournal</strong> settled/posted items have no journal yet. A transient gap can occur between processing stages; investigate persistent gaps.</p>
+            <div class="table-responsive"><table class="table"><caption>Correlated journal evidence, including return journals</caption><thead><tr><th>Journal</th><th>Debits</th><th>Credits</th><th>Balance check</th><th>Payment</th></tr></thead><tbody>
+                @foreach (var item in Model.Journals)
+                { <tr><td>@item.JournalId.ToString()[..8]</td><td>@item.Debits.ToString("C")</td><td>@item.Credits.ToString("C")</td><td>@(item.Balanced ? "Balanced" : "Review")</td><td><a asp-controller="@controller" asp-action="Details" asp-route-id="@item.PaymentId">Inspect evidence</a></td></tr> }
+            </tbody></table></div>
+            <div data-studio-learning><p>Explain each outstanding item and each unmatched journal before calling the day reconciled. A return has its own reversing journal; a duplicate delivery should not create another value posting. Closing the day never awards mission completion.</p></div>
+            <a asp-controller="Operations" asp-action="Index">Full bank reconciliation and trial balance</a>
+        </details>
+        @if (Model.InquiryPaymentId is Guid inquiryId)
+        {
+            <details class="mt-3" data-wire-id="inquiry-@day.Id"><summary>Simulated customer inquiry: “Where is my payment?”</summary>
+                <p>Inspect this day's most recently created instruction, then record an evidence-based response. The category is checked against its current recorded status at submission; your written explanation is retained for human review.</p>
+                <a asp-controller="@controller" asp-action="Details" asp-route-id="@inquiryId" target="_blank" rel="noopener">Open payment evidence in a new tab</a>
+                <form asp-controller="StudioDays" asp-action="AnswerInquiry" method="post" class="mt-3">
+                    <input type="hidden" name="id" value="@day.Id" /><input type="hidden" name="paymentId" value="@inquiryId" />
+                    <label for="inquiry-outcome">What can you tell the customer?</label><select id="inquiry-outcome" name="outcome" class="form-select"><option value="Processing">Processing; final outcome not confirmed</option><option value="Settled">Settlement recorded; inspect posting evidence</option><option value="Rejected">Rejected; inspect reason and hold release</option><option value="Returned">Returned; inspect reversal evidence</option>@if (Model.Kind == "Ach") { <option value="Correction">Correction notification received</option> }</select>
+                    <label for="inquiry-explanation">Evidence and next step</label><textarea id="inquiry-explanation" name="explanation" class="form-control" minlength="12" maxlength="500" required></textarea>
+                    <button class="btn btn-outline-primary mt-2">Assess and save simulated response</button><button type="reset" class="btn btn-link mt-2">Discard draft</button>
+                </form>
+            </details>
+        }
+    }
+    <details class="mt-3" data-wire-id="studio-inbox-@Model.Kind">
+        <summary>Operations inbox · @Model.Cases.Count open cases / @Model.Inbox.Count payment observations shown</summary>
+        <p>Cases are bank-scoped and persist across sessions. Payment observations describe this day's records and may include resolved outcomes. Up to 20 of each are shown; use Operations for the full case queue. Closing a case does not approve, repair, return, or settle a payment.</p>
+        @if (Model.Cases.Count == 0 && Model.Inbox.Count == 0) { <p>No open cases or exception observations to show.</p> }
+        @foreach (var item in Model.Inbox)
+        {
+            <article class="studio-inbox-item"><h3 class="h6">@item.Title · @item.Status</h3><p>@item.NextAction</p><a asp-controller="@item.Controller" asp-action="Details" asp-route-id="@item.PaymentId">Inspect messages and authorized workflow</a></article>
+        }
+        @foreach (var item in Model.Cases)
+        {
+            <details data-wire-id="case-@item.Id" class="studio-inbox-item"><summary>@item.Summary · @item.Status · due @item.DueDate.ToLocalTime().ToString("g")</summary><p>@item.Notes</p><p>Assigned: @(item.AssignedTo ?? "Unassigned")</p>
+                @if (Guid.TryParse(item.Reference, out var paymentId) && item.Reference != day?.Id.ToString())
+                { <a asp-controller="@controller" asp-action="Details" asp-route-id="@paymentId" target="_blank" rel="noopener">Inspect correlated payment in a new tab</a> }
+                @if (item.Id == day?.PendingIncidentCaseId) { <p>Incident queued; no payment exists yet. Wait for injection or close the day to cancel it.</p> }
+                else
+                {
+                    <form asp-controller="StudioDays" asp-action="ReviewCase" method="post"><input type="hidden" name="id" value="@item.Id" />
+                        <label for="case-notes-@item.Id">Investigation evidence and next action</label><textarea id="case-notes-@item.Id" name="notes" class="form-control" minlength="12" maxlength="500" required></textarea>
+                        <button class="btn btn-sm btn-outline-primary mt-2" name="resolve" value="false">Assign to me / save investigation</button><button class="btn btn-sm btn-outline-secondary mt-2" name="resolve" value="true">Record reviewed resolution</button><button type="reset" class="btn btn-link mt-2">Discard draft</button>
+                    </form>
+                }
+            </details>
+        }
+    </details>
+</section>

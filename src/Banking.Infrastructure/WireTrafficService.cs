@@ -21,6 +21,8 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
             if (state is null || state.IsPaused) return;
             var now = DateTimeOffset.UtcNow;
             var settings = await db.StudioSettings.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire", token);
+            var day = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire" && x.EndedAt == null, token);
+            var incident = day is not null ? StudioDayPolicy.Incident("Wire", day.PendingIncident) : null;
             // Release only this bank's simulator-made wires, on a later tick than creation.
             var pending = await db.WireTransfers.Include(x => x.Events).Where(x =>
                 x.BankId == bankId && x.CreatedBy == WireTraffic.Maker
@@ -74,9 +76,15 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
                         }
                     }
                     var wire = WireTraffic.Create(source, destination, now, rail: rail,
-                        scenario: settings is null ? ProcessingScenario.PendingThenAccepted : StudioPolicy.Scenario(settings.WireScenario),
-                        complianceReview: settings?.WireScenario == StudioWireScenario.ComplianceReview);
+                        scenario: incident?.WireScenario is StudioWireScenario fault ? StudioPolicy.Scenario(fault)
+                            : settings is null ? ProcessingScenario.PendingThenAccepted : StudioPolicy.Scenario(settings.WireScenario),
+                        complianceReview: (incident?.WireScenario ?? settings?.WireScenario) == StudioWireScenario.ComplianceReview);
                     db.WireTransfers.Add(wire);
+                    if (incident is not null && day?.PendingIncidentCaseId is Guid incidentCaseId)
+                    {
+                        var item = await db.OperationsCases.SingleAsync(x => x.Id == incidentCaseId && x.BankId == bankId, token);
+                        StudioDayPolicy.ConsumeIncident(day, item, wire.Id, now);
+                    }
                     if (settings?.RemainingRuns is > 0) settings.RemainingRuns--;
                 }
                 state.CurrentUtc = now.AddSeconds(60d / (double)Math.Clamp(state.SpeedMultiplier, 1m, 12m));

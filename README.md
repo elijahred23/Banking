@@ -268,3 +268,38 @@ Downloads contain the original draft/saved payload rather than edited sandbox
 text. Full file access remains scoped to the originating bank; receiving banks
 can switch lab context to inspect that originator's file. The Files page retains
 saved payloads and now also offers direct `.ach` downloads.
+
+## Simulated banking days, incidents, and operations inbox
+
+Both studios now offer **Start a simulated banking day** for Operations users.
+The morning, afternoon, and deadline phases schedule bounded generator workloads;
+advance after each workload has generated, or close early to carry work forward.
+Wire days generate 6 / 4 / 3 Fedwire instructions. ACH days generate two runs each
+of payroll, suppliers, and utility collections using the existing fictional
+businesses and accounts. Enabled payroll rosters can be selected when present;
+funds, liquidity, exposure, backlogs, and account eligibility still constrain work.
+The phase agenda does not move the shared clock or represent actual rail hours.
+
+The **Incident director** queues a fault for the next eligible generated wire or
+ACH run, persists an operations case, and consumes it atomically with generation.
+Wire faults include delay, rejection, duplicate/out-of-order delivery, and screening
+review. ACH faults include control failure, closed/missing account returns, and
+account corrections. ACH faults apply to all entries in that run and may affect a
+shared file. Closing a day cancels an uninjected fault; injected work remains in
+the normal pipeline. Workers and the broker are not intentionally stopped.
+
+The **Operations inbox** links actual payment observations, investigation responses,
+and durable cases to evidence and existing authorized workflows. Notes and reviewed
+resolutions do not change payment/compliance state. The **customer inquiry** exercise
+checks a selected status category against the current payment state and saves the
+explanation for human review; it never sends a customer message or awards mission
+completion. Guided Learning adds prompts alongside the same live scenarios.
+
+The **session debrief** includes all generated source instructions from that day's
+start/end interval, correlated journal balance checks, outstanding work, and bank
+opening/current cash, customer balances, and holds. Returned payments keep original
+and reversing journals. Full-bank balance changes include activity outside the day,
+and asynchronous posting gaps may be transient, so these observations are not an
+automatic reconciliation certificate. Closed-day evidence keeps updating as late
+outcomes arrive. Starting the next day preserves the prior day's database history;
+the studios display the latest day.

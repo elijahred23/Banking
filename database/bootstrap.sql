@@ -40,5 +40,6 @@ SET QUOTED_IDENTIFIER ON;
 :r database/tables/044_SimulationStates.sql
 :r database/tables/045_OperationsCases.sql
 :r database/tables/046_StudioSupport.sql
+:r database/tables/047_StudioDays.sql
 
 PRINT 'BankingDb baseline schema is ready.';

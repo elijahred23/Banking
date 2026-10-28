@@ -5,6 +5,7 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<StudioDay> StudioDays => Set<StudioDay>();
     public DbSet<StudioSettings> StudioSettings => Set<StudioSettings>();
     public DbSet<PayrollMember> PayrollMembers => Set<PayrollMember>();
     public DbSet<BalanceReceipt> BalanceReceipts => Set<BalanceReceipt>();
@@ -210,6 +211,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<OperationsCase>().HasIndex(x => new { x.BankId, x.Rail, x.Reference });
         modelBuilder.Entity<OperationsCase>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId)
             .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDay>().HasIndex(x => new { x.BankId, x.Kind }).IsUnique().HasFilter("[EndedAt] IS NULL");
+        modelBuilder.Entity<StudioDay>().HasIndex(x => new { x.BankId, x.StartedAt });
+        modelBuilder.Entity<StudioDay>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDay>().HasOne<OperationsCase>().WithMany().HasForeignKey(x => x.PendingIncidentCaseId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDay>().Property(x => x.OpeningCash).HasPrecision(19, 4);
+        modelBuilder.Entity<StudioDay>().Property(x => x.OpeningCustomerBalance).HasPrecision(19, 4);
+        modelBuilder.Entity<StudioDay>().Property(x => x.OpeningHolds).HasPrecision(19, 4);
         modelBuilder.Entity<StudioSettings>().HasIndex(x => new { x.BankId, x.Kind }).IsUnique();
         modelBuilder.Entity<StudioSettings>().Property(x => x.Rail).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<StudioSettings>().Property(x => x.WireScenario).HasConversion<string>().HasMaxLength(32);

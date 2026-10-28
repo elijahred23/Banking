@@ -96,3 +96,17 @@ are unchanged because this is an additive dataset, not a schema change.
 ACH generator schedules reuse `SimulationStates` under `ach-traffic:{bankId:N}:{mode}`
 and never change the `default` learning clock. Effective dates continue to follow
 that shared clock and the domain banking-day calendar.
+
+## Studio banking days
+
+`migrations/202610280100_studio_days.sql` adds `StudioDays`, with one active day per
+bank/studio enforced by a filtered unique index. The startup upgrade runner applies
+the matching embedded baseline SQL idempotently. Days retain opening balances,
+phase, dates, and a queued incident reference; incident and customer-inquiry audit
+records reuse bank-scoped `OperationsCases`. Starting or closing a day never resets
+payments, accounts, or learning progress. Existing generator schedules and
+`StudioSettings` provide bounded phase workloads. Workers consume a queued incident
+in the same serializable transaction that creates its payment/run and changes the
+case reference to that payment. An incident remains queued if no eligible payment
+can be generated. Close cancels only queued incidents and future generation;
+already released work continues. Shared lab time is never changed by day phases.

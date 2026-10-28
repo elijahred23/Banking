@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Banking.Web.Controllers;
 
 [Authorize(Roles = BankSecurity.Operations)]
-public sealed class SimulatorController(IDbContextFactory<BankingDbContext> factory) : Controller
+public sealed class SimulatorController(IDbContextFactory<BankingDbContext> factory, StudioDayDashboardService dashboard) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken token) => View(await SnapshotAsync(token));
@@ -23,10 +23,14 @@ public sealed class SimulatorController(IDbContextFactory<BankingDbContext> fact
         if (rate is < 1 or > 12) return BadRequest("Choose 1–12 wires per minute.");
         await using var probe = await factory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, probe, token);
+        string? dayError = null;
         await probe.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
             await using var db = await factory.CreateDbContextAsync(token);
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            var activeDay = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire" && x.EndedAt == null, token);
+            if (running && activeDay?.Phase == 3) { dayError = "This day is in reconciliation. Finish it before starting another day."; return; }
+
             var name = WireTraffic.StateName(bankId);
             var state = await db.SimulationStates.SingleOrDefaultAsync(x => x.Name == name, token);
             if (state is null)
@@ -41,6 +45,7 @@ public sealed class SimulatorController(IDbContextFactory<BankingDbContext> fact
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
         });
+        if (dayError is not null) return BadRequest(dayError);
         TempData["Notice"] = running
             ? "Lab traffic enabled for this bank. Separate simulated maker and approver identities release generated wires through the normal payment pipeline."
             : "New traffic paused for this bank. Released payments continue processing; pending simulator approvals wait until resumed.";
@@ -64,6 +69,6 @@ public sealed class SimulatorController(IDbContextFactory<BankingDbContext> fact
         var ids = wires.SelectMany(x => new[] { x.SenderBankId, x.ReceiverBankId }).Append(bankId).Distinct().ToList();
         var names = await db.Banks.AsNoTracking().Where(x => ids.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Name, token);
-        return new(bank, state, accounts, wires, names, DateTimeOffset.UtcNow);
+        return new(bank, state, accounts, wires, names, DateTimeOffset.UtcNow) { DayPanel = await dashboard.ReadAsync(bankId, "Wire", token) };
     }
 }

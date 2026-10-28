@@ -18,6 +18,8 @@ public sealed class AchTrafficService(IDbContextFactory<BankingDbContext> factor
             if (state is null) return;
             var now = DateTimeOffset.UtcNow;
             var settings = await db.StudioSettings.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Ach", token);
+            var day = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Ach" && x.EndedAt == null, token);
+            var incident = day is not null ? StudioDayPolicy.Incident("Ach", day.PendingIncident) : null;
             var pending = await db.AchEntries.Where(x => x.OriginatingBankId == bankId
                 && x.CreatedBy == AchTraffic.Maker && x.Status == AchEntryStatus.PendingApproval).ToListAsync(token);
             foreach (var entry in pending)
@@ -81,12 +83,18 @@ public sealed class AchTrafficService(IDbContextFactory<BankingDbContext> factor
                 foreach (var entry in entries)
                 {
                     entry.EffectiveEntryDate = effectiveDate;
-                    entry.Scenario = settings?.AchScenario ?? AchProcessingScenario.Standard;
+                    entry.Scenario = incident?.AchScenario ?? settings?.AchScenario ?? AchProcessingScenario.Standard;
                     // R01 is a debit-return teaching scenario; credit activities use R02/R03 instead.
                     if (entry.Scenario == AchProcessingScenario.InsufficientFunds && AchRules.IsCredit(entry.TransactionCode))
                         entry.Scenario = AchProcessingScenario.AccountClosed;
                 }
                 db.AchEntries.AddRange(entries);
+                if (entries.Count > 0 && incident is not null && day?.PendingIncidentCaseId is Guid incidentCaseId)
+                {
+                    var item = await db.OperationsCases.SingleAsync(x => x.Id == incidentCaseId && x.BankId == bankId, token);
+                    StudioDayPolicy.ConsumeIncident(day, item, entries[0].Id, now);
+                    item.Notes += $" This incident applies to the whole generated run ({entries.Count} entries); follow the linked entry's batch/file for the remaining entries.";
+                }
                 if (entries.Count > 0 && settings?.RemainingRuns is > 0) settings.RemainingRuns--;
                 state.CurrentUtc = now.AddSeconds(60d / (double)Math.Clamp(state.SpeedMultiplier, 1m, 4m));
             }

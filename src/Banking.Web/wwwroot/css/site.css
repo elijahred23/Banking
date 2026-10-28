@@ -427,3 +427,11 @@ textarea.form-control { min-height:auto; }
 .studio-workload-list li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .studio-workload-list small { display: block; }
 @media (max-width: 600px) { .studio-workload-list li { flex-wrap: wrap; } .studio-workload-list li > div { flex-basis: 100%; } }
+
+.studio-day { padding: 1.25rem; }
+.studio-day-agenda { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; padding-left: 1.5rem; margin-block: 1rem; }
+.studio-day-agenda li { padding: .5rem; }
+.studio-day-agenda span { display: block; font-size: .85rem; }
+.studio-day-agenda [aria-current="step"] { outline: 2px solid currentColor; border-radius: .3rem; }
+.studio-day summary { cursor: pointer; font-weight: 600; }
+.studio-inbox-item { padding: 1rem 0; border-top: 1px solid var(--bs-border-color, #ddd); margin-top: .75rem; }

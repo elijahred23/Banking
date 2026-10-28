@@ -10,7 +10,7 @@ namespace Banking.Web.Controllers;
 
 [Authorize(Roles = BankSecurity.Operations)]
 public sealed class AchSimulatorController(IDbContextFactory<BankingDbContext> factory,
-    SimulationStateService simulation) : Controller
+    SimulationStateService simulation, StudioDayDashboardService dashboard) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken token) => View(await SnapshotAsync(token));
@@ -25,10 +25,15 @@ public sealed class AchSimulatorController(IDbContextFactory<BankingDbContext> f
         if (!Enum.IsDefined(mode) || rate is < 1 or > 4) return BadRequest("Choose a supported activity and 1–4 runs per minute.");
         await using var probe = await factory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, probe, token);
+        string? dayError = null;
         await probe.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
             await using var db = await factory.CreateDbContextAsync(token);
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            var activeDay = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Ach" && x.EndedAt == null, token);
+            if (running && activeDay?.Phase == 3) { dayError = "This day is in reconciliation. Finish it before starting another day."; return; }
+            if (activeDay is not null) mode = StudioDayPolicy.Phases[activeDay.Phase].Activity;
+
             var prefix = AchTraffic.BankPrefix(bankId);
             var states = await db.SimulationStates.Where(x => x.Name.StartsWith(prefix)).ToListAsync(token);
             var now = DateTimeOffset.UtcNow;
@@ -46,6 +51,7 @@ public sealed class AchSimulatorController(IDbContextFactory<BankingDbContext> f
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
         });
+        if (dayError is not null) return BadRequest(dayError);
         TempData["Notice"] = running
             ? $"{AchTraffic.Title(mode)} enabled for this bank. Generated entries use separate simulated maker and approver identities; utility mandates are fictional lab authorizations."
             : "ACH generation and simulated approvals paused for this bank. Released entries and scheduled files continue normally.";
@@ -75,6 +81,6 @@ public sealed class AchSimulatorController(IDbContextFactory<BankingDbContext> f
             .Where(x => x.Customer.BankId == bankId).OrderBy(x => x.Customer.Name).ThenBy(x => x.AccountNumber).ToListAsync(token);
         return new(bank, state, accounts, entries, postings.ToDictionary(x => x.Id,
             x => new AchTrafficPosting(x.Debits, x.Credits, x.Date)),
-            await simulation.UtcNowAsync(token), DateTimeOffset.UtcNow);
+            await simulation.UtcNowAsync(token), DateTimeOffset.UtcNow) { DayPanel = await dashboard.ReadAsync(bankId, "Ach", token) };
     }
 }
