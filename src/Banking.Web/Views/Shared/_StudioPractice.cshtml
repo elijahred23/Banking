@@ -1,0 +1,73 @@
+@model bool
+@using System.Text.Json
+@{
+    var ach = Model;
+    var cases = StudioPractice.Cases(ach);
+}
+<section class="studio-practice traffic-panel my-4" data-studio-practice aria-labelledby="practice-heading">
+    <h2 id="practice-heading">@(ach ? "ACH" : "Wire") learning bench</h2>
+    <p>Predict, advance, inspect, and explain a fictional $125 outgoing credit. Practice runs stay in this page; they do not award mission completion or change payments, shared time, roles, or balances.</p>
+    <p class="text-secondary">Teaching approximation: event ordering, holds, timing, and message labels are simplified. Actual rail profiles, operating windows, return eligibility, and accounting depend on the workflow. Use the live evidence links below to inspect this lab's implementation.</p>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6"><label for="practice-case" class="form-label">Scenario library</label><select id="practice-case" class="form-select" data-practice-case>@foreach (var item in cases) { <option value="@item.Id">@item.Title</option> }</select></div>
+        <div class="col-md-6"><label for="practice-persona" class="form-label">Explain from this perspective</label><select id="practice-persona" class="form-select" data-practice-persona><option value="maker">Maker</option><option value="approver">Approver</option><option value="originator">Originating bank</option><option value="receiver">Receiving bank</option><option value="compliance">Compliance</option><option value="operations">Operations</option></select></div>
+    </div>
+    <p data-practice-objective></p><p data-practice-perspective class="traffic-caption"></p>
+    <ol data-practice-timeline class="studio-practice-timeline" aria-label="Practice payment journey"></ol>
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <h3 class="h5" data-practice-title></h3><p data-practice-evidence></p>
+            <p><strong>Message boundary: </strong><span data-practice-message></span></p>
+            <fieldset><legend class="h6" data-practice-question></legend><div data-practice-choices></div></fieldset>
+            <button type="button" class="btn btn-outline-primary mt-2" data-practice-check>Check prediction</button>
+            <p data-practice-feedback class="mt-2" role="status"></p>
+            <div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-secondary" data-practice-back>Previous event</button><button type="button" class="btn btn-primary" data-practice-next>Next event</button><button type="button" class="btn btn-outline-secondary" data-practice-reset>Restart exercise</button></div>
+            <p class="form-text" data-practice-score></p>
+        </div>
+        <div class="col-lg-5"><h3 class="h5">Fictional sender accounting</h3><dl class="studio-practice-balances" data-practice-balances></dl><div data-practice-journal></div></div>
+    </div>
+    <details class="mt-4"><summary>Match instruction fields to @(ach ? "NACHA records" : "ISO elements")</summary>
+        <p>Select a fictional instruction field to highlight its message representation. These are excerpts, not complete transmittable messages. Open the explorer below to build or inspect a full lab message.</p>
+        <div class="d-flex gap-2 flex-wrap mb-3" role="group" aria-label="Instruction fields">
+            <button type="button" class="btn btn-outline-secondary" data-practice-field="amount" aria-pressed="false">Amount: $125.00</button>
+            <button type="button" class="btn btn-outline-secondary" data-practice-field="name" aria-pressed="false">Receiver: Sample Beneficiary</button>
+            <button type="button" class="btn btn-outline-secondary" data-practice-field="account" aria-pressed="false">Receiving account: DEMO123</button>
+            <button type="button" class="btn btn-outline-secondary" data-practice-field="reference" aria-pressed="false">Payment reference</button>
+        </div>
+        <div class="table-responsive"><table class="table"><thead><tr><th>Instruction</th><th>Message representation</th><th>Meaning in this lab</th></tr></thead><tbody>
+            <tr data-practice-field-row="amount"><th>Amount</th><td><code>@(ach ? "Entry detail positions 30–39: 0000012500" : "<IntrBkSttlmAmt Ccy=\"USD\">125.00</IntrBkSttlmAmt>")</code></td><td>@(ach ? "Ten digits, expressed in cents." : "Interbank settlement amount with an explicit currency.")</td></tr>
+            <tr data-practice-field-row="name"><th>Receiver name</th><td><code>@(ach ? "Entry detail positions 55–76: Sample Beneficiary" : "<Cdtr><Nm>Sample Beneficiary</Nm></Cdtr>")</code></td><td>@(ach ? "Fixed-width receiver name, padded to its field length." : "Creditor party name in the customer-credit example.")</td></tr>
+            <tr data-practice-field-row="account"><th>Receiving account</th><td><code>@(ach ? "Entry detail positions 13–29: DEMO123" : "CdtrAcct / Id / Othr / Id: DEMO123")</code></td><td>Fictional identifier; valid syntax alone does not prove account ownership or availability.</td></tr>
+            <tr data-practice-field-row="reference"><th>Reference</th><td><code>@(ach ? "Entry detail trace number: positions 80–94" : "PmtId / EndToEndId")</code></td><td>@(ach ? "The lab assigns a trace for entry correlation. It is distinct from a customer-supplied individual ID." : "The lab uses the customer reference when supplied, otherwise a generated message identifier. Other identifiers also support correlation.")</td></tr>
+        </tbody></table></div><p data-practice-field-status role="status">Choose a field to follow it into the message.</p>
+    </details>
+    <details class="mt-4"><summary>Compare the same $125 credit across rails</summary>
+        <div class="table-responsive"><table class="table"><caption>Conceptual comparison; use the rail guide for profile-specific behavior.</caption><thead><tr><th>Observe</th><th>ACH</th><th>Wire</th></tr></thead><tbody>
+        <tr><th>Instruction</th><td>Entry grouped into NACHA batches and files</td><td>Individual payment using the supported ISO profile</td></tr>
+        <tr><th>Timing</th><td>Effective date, banking calendar, and file cutoff</td><td>Rail availability and operating window</td></tr>
+        <tr><th>Acceptance</th><td>File outcome and entry processing are separate evidence</td><td>Transport acknowledgment and business outcome are separate evidence</td></tr>
+        <tr><th>Exceptions</th><td>File rejection, entry return, or notification of change</td><td>Rejection, investigation, cancellation request, or return</td></tr>
+        <tr><th>Accounting</th><td colspan="2">This example reserves $125 before posting; final accepted settlement uses balanced journals and releases the hold.</td></tr>
+        </tbody></table></div><a asp-controller="Learning" asp-action="Rails">Open rail comparison guide</a>
+    </details>
+    <details class="mt-3"><summary>Processing clock experiment</summary><p>Choose a fictional day and cutoff position. This model uses weekends only, excludes holidays, and treats wire availability as a configured business window. It is not an actual rail schedule.</p>
+        <label for="practice-day">Fictional day</label><select id="practice-day" class="form-select" data-practice-day><option value="weekday">Weekday</option><option value="friday">Friday</option><option value="saturday">Saturday</option><option value="sunday">Sunday</option></select>
+        <label for="practice-cutoff">Position in window</label><select id="practice-cutoff" class="form-select" data-practice-cutoff><option value="before">Before cutoff</option><option value="after">After cutoff</option></select><p class="mt-2" data-practice-clock role="status"></p>
+        <a asp-controller="@(ach ? "Ach" : "Operations")" asp-action="@(ach ? "Windows" : "Index")">Inspect configured lab windows and clock</a>
+    </details>
+    <h3 class="h5 mt-4">Apply this to real lab evidence</h3>
+    <div class="d-flex gap-3 flex-wrap">
+        @if (ach)
+        {
+            <a asp-controller="Ach" asp-action="Explorer">Build and inspect NACHA records</a><a asp-controller="Ach" asp-action="Returns">Returns and corrections</a><a asp-controller="Ach" asp-action="Operations">ACH operations workshop</a><a asp-controller="Ach" asp-action="Create">Create an ACH instruction</a>
+        }
+        else
+        {
+            <a asp-controller="Learning" asp-action="IsoExplorer">Inspect ISO fields and edit a copy</a><a asp-controller="Wires" asp-action="Index">Investigate wires and open cases</a><a asp-controller="Wires" asp-action="Create">Create a wire instruction</a>
+        }
+        <a asp-controller="Learning" asp-action="Index">Guided missions with durable evidence</a><a asp-controller="Learning" asp-action="Challenges">Diagnostic assessments</a>
+    </div>
+    <p class="form-text">Expand a payment below to open its correlated messages, lifecycle, and journals. Use the application bank/persona switcher to inspect authorized live views; the perspective selector above changes explanations only.</p>
+    <script type="application/json" data-practice-data>@Html.Raw(JsonSerializer.Serialize(cases, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>
+    <noscript><p>Enable JavaScript for the practice replay. The evidence links and learning missions remain available.</p></noscript>
+</section>

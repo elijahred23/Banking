@@ -147,6 +147,12 @@ dotnet test Banking.slnx
 
 The domain tests verify generated headers and UETRs, catalog coverage, generic construction of every supported wire-message type, Fed and CBPR+ statuses, semantic profile validation, and malformed XML handling. Generic construction validates the ISO envelope, message identity, and header consistency; authoritative scheme XSD and MyStandards validation remain external requirements.
 
+## Studio learning benches
+
+Both `/Simulator` and `/AchSimulator` open in Simulation mode, leading with live bank activity and a workload desk. Switch to Guided learning for a live observation guide and the practice bench below the live board. The mode preference is saved per studio in this browser when storage is available; `?mode=learning` or `?mode=simulation` overrides the saved choice on navigation. Mode changes do not start/stop generation or change permissions. Workload filters summarize the current bank-scoped recent snapshot (40 wires / 80 ACH entries), preserve the selected filter on refresh, and show eight matches with an option to show all. Review includes recorded exceptions and screening holds, not necessarily unresolved cases. Pace presets prepare the existing generator controls; Start / update applies them. Choose a fictional $125 outgoing credit scenario, predict each next step, check the explanation, then advance through delivery, acceptance, settlement, and accounting. Six scenarios per studio cover normal processing, delays, rejection, duplicate delivery, and rail-specific exceptions: ACH returns/corrections or wire compliance/cancellation requests.
+
+The bench includes sender balance and journal explanations, bank/role perspectives, clickable instruction-to-message field mappings, a rail comparison, and a simplified processing-window experiment. Links lead to the existing NACHA builder, ISO explorer, operations workflows, and evidence-based missions. Practice stays in page memory and survives live snapshot refreshes, but resets on navigation/reload. It never changes permissions, shared time, payments, or ledger state and does not award durable mission completion. Timing assumes fictional weekday windows without holidays; message excerpts and accounting describe a simplified outgoing credit, not a certified rail implementation.
+
 ## Live wire traffic studio
 
 Sign in as **Operations** (or **All permissions**) and open **Wire studio** at

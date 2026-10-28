@@ -1,0 +1,26 @@
+@model StudioOperationsViewModel
+<section class="traffic-panel studio-operations my-3" aria-labelledby="studio-operations-heading" data-studio-operations>
+    <div class="studio-experience-heading"><h2 class="h4" id="studio-operations-heading">Live workload</h2><span>@Model.Items.Count visible items</span></div>
+    <p class="traffic-caption">Counts cover the @Model.Scope, not the full bank queue. Review includes recorded exception outcomes and screening holds; it does not imply an unresolved case. Settled / posted describes the recorded state, not a guarantee that no later return can occur.</p>
+    <div class="studio-workload-counts">
+        <span><strong>@Model.Items.Count(x => x.Bucket == "processing")</strong> in progress</span>
+        <span><strong>@Model.Items.Count(x => x.Bucket == "review")</strong> review / exceptions</span>
+        <span><strong>@Model.Items.Count(x => x.Bucket == "settled")</strong> settled / posted</span>
+    </div>
+    <label class="form-label" for="studio-workload-filter">Inspect workload</label>
+    <select class="form-select mb-3" id="studio-workload-filter" data-studio-filter>
+        <option value="all">All visible activity</option><option value="processing">In progress</option><option value="review">Review / exceptions</option><option value="settled">Settled / posted</option>
+    </select>
+    <p data-studio-filter-result role="status"></p>
+    <ul class="studio-workload-list">
+        @foreach (var item in Model.Items.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id))
+        {
+            <li data-studio-work-item data-bucket="@item.Bucket">
+                <div><a asp-controller="@item.Controller" asp-action="Details" asp-route-id="@item.Id">@item.Label</a><small>Created @item.CreatedAt.ToLocalTime().ToString("MMM dd HH:mm:ss") · @item.Id.ToString()[..8]</small></div>
+                <strong>@item.Amount.ToString("C")</strong><span class="traffic-pill">@item.Status</span>
+            </li>
+        }
+    </ul>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-studio-show-all hidden>Show all matches</button>
+    <p class="form-text">Open an item to inspect correlated evidence and available authorized actions. Rejections, returns, and corrections remain separate recorded states.</p>
+</section>

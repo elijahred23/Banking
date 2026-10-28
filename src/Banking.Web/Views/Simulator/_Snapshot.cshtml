@@ -14,6 +14,7 @@
     <article><span>Funds on hold</span><strong data-money="holds">@Model.Accounts.Sum(x => x.HeldBalance).ToString("C")</strong><small>Reserved until acceptance or rejection</small></article>
     <article><span>Recent traffic</span><strong>@Model.Wires.Count <em>wires</em></strong><small>@outgoing.Count outgoing · @Model.Wires.Count(x => x.Direction == WireDirection.Incoming) incoming · latest 40</small></article>
 </div>
+<partial name="_StudioOperations" model="StudioOperationsViewModel.From(Model)" />
 <div class="traffic-grid">
     <section class="traffic-panel">
         <div class="traffic-panel-heading"><h2>Payment flight deck</h2><span>Newest first · expand to inspect</span></div>

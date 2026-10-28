@@ -1,6 +1,6 @@
 @model AchTrafficDashboardViewModel
 @{ ViewData["Title"] = "ACH city studio"; var selected = Model.State is null ? AchTrafficMode.Payroll : AchTraffic.Mode(Model.State.Name); }
-<section class="traffic-studio ach-studio" data-snapshot-url="@Url.Action("Snapshot")">
+<section class="traffic-studio ach-studio" data-studio-mode="simulation" data-studio-kind="AchSimulator" data-snapshot-url="@Url.Action("Snapshot")">
     <div class="traffic-heading">
         <div><span class="traffic-eyebrow">THE EVERYDAY MONEY NETWORK · SIMULATION LAB</span>
             <h1>ACH city studio<span class="traffic-dot" aria-hidden="true"></span></h1>
@@ -12,6 +12,7 @@
         <article><span aria-hidden="true">▦</span><h2>Keep business moving</h2><p>CCD credits · supplier invoices from $125–$1,800, with remittance addenda.</p></article>
         <article><span aria-hidden="true">↙</span><h2>Run the neighborhood</h2><p>WEB debits · $35–$220 utility bills using synthetic lab authorizations.</p></article>
     </div>
+    <partial name="_StudioExperience" model="true" />
     <div class="traffic-controls">
         <form asp-action="Control" method="post">
             <label for="ach-mode">Activity</label>
@@ -30,5 +31,6 @@
         <p>Each run generates up to four instructions, then a separate simulated approver releases them. ACH service groups them into NACHA batches and files before operator acceptance and posting. Dollar amounts include random cents and adjust to funds. This is a learning approximation; no real employees, mandates, or banking connections are used.</p>
     </div>
     <div id="traffic-snapshot"><partial name="_Snapshot" model="Model" /></div>
+    <div data-studio-learning><partial name="_StudioPractice" model="true" /></div>
 </section>
-@section Scripts { <script src="~/js/wire-traffic.js" asp-append-version="true"></script> }
+@section Scripts { <script src="~/js/studio-experience.js" asp-append-version="true"></script> <script src="~/js/studio-practice.js" asp-append-version="true"></script> <script src="~/js/wire-traffic.js" asp-append-version="true"></script> }

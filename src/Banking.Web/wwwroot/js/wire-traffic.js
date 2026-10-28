@@ -5,7 +5,7 @@
     const connection = document.getElementById('traffic-connection');
     let stopped = false;
     async function refresh() {
-        if (document.hidden) { schedule(); return; }
+        if (document.hidden || target.querySelector('[data-studio-filter]') === document.activeElement) { schedule(); return; }
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         try {
@@ -20,6 +20,9 @@
             const open = new Set([...target.querySelectorAll('details[open]')].map(x => x.dataset.wireId));
             const money = new Map([...target.querySelectorAll('[data-money]')].map(x => [x.dataset.money, x.textContent]));
             const focused = target.contains(document.activeElement) ? document.activeElement : null;
+            // Avoid replacing an open native workload select while a refresh is in flight.
+            if (focused?.matches('[data-studio-filter]')) return;
+            const focusedShowAll = focused?.matches('[data-studio-show-all]');
             const focusedCard = focused?.closest('details[data-wire-id]');
             const focusKey = focusedCard?.dataset.wireId;
             const focusHref = focused?.closest('a')?.getAttribute('href');
@@ -29,6 +32,7 @@
                     value.classList.add('traffic-money-changed');
             }
             target.replaceChildren(fragment.content);
+            studio.dispatchEvent(new Event('studio:snapshot'));
             // Keep live updates running while preserving keyboard focus on the inspected card.
             if (focusKey) {
                 const restored = [...target.querySelectorAll('details')].find(x => x.dataset.wireId === focusKey);
@@ -36,6 +40,7 @@
                     .find(x => x.getAttribute('href') === focusHref);
                 (link || restored?.querySelector('summary'))?.focus({ preventScroll: true });
             }
+            if (focusedShowAll) target.querySelector('[data-studio-show-all]:not([hidden])')?.focus({ preventScroll: true });
             connection.textContent = '● Live · refreshes every 1.5s';
             connection.classList.remove('traffic-offline');
         } catch (_) {

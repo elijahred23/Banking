@@ -406,3 +406,24 @@ textarea.form-control { min-height:auto; }
 @media(max-width:650px) { .ach-activity-grid { grid-template-columns:1fr; } .ach-activity-grid article { padding:1rem; } .traffic-account-scroll { max-height:35rem; } }
 .studio-nacha-links { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .85rem; margin:.9rem 0 .3rem; font-size:.75rem; }
 .studio-nacha-links>span { color:#59768b; }
+
+/* Learning bench stays outside the live snapshot so practice survives refreshes. */
+.studio-practice { padding: 1.5rem; }
+.studio-practice-timeline { display: flex; flex-wrap: wrap; gap: .6rem 1.8rem; padding-left: 1.5rem; margin: 1.5rem 0; }
+.studio-practice-timeline li { padding: .35rem; }
+.studio-practice-timeline [aria-current="step"] { font-weight: 700; outline: 2px solid currentColor; border-radius: .3rem; }
+.studio-practice-balances { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1rem; }
+.studio-practice-balances dd { text-align: right; font-variant-numeric: tabular-nums; }
+.studio-practice summary { cursor: pointer; font-weight: 600; }
+
+.traffic-studio[data-studio-mode="simulation"] [data-studio-learning] { display: none; }
+.studio-experience, .studio-coach, .studio-operations { padding: 1.25rem; }
+.studio-experience-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; }
+.studio-workload-counts { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 1rem 0; }
+.studio-workload-counts strong { font-size: 1.4rem; }
+.studio-workload-list { list-style: none; padding: 0; margin: 0; max-height: 28rem; overflow: auto; }
+.studio-workload-list li { display: flex; align-items: center; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid var(--bs-border-color, #ddd); }
+.studio-workload-list li[hidden] { display: none; }
+.studio-workload-list li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.studio-workload-list small { display: block; }
+@media (max-width: 600px) { .studio-workload-list li { flex-wrap: wrap; } .studio-workload-list li > div { flex-basis: 100%; } }

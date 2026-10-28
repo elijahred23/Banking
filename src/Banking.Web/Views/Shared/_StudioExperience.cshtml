@@ -1,0 +1,37 @@
+@model bool
+<section class="traffic-panel studio-experience my-3" aria-labelledby="studio-experience-title">
+    <div class="studio-experience-heading">
+        <div><h2 id="studio-experience-title" class="h4">Your operating desk</h2><p>Run the bank's simulated activity, investigate outcomes, and choose how much guidance to show.</p></div>
+        <div role="group" aria-label="Studio experience" class="d-flex gap-2">
+            <button type="button" class="btn btn-primary" data-studio-mode-choice="simulation" aria-pressed="true">Simulation</button>
+            <button type="button" class="btn btn-outline-primary" data-studio-mode-choice="learning" aria-pressed="false">Guided learning</button>
+        </div>
+    </div>
+    <p data-studio-mode-status role="status">Simulation mode: live traffic and operations first. Switch to Guided learning for explanations and practice.</p>
+    <div class="d-flex flex-wrap align-items-center gap-2" role="group" aria-label="Activity pace presets">
+        <strong>Set a pace:</strong>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-studio-pace="1">Slow observation</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-studio-pace="@(Model ? 2 : 6)">Morning flow</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-studio-pace="@(Model ? 4 : 12)">Busy window</button>
+    </div>
+    <p class="form-text" data-studio-pace-status role="status">Select a pace, then use Start / update to apply it. These presets adjust the generator's pace.</p>
+    <nav class="d-flex flex-wrap gap-3" aria-label="Studio operations tools">
+        <a href="#traffic-snapshot">Live bank desk</a>
+        <a asp-controller="Operations" asp-action="Index">Shared clock &amp; operations</a>
+        <a asp-controller="@(Model ? "Ach" : "Wires")" asp-action="@(Model ? "Operations" : "Index")">@(Model ? "ACH exceptions workshop" : "Wire investigations")</a>
+        <a asp-controller="Learning" asp-action="Index">Evidence-based missions</a>
+    </nav>
+    <noscript><p>Mode switching and pace presets require JavaScript. Live controls, payment details, and <a asp-controller="Learning" asp-action="Index">guided missions</a> remain available.</p></noscript>
+</section>
+<section class="traffic-panel studio-coach my-3" data-studio-learning aria-labelledby="studio-coach-title">
+    <h2 id="studio-coach-title" class="h4">Learn from a live operating session</h2>
+    <ol>
+        <li><strong>Objective:</strong> trace one @(Model ? "ACH entry from batching through its file outcome" : "wire from approval through its rail outcome") and reconcile its hold, settlement, and journal.</li>
+        <li><strong>Predict:</strong> before starting, decide which event should change available balance and which should change posted balance.</li>
+        <li><strong>Act:</strong> select Slow observation, start activity, and expand a live payment below. Pause generation when you have an item to investigate.</li>
+        <li><strong>Gather evidence:</strong> open the payment's details. Compare its messages, status history, settlement, and balanced journal; pausing generation does not pause released payments.</li>
+        <li><strong>Explain:</strong> identify which evidence proves transport delivery, business acceptance, and settlement. Use the practice bench below to check your reasoning.</li>
+        <li><strong>Assess:</strong> use <a asp-controller="Learning" asp-action="Index">a guided mission</a> for durable, evidence-verified completion.</li>
+    </ol>
+    <p class="form-text">This guide follows live lab activity. Fictional bench exercises below are separate practice. Switching modes does not start or stop payments or grant permissions.</p>
+</section>

@@ -15,6 +15,7 @@
     <article><span>Funds reserved</span><strong data-money="holds">@Model.Accounts.Sum(x => x.HeldBalance).ToString("C")</strong><small>Includes all active payment holds</small></article>
     <article><span>Recent ACH posted</span><strong>@posted.Sum(x => x.Amount).ToString("C")</strong><small>@posted.Count posted · latest @Model.Entries.Count entries</small></article>
 </div>
+<partial name="_StudioOperations" model="StudioOperationsViewModel.From(Model)" />
 <div class="traffic-grid">
     <section class="traffic-panel">
         <div class="traffic-panel-heading"><h2>The batch board</h2><span>Expand a run to follow every entry</span></div>
