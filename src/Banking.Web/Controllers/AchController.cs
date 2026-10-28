@@ -176,7 +176,8 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             return RedirectToAction(nameof(Details), new { id });
         }
         var selfApproval = string.Equals(entry.CreatedBy, User.Identity!.Name, StringComparison.OrdinalIgnoreCase);
-        if (selfApproval && !User.HasAllPermissions())
+        var isRepair = await db.StudioAchRepairs.AnyAsync(x => x.BankId == bankId && x.ReplacementEntryId == id, token);
+        if (selfApproval && (!User.HasAllPermissions() || isRepair))
         {
             TempData["Error"] = "The entry creator cannot approve their own ACH entry.";
             return RedirectToAction(nameof(Details), new { id });

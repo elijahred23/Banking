@@ -12,6 +12,7 @@ builder.Services.AddHostedService<WireUpdateBroadcaster>();
 builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddScoped<LearningEvidenceService>();
 builder.Services.AddScoped<StudioDayService>();
+builder.Services.AddScoped<StudioCampaignService>();
 builder.Services.AddScoped<StudioDayDashboardService>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>

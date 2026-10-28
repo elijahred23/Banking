@@ -303,3 +303,46 @@ and asynchronous posting gaps may be transient, so these observations are not an
 automatic reconciliation certificate. Closed-day evidence keeps updating as late
 outcomes arrive. Starting the next day preserves the prior day's database history;
 the studios display the latest day.
+
+## Campaign Room
+
+Open **Campaigns**, or the Campaign Room link in either studio. Operations users can
+save immutable scenario versions (phase workloads, generation pace, receiver
+profiles, scheduled incidents, debit-authorization requirements, hints, and an
+outstanding-work target), then create a 2–10 banking-day campaign. Each campaign
+snapshots its scenario. Starting successive days preserves accounts and cases and
+uses the next banking date; it never advances shared lab time. Workloads/profiles
+are repeatable, while sampled amounts and customer selection remain random.
+
+The room shows customer cash-flow stories, pre-settlement face-amount forecasts,
+operational evidence targets, and role-addressed handoff notes. Maker, Approver,
+Compliance, and Operations personas can view their received/sent handoffs without
+being granted another role's permissions. Templates and campaigns are bank-scoped;
+new versions do not rewrite running campaigns. Mixed receiver behavior is stable
+per receiver bank: Slow delays wire outcomes or schedules ACH for a later banking
+day; AccountProblem simulates a wire rejection or an account-closed ACH return.
+Explicit queued incidents override the profile's fault outcome.
+
+ACH campaigns can require fictional debit authorizations. Operations records a
+collection account, payer routing/account, expiration, and per-entry limit; revoke
+blocks future generated collections without canceling previously generated work.
+These records are teaching evidence, not real mandates or full ACH authorization
+compliance. Rejected operator files can be repaired entry by entry as a Maker:
+the original file remains immutable, one replacement is allowed per original,
+and the replacement requires a different approver, even for All-permissions users.
+The normal pipeline validates, batches, and builds new controls after approval.
+Returns and entries with posted accounting are excluded from this repair workflow.
+
+Wire investigation conversations provide delayed, persisted desk replies and
+follow-up requests for correlation details. They are labeled teaching messages,
+not ISO exchanges or independent beneficiary-posting confirmation. Actual ISO
+investigations/cancellations/returns remain in the authorized wire case workflow.
+Treasury requests never mint cash: use an ordinary source-bank financial-institution
+wire and independent approval, then match its incoming settlement, funding reference,
+and balanced journal evidence. Matching a request never posts another journal.
+
+Recorded session replay synchronizes recorded payment events, messages, file
+creation, and journal lines. It does not invent timestamps for unrecorded states,
+reprocess payments, or reconstruct unavailable historical balances. The transcript
+and interactive stepping are presentation-only. Campaign target assessments use
+recorded evidence and remain distinct from durable guided-mission completion.

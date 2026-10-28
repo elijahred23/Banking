@@ -6,7 +6,7 @@ namespace Banking.Infrastructure;
 
 public sealed class StudioDayService(IDbContextFactory<BankingDbContext> factory)
 {
-    public async Task StartAsync(Guid bankId, string kind, string actor, bool useRoster, CancellationToken token)
+    public async Task StartAsync(Guid bankId, string kind, string actor, bool useRoster, CancellationToken token, Guid? campaignId = null)
     {
         if (!StudioDayPolicy.ValidKind(kind)) throw new InvalidOperationException("Choose a wire or ACH studio.");
         await Mutate(async db =>
@@ -15,10 +15,19 @@ public sealed class StudioDayService(IDbContextFactory<BankingDbContext> factory
                 throw new InvalidOperationException("A banking day is already active. Continue or close it first.");
             if (useRoster && (kind != "Ach" || !await db.PayrollMembers.AnyAsync(x => x.BankId == bankId && x.Enabled, token)))
                 throw new InvalidOperationException("No enabled payroll roster exists at this bank. Use generated payroll instead.");
+            StudioCampaign? campaign = null;
+            var businessDate = StudioPolicy.BankingDate(DateOnly.FromDateTime((await db.SimulationStates.SingleAsync(x => x.Name == "default", token)).CurrentUtc.UtcDateTime));
+            if (campaignId is Guid selectedCampaign)
+            {
+                campaign = await db.StudioCampaigns.SingleOrDefaultAsync(x => x.Id == selectedCampaign && x.BankId == bankId && x.Kind == kind, token)
+                    ?? throw new InvalidOperationException("Select a campaign owned by this bank and studio.");
+                var previous = await db.StudioDays.Where(x => x.BankId == bankId && x.CampaignId == selectedCampaign).OrderBy(x => x.StartedAt).ToListAsync(token);
+                if (previous.Count >= campaign.PlannedDays) throw new InvalidOperationException("This campaign has generated all its planned days.");
+                businessDate = previous.Count == 0 ? campaign.FirstDate : AchBusinessCalendar.NextBankingDay(previous[^1].BusinessDate);
+            }
             var bank = await db.Banks.SingleAsync(x => x.Id == bankId, token);
             var accounts = await db.Accounts.Where(x => x.Customer.BankId == bankId).ToListAsync(token);
-            var clock = await db.SimulationStates.SingleAsync(x => x.Name == "default", token);
-            var day = new StudioDay { BankId = bankId, Kind = kind, BusinessDate = StudioPolicy.BankingDate(DateOnly.FromDateTime(clock.CurrentUtc.UtcDateTime)),
+            var day = new StudioDay { BankId = bankId, Kind = kind, BusinessDate = businessDate, CampaignId = campaign?.Id,
                 StartedBy = actor, OpeningCash = bank.MasterAccountBalance,
                 OpeningCustomerBalance = accounts.Sum(x => x.Balance), OpeningHolds = accounts.Sum(x => x.HeldBalance) };
             db.StudioDays.Add(day);
@@ -94,15 +103,28 @@ public sealed class StudioDayService(IDbContextFactory<BankingDbContext> factory
         if (settings is null) { settings = new StudioSettings { BankId = day.BankId, Kind = day.Kind }; db.StudioSettings.Add(settings); }
         settings.Preset = "BankingDay"; settings.Rail = PaymentRail.Fedwire;
         settings.WireScenario = StudioWireScenario.Normal; settings.AchScenario = AchProcessingScenario.Standard;
+        StudioCampaignPlan? authored = null;
+        if (day.CampaignId is Guid campaignId)
+        {
+            var campaign = await db.StudioCampaigns.SingleAsync(x => x.Id == campaignId && x.BankId == day.BankId, token);
+            authored = StudioCampaignPlan.Parse(campaign.PlanJson, day.Kind);
+        }
         settings.UseRoster = useRoster; settings.RemainingRuns = day.Kind == "Wire" ? plan.WireCount : plan.AchRuns;
+        if (authored is not null && day.Phase < 3) settings.RemainingRuns = authored.Counts[day.Phase];
         settings.UpdatedDate = DateTimeOffset.UtcNow;
+        if (authored is not null && authored.IncidentPhase == day.Phase)
+        {
+            var definition = StudioDayPolicy.Incident(day.Kind, authored.Incident)!;
+            var item = new OperationsCase { BankId = day.BankId, Rail = day.Kind, CaseType = "StudioIncident", Reference = day.Id.ToString(), Summary = $"SIMULATED authored incident: {definition.Title}", Notes = definition.Evidence, DueDate = DateTimeOffset.UtcNow.AddHours(1) };
+            db.OperationsCases.Add(item); day.PendingIncident = definition.Id; day.PendingIncidentCaseId = item.Id;
+        }
         await Pause(db, day.BankId, day.Kind, token);
         var name = day.Kind == "Wire" ? WireTraffic.StateName(day.BankId) : AchTraffic.StateName(day.BankId, plan.Activity);
         var state = db.SimulationStates.Local.FirstOrDefault(x => x.Name == name)
             ?? await db.SimulationStates.SingleOrDefaultAsync(x => x.Name == name, token);
         if (state is null) { state = new SimulationState { Name = name }; db.SimulationStates.Add(state); }
         state.IsPaused = day.Phase == 3;
-        state.SpeedMultiplier = day.Kind == "Wire" ? plan.WireRate : plan.AchRate;
+        state.SpeedMultiplier = authored?.Rate ?? (day.Kind == "Wire" ? plan.WireRate : plan.AchRate);
         state.CurrentUtc = DateTimeOffset.UtcNow; state.UpdatedDate = DateTimeOffset.UtcNow;
     }
 

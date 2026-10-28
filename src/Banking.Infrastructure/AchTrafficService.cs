@@ -19,6 +19,8 @@ public sealed class AchTrafficService(IDbContextFactory<BankingDbContext> factor
             var now = DateTimeOffset.UtcNow;
             var settings = await db.StudioSettings.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Ach", token);
             var day = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Ach" && x.EndedAt == null, token);
+            var campaign = day?.CampaignId is Guid campaignId ? await db.StudioCampaigns.SingleAsync(x => x.Id == campaignId && x.BankId == bankId, token) : null;
+            var campaignPlan = campaign is null ? null : StudioCampaignPlan.Parse(campaign.PlanJson, "Ach");
             var incident = day is not null ? StudioDayPolicy.Incident("Ach", day.PendingIncident) : null;
             var pending = await db.AchEntries.Where(x => x.OriginatingBankId == bankId
                 && x.CreatedBy == AchTraffic.Maker && x.Status == AchEntryStatus.PendingApproval).ToListAsync(token);
@@ -53,7 +55,7 @@ public sealed class AchTrafficService(IDbContextFactory<BankingDbContext> factor
                     ? TrafficPopulation.IsSupplier(x) : TrafficPopulation.IsPersonChecking(x))
                     .OrderBy(_ => Random.Shared.Next()).Take(4).ToList();
                 var clock = await db.SimulationStates.SingleAsync(x => x.Name == "default", token);
-                var processingDate = DateOnly.FromDateTime(clock.CurrentUtc.UtcDateTime);
+                var processingDate = day?.CampaignId is not null ? day.BusinessDate : DateOnly.FromDateTime(clock.CurrentUtc.UtcDateTime);
                 var effectiveDate = settings?.Preset == "FridayPayday" ? StudioPolicy.Friday(processingDate)
                     : settings?.Preset == "MonthEnd" ? StudioPolicy.MonthEnd(processingDate) : StudioPolicy.BankingDate(processingDate);
                 var entries = new List<AchEntry>();
@@ -82,11 +84,17 @@ public sealed class AchTrafficService(IDbContextFactory<BankingDbContext> factor
                     entries.AddRange(AchTraffic.CreateRun(company, candidates, mode, processingDate, now));
                 foreach (var entry in entries)
                 {
-                    entry.EffectiveEntryDate = effectiveDate;
-                    entry.Scenario = incident?.AchScenario ?? settings?.AchScenario ?? AchProcessingScenario.Standard;
+                    entry.EffectiveEntryDate = campaignPlan?.ProfileFor(entry.ReceivingBankId ?? Guid.Empty) == "Slow"
+                        ? AchBusinessCalendar.NextBankingDay(effectiveDate) : effectiveDate;
+                    entry.Scenario = incident?.AchScenario ?? (campaignPlan is not null && entry.ReceivingBankId is Guid receivingBank ? (AchProcessingScenario?)campaignPlan.AchScenario(receivingBank) : null) ?? settings?.AchScenario ?? AchProcessingScenario.Standard;
                     // R01 is a debit-return teaching scenario; credit activities use R02/R03 instead.
                     if (entry.Scenario == AchProcessingScenario.InsufficientFunds && AchRules.IsCredit(entry.TransactionCode))
                         entry.Scenario = AchProcessingScenario.AccountClosed;
+                }
+                if (campaignPlan?.RequireDebitAuthorization == true && AchTraffic.IsDebitActivity(mode))
+                {
+                    var authorizations = await db.StudioDebitAuthorizations.Where(x => x.BankId == bankId && x.RevokedAt == null).ToListAsync(token);
+                    entries = entries.Where(entry => authorizations.Any(auth => auth.Covers(entry, entry.EffectiveEntryDate))).ToList();
                 }
                 db.AchEntries.AddRange(entries);
                 if (entries.Count > 0 && incident is not null && day?.PendingIncidentCaseId is Guid incidentCaseId)

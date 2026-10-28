@@ -5,6 +5,12 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<StudioScenario> StudioScenarios => Set<StudioScenario>();
+    public DbSet<StudioCampaign> StudioCampaigns => Set<StudioCampaign>();
+    public DbSet<StudioDebitAuthorization> StudioDebitAuthorizations => Set<StudioDebitAuthorization>();
+    public DbSet<StudioAchRepair> StudioAchRepairs => Set<StudioAchRepair>();
+    public DbSet<StudioNote> StudioNotes => Set<StudioNote>();
+    public DbSet<StudioFundingRequest> StudioFundingRequests => Set<StudioFundingRequest>();
     public DbSet<StudioDay> StudioDays => Set<StudioDay>();
     public DbSet<StudioSettings> StudioSettings => Set<StudioSettings>();
     public DbSet<PayrollMember> PayrollMembers => Set<PayrollMember>();
@@ -211,6 +217,29 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<OperationsCase>().HasIndex(x => new { x.BankId, x.Rail, x.Reference });
         modelBuilder.Entity<OperationsCase>().HasOne(x => x.Bank).WithMany().HasForeignKey(x => x.BankId)
             .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioScenario>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioScenario>().HasIndex(x => new { x.BankId, x.Kind, x.CreatedAt });
+        modelBuilder.Entity<StudioCampaign>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioCampaign>().HasIndex(x => new { x.BankId, x.Kind, x.CreatedAt });
+        modelBuilder.Entity<StudioDay>().HasOne<StudioCampaign>().WithMany().HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDebitAuthorization>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDebitAuthorization>().HasOne<Account>().WithMany().HasForeignKey(x => x.OriginatingAccountId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioDebitAuthorization>().HasIndex(x => new { x.BankId, x.OriginatingAccountId, x.Routing, x.Account });
+        modelBuilder.Entity<StudioDebitAuthorization>().Property(x => x.Limit).HasPrecision(19, 4);
+        modelBuilder.Entity<StudioAchRepair>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioAchRepair>().HasOne<AchEntry>().WithMany().HasForeignKey(x => x.OriginalEntryId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioAchRepair>().HasOne<AchEntry>().WithMany().HasForeignKey(x => x.ReplacementEntryId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioAchRepair>().HasIndex(x => x.OriginalEntryId).IsUnique();
+        modelBuilder.Entity<StudioAchRepair>().HasIndex(x => x.ReplacementEntryId).IsUnique();
+        modelBuilder.Entity<StudioNote>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioNote>().HasOne<StudioCampaign>().WithMany().HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioNote>().HasOne<WireTransfer>().WithMany().HasForeignKey(x => x.WireId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioNote>().HasIndex(x => new { x.BankId, x.AvailableAt });
+        modelBuilder.Entity<StudioFundingRequest>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioFundingRequest>().HasOne<WireTransfer>().WithMany().HasForeignKey(x => x.IncomingWireId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<StudioFundingRequest>().HasIndex(x => new { x.BankId, x.CreatedAt });
+        modelBuilder.Entity<StudioFundingRequest>().HasIndex(x => x.IncomingWireId).IsUnique().HasFilter("[IncomingWireId] IS NOT NULL");
+        modelBuilder.Entity<StudioFundingRequest>().Property(x => x.Amount).HasPrecision(19, 4);
         modelBuilder.Entity<StudioDay>().HasIndex(x => new { x.BankId, x.Kind }).IsUnique().HasFilter("[EndedAt] IS NULL");
         modelBuilder.Entity<StudioDay>().HasIndex(x => new { x.BankId, x.StartedAt });
         modelBuilder.Entity<StudioDay>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);

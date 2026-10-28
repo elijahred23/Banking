@@ -22,6 +22,8 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
             var now = DateTimeOffset.UtcNow;
             var settings = await db.StudioSettings.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire", token);
             var day = await db.StudioDays.SingleOrDefaultAsync(x => x.BankId == bankId && x.Kind == "Wire" && x.EndedAt == null, token);
+            var campaign = day?.CampaignId is Guid campaignId ? await db.StudioCampaigns.SingleAsync(x => x.Id == campaignId && x.BankId == bankId, token) : null;
+            var campaignPlan = campaign is null ? null : StudioCampaignPlan.Parse(campaign.PlanJson, "Wire");
             var incident = day is not null ? StudioDayPolicy.Incident("Wire", day.PendingIncident) : null;
             // Release only this bank's simulator-made wires, on a later tick than creation.
             var pending = await db.WireTransfers.Include(x => x.Events).Where(x =>
@@ -77,6 +79,7 @@ public sealed class WireTrafficService(IDbContextFactory<BankingDbContext> facto
                     }
                     var wire = WireTraffic.Create(source, destination, now, rail: rail,
                         scenario: incident?.WireScenario is StudioWireScenario fault ? StudioPolicy.Scenario(fault)
+                            : campaignPlan is not null ? campaignPlan.WireScenario(destination.Customer.BankId)
                             : settings is null ? ProcessingScenario.PendingThenAccepted : StudioPolicy.Scenario(settings.WireScenario),
                         complianceReview: (incident?.WireScenario ?? settings?.WireScenario) == StudioWireScenario.ComplianceReview);
                     db.WireTransfers.Add(wire);

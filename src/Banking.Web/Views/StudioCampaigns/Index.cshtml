@@ -1,0 +1,113 @@
+@model CampaignRoomViewModel
+@{
+    ViewData["Title"] = "Campaign room";
+    var ops = User.IsInRole(BankSecurity.Operations);
+    var maker = User.IsInRole(BankSecurity.PaymentCreator);
+    var plan = Model.Selected is null ? StudioCampaignPlan.Default(Model.Kind) : StudioCampaignPlan.Parse(Model.Selected.PlanJson, Model.Kind);
+    var nextDate = Model.Days.Count == 0 ? Model.Selected?.FirstDate : AchBusinessCalendar.NextBankingDay(Model.Days[^1].BusinessDate);
+}
+<div class="page-heading mb-3"><div><span class="eyebrow">SIMULATION CAMPAIGN ROOM · @Model.Bank.Name</span><h1>@(Model.Kind == "Ach" ? "ACH" : "Wire") campaigns</h1><p>Carry customers, balances, and unresolved work across days. Scenario dates do not advance the shared lab clock. This is a fictional simulator, not a rail certification.</p></div></div>
+<nav class="d-flex gap-3 flex-wrap mb-4" aria-label="Campaign room tools"><a asp-action="Index" asp-route-kind="Wire">Wire campaigns</a><a asp-action="Index" asp-route-kind="Ach">ACH campaigns</a><a asp-controller="@(Model.Kind == "Ach" ? "AchSimulator" : "Simulator")" asp-action="Index">Live studio</a><a asp-controller="Learning" asp-action="Index">Guided missions</a><a asp-controller="Operations" asp-action="Index">Clock and reconciliation</a></nav>
+<section class="surface p-4 mb-4">
+    <h2 class="h4">Campaigns and scenario library</h2>
+    <p class="form-text">The latest 20 campaigns and scenario versions are listed. Historical rows are retained.</p>
+    <ul>@foreach (var item in Model.Campaigns) { <li><a asp-action="Index" asp-route-kind="@Model.Kind" asp-route-id="@item.Id">@item.Title · @item.PlannedDays days · @item.FirstDate</a></li> }</ul>
+    @if (Model.Selected is not null)
+    {
+        <h3 class="h5">@Model.Selected.Title · @Model.Days.Count / @Model.Selected.PlannedDays days started</h3>
+        <p>Receiver behavior: <strong>@plan.ReceiverProfile</strong>. Target at reconciliation: no more than <strong>@plan.MaxOutstanding</strong> outstanding instructions, with balanced journals and no missing settlement-posting evidence. These are operational targets, not an automatic passing score.</p>
+        @if (Model.Assessments.Count > 0)
+        { <div class="table-responsive"><table class="table"><caption>Live evidence assessment; late postings can change results. No mission completion is awarded.</caption><thead><tr><th>Day</th><th>Generated</th><th>Outstanding</th><th>Missing journals</th><th>Unbalanced journals</th><th>Result</th></tr></thead><tbody>@foreach (var assessment in Model.Assessments) { <tr><td>@Model.Days.Single(x => x.Id == assessment.DayId).BusinessDate</td><td>@assessment.Generated</td><td>@assessment.Outstanding</td><td>@assessment.MissingJournals</td><td>@assessment.UnbalancedJournals</td><td>@assessment.Result</td></tr> }</tbody></table></div> }
+        <details><summary>Optional learning guidance</summary><p>@plan.Hint</p><p>Predict how an uncollected receipt, revoked debit authorization, or a slow receiver affects the next day. Compare that prediction with the payment and journal evidence.</p></details>
+        @if (ops && Model.Days.Count < Model.Selected.PlannedDays && !Model.Days.Any(x => x.EndedAt == null))
+        { <form asp-action="NextDay" method="post" class="mt-3"><input type="hidden" name="kind" value="@Model.Kind" /><input type="hidden" name="id" value="@Model.Selected.Id" /><button class="btn btn-primary">Start campaign day @(Model.Days.Count + 1) · @nextDate</button></form> }
+        <p class="form-text">Starting enables bounded generation at this bank. No balances, approvals, or open cases are reset. Future ACH dates wait for the shared clock; use Operations to advance it deliberately.</p>
+        <ul>@foreach (var day in Model.Days) { <li>Day @day.BusinessDate · @StudioDayPolicy.Phases[day.Phase].Title · @(day.EndedAt is null ? "Active" : "Generation closed") · <a asp-action="Replay" asp-route-id="@day.Id">Replay recorded evidence</a></li> }</ul>
+    }
+    @if (ops)
+    {
+        <details class="mt-3"><summary>Author a reusable scenario version</summary>
+            <p>New versions preserve existing scenarios and running campaigns. Workload counts apply to morning, afternoon, and deadline phases on every campaign day.</p>
+            <form asp-action="Author" method="post" class="row g-3 mt-1">
+                <input type="hidden" name="kind" value="@Model.Kind" />
+                <div class="col-12"><label for="scenario-title">Title</label><input id="scenario-title" name="title" class="form-control" minlength="3" maxlength="100" required /></div>
+                @foreach (var pair in new[] { ("morning", 0), ("afternoon", 1), ("deadline", 2) })
+                { <div class="col-md-4"><label for="scenario-@pair.Item1">@pair.Item1 @(Model.Kind == "Wire" ? "wires" : "runs")</label><input id="scenario-@pair.Item1" name="@pair.Item1" type="number" class="form-control" min="1" max="@(Model.Kind == "Wire" ? 20 : 5)" value="@plan.Counts[pair.Item2]" required /></div> }
+                <div class="col-md-4"><label for="scenario-rate">Generation pace per minute</label><input id="scenario-rate" name="rate" type="number" class="form-control" min="1" max="@(Model.Kind == "Wire" ? 12 : 4)" value="@plan.Rate" required /></div>
+                <div class="col-md-4"><label for="scenario-profile">Receiver behavior</label><select id="scenario-profile" name="profile" class="form-select">@foreach (var profile in new[] { "Normal", "Slow", "AccountProblem", "Mixed" }) { <option selected="@(profile == plan.ReceiverProfile)">@profile</option> }</select></div>
+                <div class="col-md-4"><label for="scenario-outstanding">Outstanding-work target</label><input id="scenario-outstanding" name="outstanding" type="number" class="form-control" min="0" max="100" value="@plan.MaxOutstanding" required /></div>
+                <div class="col-md-6"><label for="scenario-phase">Schedule an incident each day</label><select id="scenario-phase" name="incidentPhase" class="form-select"><option value="-1">No scheduled incident</option><option value="0">Morning</option><option value="1">Afternoon</option><option value="2">Deadline</option></select></div>
+                <div class="col-md-6"><label for="scenario-incident">Incident</label><select id="scenario-incident" name="incident" class="form-select">@foreach (var incident in StudioDayPolicy.Incidents(Model.Kind)) { <option value="@incident.Id">@incident.Title</option> }</select></div>
+                @if (Model.Kind == "Ach") { <div class="col-12"><label><input type="checkbox" name="requireAuthorization" value="true" /> Require active fictional debit authorizations for generated collections</label></div> }
+                <div class="col-12"><label for="scenario-hint">Learning hint</label><textarea id="scenario-hint" name="hint" class="form-control" maxlength="500">@plan.Hint</textarea></div>
+                <div class="col-12"><button class="btn btn-outline-primary">Save scenario version</button></div>
+            </form>
+            <p class="form-text">Mixed assigns stable behavior by receiver bank. Slow wires use delayed acceptance; slow ACH entries receive a later banking-day effective date. AccountProblem uses rail rejection for wires and account-closed returns for ACH. Explicit incidents override the profile's fault outcome.</p>
+        </details>
+        @if (Model.Scenarios.Count > 0)
+        {
+            <form asp-action="CreateCampaign" method="post" class="row g-3 mt-2">
+                <input type="hidden" name="kind" value="@Model.Kind" />
+                <div class="col-md-5"><label for="campaign-scenario">Saved scenario</label><select id="campaign-scenario" name="scenarioId" class="form-select">@foreach (var scenario in Model.Scenarios) { <option value="@scenario.Id">@scenario.Title · @scenario.CreatedAt.ToLocalTime().ToString("g")</option> }</select></div>
+                <div class="col-md-2"><label for="campaign-count">Days</label><input id="campaign-count" name="count" class="form-control" type="number" min="2" max="10" value="3" required /></div>
+                <div class="col-md-3"><label for="campaign-date">First business date</label><input id="campaign-date" name="firstDate" class="form-control" type="date" value="@StudioPolicy.BankingDate(Model.LabDate).ToString("yyyy-MM-dd")" required /></div>
+                <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary">Create campaign</button></div>
+            </form>
+        }
+    }
+</section>
+<section class="surface p-4 mb-4"><h2 class="h4">Customer cash-flow stories</h2><p>Pending collections cannot fund payroll until accepted and posted. The same fictional accounts carry their balances and holds into later days. Pending columns exclude recorded settlement. Their face amounts overlap holds and are not additional available funds.</p>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Customer / account</th><th>Posted</th><th>Available</th><th>Holds</th><th>Pending payments</th><th>Pending collections</th></tr></thead><tbody>@foreach (var flow in Model.CashFlows) { <tr><th>@flow.Account.Customer.Name · •••• @flow.Account.AccountNumber[^Math.Min(4, flow.Account.AccountNumber.Length)..]</th><td>@flow.Account.Balance.ToString("C")</td><td>@flow.Account.AvailableBalance.ToString("C")</td><td>@flow.Account.HeldBalance.ToString("C")</td><td>@flow.PendingPayments.ToString("C")</td><td>@flow.PendingCollections.ToString("C")</td></tr> }</tbody></table></div>
+</section>
+@if (Model.Kind == "Ach")
+{
+    <section class="surface p-4 mb-4"><h2 class="h4">Fictional debit authorizations</h2><p>These are lab-only authorizations for originating-bank collection accounts. Campaigns can require them before generating each debit. Expiration, per-entry limits, and revocation block future generation; they do not cancel released entries or replace real authorization rules.</p>
+        @if (ops)
+        {
+            <form asp-action="Grant" method="post" class="row g-3">
+                <div class="col-md-6"><label for="auth-source">Collection account at this bank</label><select id="auth-source" name="accountId" class="form-select">@foreach (var flow in Model.CashFlows.Where(x => x.Account.Status == AccountStatus.Open)) { <option value="@flow.Account.Id">@flow.Account.Customer.Name · @flow.Account.AccountNumber</option> }</select></div>
+                <div class="col-md-3"><label for="auth-routing">Fictional payer routing</label><input id="auth-routing" name="routing" class="form-control" pattern="[0-9]{9}" maxlength="9" required /></div><div class="col-md-3"><label for="auth-account">Payer account</label><input id="auth-account" name="account" class="form-control" maxlength="17" required /></div>
+                <div class="col-md-4"><label for="auth-limit">Per-entry limit</label><input id="auth-limit" name="limit" class="form-control" type="number" min="0.01" max="1000000" step="0.01" required /></div><div class="col-md-4"><label for="auth-through">Valid through</label><input id="auth-through" name="through" class="form-control" type="date" value="@Model.LabDate.AddYears(1).ToString("yyyy-MM-dd")" required /></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-outline-primary">Record lab authorization</button></div>
+            </form>
+        }
+        <ul class="mt-3">@foreach (var auth in Model.Authorizations) { <li>@auth.Routing · •••• @auth.Account[^Math.Min(4, auth.Account.Length)..] · @auth.Limit.ToString("C") · through @auth.ValidThrough · @(auth.RevokedAt is null ? "Not revoked" : "Revoked")
+            @if (ops && auth.RevokedAt is null) { <form asp-action="Revoke" method="post" class="d-inline"><input type="hidden" name="id" value="@auth.Id" /><button class="btn btn-sm btn-outline-secondary">Revoke future collections</button></form> }</li> }</ul>
+    </section>
+    <section class="surface p-4 mb-4"><h2 class="h4">Rejected-file repair and resubmission</h2><p>Repair each rejected entry into a new instruction. The original entry, raw file, and audit trail stay intact. Independent approval, normal validation, new batching, and new file controls are required; nothing is resent directly. Returned or posted entries are excluded.</p>
+        @if (Model.RepairCandidates.Count == 0) { <p>No eligible entries in rejected files.</p> }
+        @foreach (var entry in Model.RepairCandidates)
+        {
+            <details class="mb-3"><summary>@entry.CompanyName → @entry.ReceiverName · @entry.Amount.ToString("C") · file @entry.Batch!.AchFileId</summary><a asp-controller="Ach" asp-action="Details" asp-route-id="@entry.Id">Original evidence</a> · <a asp-controller="Ach" asp-action="Explorer" asp-route-id="@entry.Batch.AchFileId">Inspect rejected file</a>
+                @if (maker)
+                { <form asp-action="Repair" method="post" class="row g-3 mt-1"><input type="hidden" name="id" value="@entry.Id" /><div class="col-md-4"><label for="repair-routing-@entry.Id">Corrected routing</label><input id="repair-routing-@entry.Id" name="routing" class="form-control" value="@entry.ReceivingRoutingNumber" maxlength="9" required /></div><div class="col-md-4"><label for="repair-account-@entry.Id">Corrected receiving account</label><input id="repair-account-@entry.Id" name="account" class="form-control" value="@entry.ReceivingAccountNumber" maxlength="17" required /></div><div class="col-md-4"><label for="repair-date-@entry.Id">New effective date</label><input id="repair-date-@entry.Id" name="date" type="date" class="form-control" value="@StudioPolicy.BankingDate(Model.LabDate).ToString("yyyy-MM-dd")" required /></div><div class="col-12"><label for="repair-reason-@entry.Id">Repair reason and reviewed changes</label><textarea id="repair-reason-@entry.Id" name="reason" class="form-control" minlength="12" maxlength="500" required></textarea></div><div class="col-12"><button class="btn btn-outline-primary">Create replacement for independent approval</button></div></form> }
+                else { <p>Switch to a Maker persona to create the replacement.</p> }
+            </details>
+        }
+        <ul>@foreach (var repair in Model.Repairs) { <li><a asp-controller="Ach" asp-action="Details" asp-route-id="@repair.OriginalEntryId">Original</a> → <a asp-controller="Ach" asp-action="Details" asp-route-id="@repair.ReplacementEntryId">Replacement</a> · @repair.CreatedBy · @repair.Reason</li> }</ul>
+    </section>
+}
+else
+{
+    <section class="surface p-4 mb-4"><h2 class="h4">Wire investigation conversations</h2><p>Exchange teaching messages with a simulated receiving-bank desk. Responses arrive after 10 seconds, or 60 for a slow receiver. These conversations do not send ISO requests, undo settlement, or independently confirm beneficiary posting. Use the actual wire case workflow for those operations.</p>
+        @if (ops && Model.Wires.Count > 0)
+        { <form asp-action="Ask" method="post"><label for="conversation-wire">Outgoing wire</label><select id="conversation-wire" name="wireId" class="form-select">@foreach (var wire in Model.Wires) { <option value="@wire.Id">@wire.Amount.ToString("C") · @wire.Status · correlation @wire.CorrelationId</option> }</select><label for="conversation-text">Question or follow-up evidence</label><textarea id="conversation-text" name="text" class="form-control" minlength="12" maxlength="500" required></textarea><button class="btn btn-outline-primary mt-2">Send simulated desk request</button></form> }
+        <p class="form-text">Include the correlation identifier when the receiving desk asks for it. Responses describe the observed record at request time. Refresh this page to receive due responses; drafts are never replaced automatically.</p>
+    </section>
+}
+<section class="surface p-4 mb-4"><h2 class="h4">Treasury funding desk</h2><p>Current settlement cash: <strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong> · cash plus Fedwire credit limit: <strong>@((Model.Bank.MasterAccountBalance + Model.Bank.FedwireCreditLimit).ToString("C"))</strong> · @Model.Outstanding outstanding outgoing instructions across wires and ACH.</p><p>Illustrative cash gap if every listed pre-settlement outgoing instruction settles before any new receipts: <strong>@Math.Max(0m, Model.CashFlows.Sum(x => x.PendingPayments) - Model.Bank.MasterAccountBalance).ToString("C")</strong>. This face-amount estimate excludes credit lines, fees, other rails, and new activity; actual liquidity and exposure checks remain rail-specific.</p><p>Compare the pending payment amounts above with cash and expected collections. Requests do not create money. To fund the bank, switch to an authorized source-bank Maker, create an ordinary financial-institution wire to @Model.Bank.Name using the request reference, then obtain independent approval. Reconcile the resulting incoming wire here after settlement and balanced posting.</p>
+    @if (ops)
+    { <form asp-action="Funding" method="post" class="row g-3"><input type="hidden" name="kind" value="@Model.Kind" /><div class="col-md-3"><label for="funding-amount">Requested amount</label><input id="funding-amount" name="amount" type="number" class="form-control" min="0.01" max="100000000" step="0.01" required /></div><div class="col-md-7"><label for="funding-reason">Forecast and funding reason</label><input id="funding-reason" name="reason" class="form-control" minlength="12" maxlength="500" required /></div><div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary">Record request</button></div></form> }
+    @foreach (var request in Model.Funding)
+    { <details class="mt-3"><summary>@request.Amount.ToString("C") · @(request.ReconciledAt is null ? "Awaiting funding evidence" : "Reconciled") · @request.CreatedAt.ToLocalTime().ToString("g")</summary><p>Reference: <code>@request.Reference</code></p><p>@request.Reason</p>
+        @if (request.IncomingWireId is Guid matched) { <a asp-controller="Wires" asp-action="Details" asp-route-id="@matched">Matched incoming settlement and journal</a> }
+        else if (ops)
+        { <form asp-action="MatchFunding" method="post"><input type="hidden" name="kind" value="@Model.Kind" /><input type="hidden" name="id" value="@request.Id" /><label for="funding-wire-@request.Id">Incoming financial-institution wire</label><input id="funding-wire-@request.Id" name="wireId" class="form-control" list="funding-options-@request.Id" placeholder="Paste incoming wire ID or choose a recent wire" required /><datalist id="funding-options-@request.Id">@foreach (var wire in Model.IncomingFundingWires) { <option value="@wire.Id">@wire.Amount.ToString("C") · @wire.SenderName</option> }</datalist><button class="btn btn-outline-primary mt-2">Verify reference and balanced posting</button></form> }
+    </details> }
+</section>
+<section class="surface p-4 mb-4"><h2 class="h4">Role handoffs and desk messages</h2>
+    @if (Model.Selected is not null)
+    { <form asp-action="Handoff" method="post"><input type="hidden" name="kind" value="@Model.Kind" /><input type="hidden" name="campaignId" value="@Model.Selected.Id" /><label for="handoff-role">Next role</label><select id="handoff-role" name="role" class="form-select"><option value="PaymentCreator">Maker</option><option value="PaymentApprover">Approver</option><option value="ComplianceOfficer">Compliance</option><option value="Operations">Operations</option></select><label for="handoff-text">Objective, payment references, evidence, and next action</label><textarea id="handoff-text" name="text" class="form-control" minlength="12" maxlength="1000" required></textarea><button class="btn btn-outline-primary mt-2">Record simulated team handoff</button></form> }
+    <p class="form-text">Handoffs are visible to their sender and recipient role within this bank. They do not grant permissions or substitute for approval. Desk messages are bank-scoped. @Model.PendingResponses simulated responses are not due yet; refresh when ready.</p>
+    @foreach (var note in Model.Notes)
+    { <article class="studio-inbox-item"><strong>@note.Kind · @note.Actor · @note.AvailableAt.ToLocalTime().ToString("g")</strong><p class="studio-note-text">@note.Text</p>@if (note.WireId is Guid wireId) { <a asp-controller="Wires" asp-action="Details" asp-route-id="@wireId">Actual wire messages and case workflow</a> }</article> }
+</section>

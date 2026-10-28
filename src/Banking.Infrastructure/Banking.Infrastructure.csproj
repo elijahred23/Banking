@@ -17,4 +17,5 @@
 
   <ItemGroup><EmbeddedResource Include="../../database/tables/046_StudioSupport.sql" LogicalName="StudioSupport.sql" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../database/tables/047_StudioDays.sql" LogicalName="StudioDays.sql" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../database/tables/048_StudioCampaigns.sql" LogicalName="StudioCampaigns.sql" /></ItemGroup>
 </Project>

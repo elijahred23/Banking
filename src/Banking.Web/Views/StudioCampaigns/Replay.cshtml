@@ -1,0 +1,19 @@
+@model StudioReplayViewModel
+@using System.Text.Json
+@{ ViewData["Title"] = "Recorded session replay"; }
+<h1>Recorded session replay · @Model.Day.BusinessDate</h1>
+<p>Presentation only: recorded events, messages, and journal lines for generated source instructions in this day's start/end interval. No payment is reprocessed or republished. Missing timestamps are not invented, and late outcomes appear when the page is reloaded.</p>
+<a asp-action="Index" asp-route-kind="@Model.Day.Kind" asp-route-id="@Model.Day.CampaignId">Campaign room</a>
+<section class="surface p-4 my-3" data-session-replay>
+    @if (Model.Events.Count > 0)
+    {
+        <label for="replay-position">Recorded event</label><input id="replay-position" type="range" min="0" max="@(Model.Events.Count-1)" value="0" class="form-range" data-replay-position />
+        <div class="d-flex gap-2"><button type="button" class="btn btn-outline-primary" data-replay-back>Previous</button><button type="button" class="btn btn-outline-primary" data-replay-next>Next</button></div>
+        <p data-replay-status role="status"></p><pre class="studio-replay-content" data-replay-content></pre><p data-replay-accounting></p>
+    }
+    else { <p>No recorded events yet.</p> }
+    <script type="application/json" data-replay-events>@Html.Raw(JsonSerializer.Serialize(Model.Events, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>
+</section>
+<p>Running debit/credit totals cover only the journal lines reached in this replay, not bank balances. Stepping between two lines of one balanced journal can temporarily show unequal cumulative totals. Use the complete journal evidence to reconcile.</p>
+<div class="table-responsive"><table class="table"><caption>Complete recorded transcript, available without JavaScript</caption><thead><tr><th>Time</th><th>Event</th><th>Evidence</th><th>Payment</th></tr></thead><tbody>@for (var i=0;i<Model.Events.Count;i++) { var item=Model.Events[i]; <tr data-replay-row="@i"><td>@item.At.ToString("u")</td><td>@item.Type</td><td><details><summary>Inspect</summary><pre class="studio-replay-content">@item.Text</pre><p>Debit @item.Debit.ToString("C") · credit @item.Credit.ToString("C")</p></details></td><td><a asp-controller="@(Model.Day.Kind == "Wire" ? "Wires" : "Ach")" asp-action="Details" asp-route-id="@item.PaymentId">Current evidence</a></td></tr> }</tbody></table></div>
+@section Scripts { <script src="~/js/studio-replay.js" asp-append-version="true"></script> }

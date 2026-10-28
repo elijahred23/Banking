@@ -16,6 +16,7 @@
     </div>
     <p class="form-text" data-studio-pace-status role="status">Select a pace, then use Start / update to apply it. These presets adjust the generator's pace.</p>
     <nav class="d-flex flex-wrap gap-3" aria-label="Studio operations tools">
+        <a asp-controller="StudioCampaigns" asp-action="Index" asp-route-kind="@(Model ? "Ach" : "Wire")">Campaign room · scenarios, repairs &amp; handoffs</a>
         <a href="#traffic-snapshot">Live bank desk</a>
         <a asp-controller="Operations" asp-action="Index">Shared clock &amp; operations</a>
         <a asp-controller="@(Model ? "Ach" : "Wires")" asp-action="@(Model ? "Operations" : "Index")">@(Model ? "ACH exceptions workshop" : "Wire investigations")</a>

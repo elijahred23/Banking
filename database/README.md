@@ -110,3 +110,21 @@ in the same serializable transaction that creates its payment/run and changes th
 case reference to that payment. An incident remains queued if no eligible payment
 can be generated. Close cancels only queued incidents and future generation;
 already released work continues. Shared lab time is never changed by day phases.
+
+## Campaign Room extension
+
+`migrations/202610280200_studio_campaigns.sql` and `tables/048_StudioCampaigns.sql`
+add bank-scoped scenario versions, campaign snapshots, fictional debit authorizations,
+ACH repair links, append-only handoff/conversation notes, and funding requests.
+`StudioDays.CampaignId` is nullable so existing days retain their history. The startup
+runner applies the embedded script after StudioDays; table creation, column upgrades,
+foreign keys, and indexes are idempotent. The prior forward migration is unchanged.
+
+Repair links uniquely identify both original and replacement entries. Funding links
+uniquely identify an incoming wire and never introduce a separate cash-posting path.
+Scenario snapshots do not change when a new scenario version is authored. Revocation
+and conversation due times are durable; response visibility is read-only and does
+not require a worker. Existing generator transactions apply campaign profiles,
+authorization checks, and one-shot incidents together with payment creation.
+All monetary fields use decimal(19,4), and all new ownership/foreign-key queries have
+matching indexes. No schema or startup operation resets payment or learning data.

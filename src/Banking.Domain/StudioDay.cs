@@ -6,6 +6,7 @@ public sealed class StudioDay
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BankId { get; set; }
+    public Guid? CampaignId { get; set; }
     [MaxLength(8)] public string Kind { get; set; } = "Wire";
     public int Phase { get; set; }
     public DateOnly BusinessDate { get; set; }

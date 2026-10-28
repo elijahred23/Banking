@@ -435,3 +435,6 @@ textarea.form-control { min-height:auto; }
 .studio-day-agenda [aria-current="step"] { outline: 2px solid currentColor; border-radius: .3rem; }
 .studio-day summary { cursor: pointer; font-weight: 600; }
 .studio-inbox-item { padding: 1rem 0; border-top: 1px solid var(--bs-border-color, #ddd); margin-top: .75rem; }
+
+.studio-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.studio-replay-content { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 28rem; overflow: auto; }

@@ -2,7 +2,7 @@ IF OBJECT_ID(N'dbo.StudioDays', N'U') IS NULL
 BEGIN
  CREATE TABLE dbo.StudioDays (
  Id uniqueidentifier NOT NULL CONSTRAINT PK_StudioDays PRIMARY KEY,
- BankId uniqueidentifier NOT NULL, Kind nvarchar(8) NOT NULL, Phase int NOT NULL,
+ BankId uniqueidentifier NOT NULL, CampaignId uniqueidentifier NULL, Kind nvarchar(8) NOT NULL, Phase int NOT NULL,
  BusinessDate date NOT NULL, StartedAt datetimeoffset NOT NULL, EndedAt datetimeoffset NULL,
  OpeningCash decimal(19,4) NOT NULL, OpeningCustomerBalance decimal(19,4) NOT NULL,
  OpeningHolds decimal(19,4) NOT NULL, StartedBy nvarchar(120) NOT NULL,
