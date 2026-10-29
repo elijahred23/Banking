@@ -77,7 +77,7 @@ public sealed class BackendRefactoringTests
         var deliveries = bus.Deliveries.Where(x => x.Id == failed.Id.ToString("N")).ToList();
         Assert.Equal(2, deliveries.Count);
         Assert.All(deliveries, x => Assert.Equal(failed.Payload, x.Payload));
-        Assert.Single(bus.Deliveries.Where(x => x.Id == healthy.Id.ToString("N")));
+        Assert.Single(bus.Deliveries, x => x.Id == healthy.Id.ToString("N"));
         Assert.DoesNotContain(bus.Deliveries, x => x.Id == deferred.Id.ToString("N"));
     }
 
