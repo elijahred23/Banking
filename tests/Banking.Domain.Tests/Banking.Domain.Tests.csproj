@@ -19,5 +19,6 @@
     <ProjectReference Include="../../src/Banking.AchService/Banking.AchService.csproj" />
     <ProjectReference Include="../../src/Banking.FedAchSimulator/Banking.FedAchSimulator.csproj" />
     <ProjectReference Include="../../src/Banking.MessageManager/Banking.MessageManager.csproj" />
+    <ProjectReference Include="../../src/Banking.FedwireSimulator/Banking.FedwireSimulator.csproj" />
   </ItemGroup>
 </Project>
