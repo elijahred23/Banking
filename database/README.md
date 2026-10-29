@@ -128,3 +128,13 @@ not require a worker. Existing generator transactions apply campaign profiles,
 authorization checks, and one-shot incidents together with payment creation.
 All monetary fields use decimal(19,4), and all new ownership/foreign-key queries have
 matching indexes. No schema or startup operation resets payment or learning data.
+
+`202610290045_bank_report_jobs.sql` adds bank-owned report tasks and immutable run
+snapshots. `049_BankReportJobs.sql` is the matching baseline and embedded startup
+upgrade, applied through `LabSchemaUpgradeRunner` from `ServiceRegistration`.
+Tasks store UTC wall-clock schedules and a rolling activity window. A filtered
+unique index permits only one unfinished run per task; a lease token protects
+completion against stale workers. Reports and failures are retained when schedules
+are edited or paused. The web host enqueues due work and consumes it independently;
+SQL Server remains the durable job queue and report store. No extra broker queues
+or external scheduler installation is required.

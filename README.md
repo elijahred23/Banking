@@ -380,3 +380,47 @@ isolated campaign reruns, authoritative processing-window scheduling, bulk NACHA
 intake, interactive receiver decisions, and new correspondent fee/posting-exception
 workflows remain future extensions; existing campaign and case workflows are linked
 from the desk.
+
+## Scheduled tasks and bank reports
+
+Operations users can open **Tasks & reports** (`/Reports`) to create bank-owned
+report tasks, choose every 15 minutes / hourly / daily at a UTC time, enable or pause
+scheduling, or **Run now**. New tasks default to paused. Four templates capture
+payment activity, reconciliation controls, liquidity/account balances, and exceptions
+with open operations cases. A dedicated bank selector uses the existing lab context
+switcher; every task, run, report detail, status request, and download is checked
+against the active bank. Maker/approver/compliance personas do not gain report-operations
+permissions through links or posted bank IDs.
+
+The web host runs the scheduler and report worker independently. Work is durable in
+SQL Server and continues when the report page closes, but the host must be running
+to execute jobs. Schedules use wall-clock UTC, not the shared learning clock; daily
+runs include weekends because they are observations, not rail processing. Missed
+intervals coalesce into one current run after downtime instead of fabricating
+historical reports. Only one run per task can be queued/running at a time. Expired
+three-minute leases can reclaim the same run up to three times; report generation
+has a two-minute timeout. Stale lease holders cannot overwrite a recovered or
+completed run. Other generation failures remain visible for an explicit fresh Run
+now; the next scheduled interval can also generate a new run. Pausing a schedule
+preserves queued work and history. Editing a task never rewrites prior run settings.
+
+The report library filters by type and UTC request-date range, with 25 runs per page.
+Each report retains requester, scheduled/manual origin, status, attempts, timestamps,
+and its JSON snapshot. The detail page automatically observes completion and offers
+a JSON download. Activity and payment-exception reports use instruction creation
+in the configured 1–744 hour rolling window and states observed at capture; they do
+not reconstruct historical states at the window end. Controls, account balances,
+and unresolved cases are capture-time observations. Full aggregate counts are
+accompanied by bounded evidence lists (100 wires/100 ACH entries or 200 control,
+account, or case rows). Account identifiers in liquidity reports are masked.
+Sequential reads can observe transient changes while payment processing continues.
+These learning reports neither move funds nor certify an operator statement,
+regulatory report, or atomic end-of-day reconciliation.
+
+To exercise scheduling, concurrent manual requests, lease recovery, immutable report
+completion, pause/manual behavior, and idempotent startup upgrades against an isolated
+temporary local SQL Server database:
+
+```bash
+BANKING_RUN_REPORT_INTEGRATION=1 dotnet test tests/Banking.Domain.Tests --filter FullyQualifiedName~BankReportIntegrationTests
+```

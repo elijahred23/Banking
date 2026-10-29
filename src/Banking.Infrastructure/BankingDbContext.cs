@@ -5,6 +5,8 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<BankReportTask> BankReportTasks => Set<BankReportTask>();
+    public DbSet<BankReportRun> BankReportRuns => Set<BankReportRun>();
     public DbSet<StudioScenario> StudioScenarios => Set<StudioScenario>();
     public DbSet<StudioCampaign> StudioCampaigns => Set<StudioCampaign>();
     public DbSet<StudioDebitAuthorization> StudioDebitAuthorizations => Set<StudioDebitAuthorization>();
@@ -53,6 +55,19 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<BankReportTask>().Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<BankReportTask>().Property(x => x.Frequency).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<BankReportTask>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BankReportTask>().HasIndex(x => new { x.BankId, x.CreatedAt });
+        modelBuilder.Entity<BankReportTask>().HasIndex(x => new { x.Enabled, x.NextRunAt });
+        modelBuilder.Entity<BankReportRun>().Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<BankReportRun>().Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+        modelBuilder.Entity<BankReportRun>().Property(x => x.LeaseToken).IsConcurrencyToken();
+        modelBuilder.Entity<BankReportRun>().HasOne(x => x.Task).WithMany().HasForeignKey(x => x.TaskId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BankReportRun>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<BankReportRun>().HasIndex(x => x.TaskId).IsUnique().HasFilter("[CompletedAt] IS NULL");
+        modelBuilder.Entity<BankReportRun>().HasIndex(x => new { x.BankId, x.RequestedAt });
+        modelBuilder.Entity<BankReportRun>().HasIndex(x => new { x.Status, x.LeaseUntil, x.RequestedAt });
         modelBuilder.Entity<Bank>().Property(x => x.MasterAccountBalance).HasPrecision(19, 4);
         modelBuilder.Entity<Bank>().Property(x => x.FedwireCreditLimit).HasPrecision(19, 4);
         modelBuilder.Entity<Bank>().Property(x => x.AchExposureLimit).HasPrecision(19, 4);
