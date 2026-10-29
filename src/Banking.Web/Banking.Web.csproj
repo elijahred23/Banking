@@ -8,6 +8,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Keep Razor generation out of the reusable compiler process. With SDK
+         10.0.301, warm shared builds can misparse valid HTML as C# across views. -->
+    <UseSharedCompilation>false</UseSharedCompilation>
   </PropertyGroup>
 
 </Project>

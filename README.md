@@ -497,3 +497,14 @@ unchanged bank/customer cash, hold idempotency, bank isolation, approval boundar
 future-effective batches/backoff, saved-file/outbox atomicity, and stale lease recovery.
 The existing ACH traffic integration test exercises the extracted processor through
 actual workers, NACHA operator results, settlement, and balanced accounting.
+
+## Razor build stability
+
+`Banking.Web.csproj` disables shared compiler reuse with
+`UseSharedCompilation=false`. On the installed .NET SDK 10.0.301, repeated shared
+builds can emit cascading Razor errors that treat valid HTML text such as “DUAL
+CONTROL” as C# types. This was reproduced with shared compilation enabled and
+eliminated by compiling the same views in a fresh compiler process. The setting
+applies automatically to solution builds, `run_all.py`, and the VS Code build task;
+no generated-file edits or recurring compiler-server reset is required. It affects
+build-time compiler reuse, not application behavior or Razor validation.
