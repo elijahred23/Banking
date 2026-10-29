@@ -18,6 +18,8 @@ public static class ServiceRegistration
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
         services.AddSingleton<MessageReliabilityStore>();
         services.AddSingleton<PaymentReconciliationService>();
+        services.AddSingleton<AchBatchProcessor>();
+        services.AddSingleton<BankOperationalJobService>();
         services.AddSingleton<BankReportBuilder>();
         services.AddSingleton<BankReportJobService>();
         services.AddSingleton<SimulationStateService>();

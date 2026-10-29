@@ -1,4 +1,10 @@
 (() => {
+    const kind = document.getElementById('Kind');
+    const description = document.querySelector('[data-job-description]');
+    if (kind && description) {
+        const update = () => { description.textContent = kind.selectedOptions[0]?.dataset.description || ''; };
+        kind.addEventListener('change', update); update();
+    }
     const pending = document.querySelector('[data-report-status-url]');
     if (!pending) return;
     const progress = pending.querySelector('[data-report-progress]');

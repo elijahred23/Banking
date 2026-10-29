@@ -1,3 +1,4 @@
+using System.Data;
 using Banking.Domain;
 using Banking.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -8,101 +9,53 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     NachaFileWriter writer, IConfiguration configuration, SimulationStateService simulation,
     ILogger<Worker> logger) : BackgroundService
 {
+    private readonly AchBatchProcessor processor = new(writer);
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
         bus.ConsumeAsync<AchEntryCreated>(Queues.AchEntryCreated, ValidateAndBatchAsync, stoppingToken),
         RunCutoffAsync(stoppingToken));
 
     private async Task ValidateAndBatchAsync(AchEntryCreated command, CancellationToken token)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(token);
-        var entry = await db.AchEntries.Include(x => x.OriginatingAccount).Include(x => x.OriginatingBank)
-            .SingleOrDefaultAsync(x => x.Id == command.EntryId, token);
-        if (entry is null || entry.Status != AchEntryStatus.Entered) return;
-
-        var processingDate = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
-        var errors = AchRules.Validate(entry, processingDate).ToList();
-        if (AchRules.IsCredit(entry.TransactionCode) && !AccountAvailabilityPolicy.CanDebit(entry.OriginatingAccount, entry.Amount))
-            errors.Add(new(nameof(entry.Amount), "The originating account has insufficient available funds."));
-        var pendingExposure = await db.AchEntries.Where(x => x.OriginatingBankId == entry.OriginatingBankId
-                && x.Id != entry.Id && (x.Status == AchEntryStatus.Validated || x.Status == AchEntryStatus.Batched
-                    || x.Status == AchEntryStatus.SentToOperator) && (x.TransactionCode == AchTransactionCode.CheckingCredit
-                    || x.TransactionCode == AchTransactionCode.SavingsCredit)).SumAsync(x => x.Amount, token);
-        if (AchRules.IsCredit(entry.TransactionCode)
-            && !PaymentRiskPolicy.WithinAchExposure(entry.OriginatingBank, pendingExposure + entry.Amount))
-            errors.Add(new(nameof(entry.Amount), "The entry would exceed the originating bank's teaching ACH exposure limit."));
-        if (errors.Count != 0)
+        await using var probe = await dbFactory.CreateDbContextAsync(token);
+        await probe.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            entry.Status = AchEntryStatus.Rejected;
+            await using var db = await dbFactory.CreateDbContextAsync(token);
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            var bankId = await db.AchEntries.Where(x => x.Id == command.EntryId).Select(x => (Guid?)x.OriginatingBankId).SingleOrDefaultAsync(token);
+            if (bankId is null) return;
+            var date = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
+            var result = await processor.PrepareAsync(db, bankId.Value, command.EntryId, date, token);
             await db.SaveChangesAsync(token);
-            logger.LogWarning("ODFI rejected ACH entry {EntryId}: {Errors}", entry.Id,
-                string.Join(" ", errors.Select(x => x.Message)));
-            return;
-        }
-
-        if (AchRules.IsCredit(entry.TransactionCode)) entry.OriginatingAccount.HeldBalance += entry.Amount;
-        entry.Status = AchEntryStatus.Validated;
-        var batch = await db.AchBatches.Include(x => x.Entries).FirstOrDefaultAsync(x =>
-            x.OriginatingBankId == entry.OriginatingBankId && x.Status == "Open"
-            && x.SecCode == entry.SecCode && x.CompanyId == entry.CompanyId
-            && x.EffectiveEntryDate == entry.EffectiveEntryDate, token);
-        if (batch is null)
-        {
-            batch = new AchBatch { OriginatingBankId = entry.OriginatingBankId, SecCode = entry.SecCode,
-                CompanyName = entry.CompanyName, CompanyId = entry.CompanyId,
-                EffectiveEntryDate = entry.EffectiveEntryDate };
-            db.AchBatches.Add(batch);
-        }
-        batch.Entries.Add(entry);
-        entry.Status = AchEntryStatus.Batched;
-        await db.SaveChangesAsync(token);
-        logger.LogInformation("ACH entry {EntryId} added to batch {BatchId}", entry.Id, batch.Id);
+            await transaction.CommitAsync(token);
+            if (result is not null) logger.LogInformation("ACH {EntryId}: {Status}: {Detail}", command.EntryId, result.Status, result.Detail);
+        });
     }
 
     private async Task RunCutoffAsync(CancellationToken token)
     {
-        var seconds = Math.Max(1, configuration.GetValue("Ach:BatchCutoffSeconds", 5));
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
-        while (await timer.WaitForNextTickAsync(token)) await CloseOpenBatchesAsync(token);
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, configuration.GetValue("Ach:BatchCutoffSeconds", 5))));
+        while (await timer.WaitForNextTickAsync(token))
+        {
+            try { await CloseOpenBatchesAsync(token); }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            { logger.LogError(exception, "ACH cutoff failed; open batches remain durable for the next attempt"); }
+        }
     }
 
     private async Task CloseOpenBatchesAsync(CancellationToken token)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(token);
-        var businessDate = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
-        var batches = await db.AchBatches.Include(x => x.OriginatingBank).Include(x => x.Entries)
-            .Where(x => x.Status == "Open" && x.Entries.Count != 0 && x.EffectiveEntryDate <= businessDate)
-            .OrderBy(x => x.EffectiveEntryDate).ToListAsync(token);
-        foreach (var bankGroup in batches.GroupBy(x => x.OriginatingBankId))
-        {
-            var origin = bankGroup.First().OriginatingBank;
-            var file = new AchFile { OriginatingBankId = origin.Id, OriginatingBank = origin,
-                ImmediateDestinationRoutingNumber = "091000080", ImmediateOriginRoutingNumber = origin.RoutingNumber,
-                Status = "Ready" };
-            var number = 0;
-            var sequence = 0;
-            foreach (var batch in bankGroup)
+        await using var probe = await dbFactory.CreateDbContextAsync(token);
+        var bankIds = await probe.AchBatches.Where(x => x.Status == "Open").Select(x => x.OriginatingBankId).Distinct().ToListAsync(token);
+        foreach (var bankId in bankIds)
+            await probe.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
             {
-                batch.ServiceClassCode = AchRules.ServiceClassCode(batch.Entries);
-                batch.Status = "Closed";
-                batch.BatchNumber = ++number;
-                file.Batches.Add(batch);
-                foreach (var entry in batch.Entries.OrderBy(x => x.CreatedDate))
-                    entry.TraceNumber = origin.RoutingNumber[..8] + (++sequence).ToString("0000000");
-            }
-            file.RawNachaPayload = writer.Write(file);
-            if (file.Batches.SelectMany(x => x.Entries).Any(x => x.Scenario == AchProcessingScenario.MalformedFile))
-                file.RawNachaPayload = file.RawNachaPayload[..^1];
-            else if (file.Batches.SelectMany(x => x.Entries).Any(x => x.Scenario == AchProcessingScenario.ControlTotalMismatch))
-            {
-                var lines = file.RawNachaPayload.Split(Environment.NewLine).ToArray();
-                var index = Array.FindIndex(lines, x => x[0] == '9' && x.Any(c => c != '9'));
-                lines[index] = lines[index].Remove(13, 8).Insert(13, "99999999");
-                file.RawNachaPayload = string.Join(Environment.NewLine, lines);
-            }
-            db.AchFiles.Add(file);
-            await db.SaveChangesAsync(token);
-            await bus.PublishAsync(Queues.AchBatchReady, new AchFileReady(file.Id), token);
-            logger.LogInformation("Closed {BatchCount} ACH batches into file {FileId}", file.Batches.Count, file.Id);
-        }
+                await using var db = await dbFactory.CreateDbContextAsync(token);
+                await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+                var date = DateOnly.FromDateTime((await simulation.UtcNowAsync(token)).UtcDateTime);
+                var results = await processor.CloseAsync(db, bankId, date, token);
+                await db.SaveChangesAsync(token);
+                await transaction.CommitAsync(token);
+                foreach (var row in results) logger.LogInformation("ACH cutoff {Reference}: {Detail}", row.Reference, row.Detail);
+            });
     }
 }

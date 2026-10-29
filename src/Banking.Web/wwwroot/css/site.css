@@ -734,3 +734,6 @@ body { -webkit-font-smoothing: antialiased; }
     .report-panel .responsive-payment-table { min-width: 0; }
 }
 .report-bank-bar form .btn { white-space: nowrap; flex-shrink: 0; }
+
+.report-template-disclosure { padding: 20px; }
+.report-template-disclosure>summary { cursor: pointer; font-weight: 650; color: var(--ink); }

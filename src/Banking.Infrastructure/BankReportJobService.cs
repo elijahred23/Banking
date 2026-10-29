@@ -36,6 +36,23 @@ public sealed class BankReportJobService(IDbContextFactory<BankingDbContext> fac
         }, token);
     }
 
+    public Task<int> InstallOperationalTasksAsync(Guid bankId, string actor, CancellationToken token) => TransactionAsync(async db =>
+    {
+        if (!await db.Banks.AnyAsync(x => x.Id == bankId, token)) throw new KeyNotFoundException();
+        var existing = await db.BankReportTasks.Where(x => x.BankId == bankId).Select(x => x.Kind).ToListAsync(token);
+        var now = DateTimeOffset.UtcNow; var count = 0;
+        foreach (var kind in Enum.GetValues<BankReportKind>().Where(ReportSchedulePolicy.IsOperational).Except(existing))
+        {
+            var frequency = ReportSchedulePolicy.DefaultFrequency(kind);
+            db.BankReportTasks.Add(new() { BankId = bankId, Name = ReportSchedulePolicy.Title(kind), Kind = kind,
+                Frequency = frequency, DailyAtUtc = new(23, 0), LookbackHours = 24, Enabled = false,
+                NextRunAt = ReportSchedulePolicy.Next(frequency, new(23, 0), now), CreatedBy = actor[..Math.Min(120, actor.Length)] });
+            count++;
+        }
+        await db.SaveChangesAsync(token);
+        return count;
+    }, token);
+
     public Task<Guid> RequestAsync(Guid bankId, Guid taskId, string actor, CancellationToken token) =>
         TransactionAsync(async db =>
         {
@@ -76,8 +93,9 @@ public sealed class BankReportJobService(IDbContextFactory<BankingDbContext> fac
         if (run is null) return null;
         if (run.Attempts >= 3)
         {
-            run.Status = ReportRunStatus.Failed; run.CompletedAt = now;
-            run.Error = "The worker lease expired three times. Inspect service health and use Run now to create a new run.";
+            var committed = ReportSchedulePolicy.IsOperational(run.Kind) && run.ReportJson is not null;
+            run.Status = committed ? ReportRunStatus.Succeeded : ReportRunStatus.Failed; run.CompletedAt = now;
+            run.Error = committed ? null : "The worker lease expired three times. Inspect service health and use Run now to create a new run.";
             run.LeaseToken = null; run.LeaseUntil = null;
             await db.SaveChangesAsync(token);
             return null;
@@ -115,6 +133,10 @@ public sealed class BankReportJobService(IDbContextFactory<BankingDbContext> fac
         var run = await db.BankReportRuns.SingleOrDefaultAsync(x => x.Id == claim.Id && x.BankId == claim.BankId
             && x.LeaseToken == claim.LeaseToken && x.Status == ReportRunStatus.Running && x.CompletedAt == null, token);
         if (run is null || claim.LeaseToken is null) return false;
+        if (ReportSchedulePolicy.IsOperational(run.Kind) && run.ReportJson is not null)
+        {
+            payload = run.ReportJson; error = null; // Preserve atomically committed action evidence after an ambiguous commit response.
+        }
         run.ReportJson = payload; run.Error = error;
         run.Status = error is null && payload is not null ? ReportRunStatus.Succeeded : ReportRunStatus.Failed;
         run.CompletedAt = DateTimeOffset.UtcNow; run.LeaseUntil = null; run.LeaseToken = null;

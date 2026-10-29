@@ -86,7 +86,7 @@ public sealed class BankReportTests
     public void ReportRoutesRequireOperationsAndMutationsRequireAntiforgery()
     {
         Assert.Equal("Operations", Assert.Single(typeof(ReportsController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>()).Roles);
-        foreach (var action in new[] { "Save", "RunNow" })
+        foreach (var action in new[] { "Save", "RunNow", "InstallJobs" })
         {
             var method = typeof(ReportsController).GetMethod(action)!;
             Assert.NotEmpty(method.GetCustomAttributes(typeof(HttpPostAttribute), true));

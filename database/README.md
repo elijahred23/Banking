@@ -138,3 +138,10 @@ completion against stale workers. Reports and failures are retained when schedul
 are edited or paused. The web host enqueues due work and consumes it independently;
 SQL Server remains the durable job queue and report store. No extra broker queues
 or external scheduler installation is required.
+
+Operational jobs reuse `BankReportTasks`, `BankReportRuns`, `OperationsCases`, and
+`StudioNotes`; the additional enum names fit the existing `nvarchar(24)` columns.
+No schema change is required. Operational effects and their run evidence JSON commit
+atomically under the existing lease token; a recovered worker retains the saved
+snapshot. Case deduplication uses serializable bank/type/reference lookups over the
+existing bank-scoped case indexes; resolved cases are retained rather than reopened.

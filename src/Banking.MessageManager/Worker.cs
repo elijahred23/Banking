@@ -1,3 +1,5 @@
+using System.Data;
+using System.Text.Json;
 using Banking.Domain;
 using Banking.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -19,15 +21,24 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
 
     private async Task SendAchFileAsync(AchFileReady message, CancellationToken token)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(token);
-        var file = await db.AchFiles.Include(x => x.Batches).ThenInclude(x => x.Entries)
-            .SingleOrDefaultAsync(x => x.Id == message.FileId, token);
-        if (file is null || file.Status != "Ready") return;
-        file.Status = "SentToOperator";
-        foreach (var entry in file.Batches.SelectMany(x => x.Entries)) entry.Status = AchEntryStatus.SentToOperator;
-        await db.SaveChangesAsync(token);
-        await bus.PublishAsync(Queues.AchOutbound,
-            new AchFileEnvelope(file.Id, file.OriginatingBankId, file.RawNachaPayload), token);
+        await using var probe = await dbFactory.CreateDbContextAsync(token);
+        await probe.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(token);
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            var file = await db.AchFiles.Include(x => x.Batches).ThenInclude(x => x.Entries)
+                .SingleOrDefaultAsync(x => x.Id == message.FileId, token);
+            if (file is null || file.Status != "Ready") return;
+            file.Status = "SentToOperator";
+            foreach (var entry in file.Batches.SelectMany(x => x.Entries)) entry.Status = AchEntryStatus.SentToOperator;
+            db.OutboxMessages.Add(new OutboxMessage
+            {
+                BankId = file.OriginatingBankId, Queue = Queues.AchOutbound,
+                Payload = JsonSerializer.Serialize(new AchFileEnvelope(file.Id, file.OriginatingBankId, file.RawNachaPayload))
+            });
+            await db.SaveChangesAsync(token);
+            await transaction.CommitAsync(token);
+        });
     }
 
     private async Task ReceiveAchResultAsync(AchOperatorResult result, CancellationToken token)

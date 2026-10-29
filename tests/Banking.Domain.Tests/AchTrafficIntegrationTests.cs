@@ -113,6 +113,8 @@ public sealed class AchTrafficIntegrationTests
                     foreach (var entry in entries)
                     {
                         Assert.True(new NachaFileParser().Validate(entry.Batch!.File!.RawNachaPayload).IsValid);
+                        var fileId = entry.Batch!.File!.Id.ToString();
+                        Assert.Equal(1, await db.OutboxMessages.CountAsync(x => x.Queue == Queues.AchOutbound && x.Payload.Contains(fileId)));
                         Assert.Equal("Settled", entry.Batch.File.Status);
                         Assert.NotEqual(entry.CreatedBy, entry.ApprovedBy);
                         var receiver = await db.Accounts.Include(x => x.Customer).SingleAsync(x =>

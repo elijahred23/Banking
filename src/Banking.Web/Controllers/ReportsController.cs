@@ -46,7 +46,7 @@ public sealed class ReportsController(IDbContextFactory<BankingDbContext> factor
         if (id is null)
         {
             var selected = kind is { } value && Enum.IsDefined(value) ? value : BankReportKind.PaymentActivity;
-            return View(new ReportTaskForm { Name = ReportSchedulePolicy.Title(selected), Kind = selected });
+            return View(new ReportTaskForm { Name = ReportSchedulePolicy.Title(selected), Kind = selected, Frequency = ReportSchedulePolicy.IsOperational(selected) ? ReportSchedulePolicy.DefaultFrequency(selected) : ReportFrequency.Daily });
         }
         var task = await db.BankReportTasks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
         if (task is null) return NotFound();
@@ -72,6 +72,16 @@ public sealed class ReportsController(IDbContextFactory<BankingDbContext> factor
     }
 
     [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> InstallJobs(CancellationToken token)
+    {
+        await using var db = await factory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var count = await jobs.InstallOperationalTasksAsync(bankId, User.Identity?.Name ?? "Operations", token);
+        TempData["Notice"] = $"Added {count} operational task(s) for this bank, paused and ready for Run now. Existing schedules and run history were preserved.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> RunNow(Guid id, CancellationToken token)
     {
         await using var db = await factory.CreateDbContextAsync(token);
@@ -92,7 +102,7 @@ public sealed class ReportsController(IDbContextFactory<BankingDbContext> factor
         var run = await db.BankReportRuns.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
         if (run is null) return NotFound();
         var bankName = await db.Banks.Where(x => x.Id == bankId).Select(x => x.Name).SingleAsync(token);
-        var report = run.ReportJson is null ? null : JsonSerializer.Deserialize<BankReportDocument>(run.ReportJson);
+        var report = run.Status != ReportRunStatus.Succeeded || run.ReportJson is null ? null : JsonSerializer.Deserialize<BankReportDocument>(run.ReportJson);
         return View(new SavedReportViewModel(run, report, bankName));
     }
 

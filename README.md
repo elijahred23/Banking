@@ -424,3 +424,76 @@ temporary local SQL Server database:
 ```bash
 BANKING_RUN_REPORT_INTEGRATION=1 dotnet test tests/Banking.Domain.Tests --filter FullyQualifiedName~BankReportIntegrationTests
 ```
+
+## Operational jobs
+
+**Tasks & reports → Add all 12 jobs for this bank** installs any missing operational
+job types as paused tasks without changing existing schedules. Use **Run now** or
+edit and enable a UTC schedule. Operational templates describe their effects before
+release; the four original observation-only report templates remain available.
+Each job saves findings and actions in its run report and links to payment evidence
+or the Operations inbox.
+
+- **ACH batch preparation:** validates up to 200 already-released entries and groups
+  them using the same shared processor as AchService. Approval evidence, bank/account
+  ownership, validation, customer availability, and exposure checks remain required.
+- **ACH cutoff processing:** closes eligible batches only on a shared-lab banking
+  date. Saves the NACHA file and `ACH.BATCH.READY` outbox message in one transaction.
+  Message Manager atomically records submission with a second original outbox envelope;
+  the operator simulator still determines acceptance/settlement.
+  The existing ACH worker continues its configured automatic lab cutoff; running a
+  cutoff job uses that same service and cannot submit the same closed batch twice.
+- **Return & NOC review:** creates deduplicated cases for persisted return/NOC source
+  records, including older records. Does not generate another return or rewrite
+  saved instructions. Review original/reversing journals or future correction data.
+- **Stuck-payment detection:** wires without a recorded event for 15 minutes and ACH
+  work older than an hour since saved-file creation or approval/capture create cases.
+  Future-effective ACH batches and pending approvals are excluded. ACH has no full
+  timestamped state history, so its age check is a labeled teaching approximation.
+- **Settlement reconciliation:** checks missing wire/ACH journals, bank-visible
+  journal balance, settled saved-file evidence for final ACH states, and accepted
+  correlated Fedwire/FedNow settlement evidence.
+- **Hold reconciliation:** opens cases for expected-versus-observed holds; no automatic
+  release or accounting correction is performed.
+- **Liquidity forecasting:** compares bank cash/credit capacity with outstanding
+  outgoing Fedwire and ACH credit face amounts and checks validated ACH exposure.
+  Combined figures are a conservative teaching forecast, not reserved liquidity or
+  an ACH entitlement to Fedwire credit capacity. Funding gaps create review cases.
+- **Duplicate-payment screening:** flags similar original outgoing instructions in
+  the rolling activity window. Wire correlations are deduplicated, rails/types and
+  origin/receiver details stay distinct, and ACH effective dates/direction matter.
+  Suspected duplicates create review cases without blocking or releasing payments.
+- **Delivery recovery:** makes up to 100 eligible failed original outbox records due
+  for the existing publisher. Stable IDs, queues, payloads, error evidence, and attempt
+  counts are preserved; future backoff is respected. Dead letters create cases and
+  retain the existing authorized human replay workflow.
+- **Approval reminders:** creates deduplicated Operations cases and role-addressed
+  PaymentApprover handoffs in Campaigns for instructions awaiting approval at least
+  15 minutes. No approval is performed and no external message is sent.
+- **Operations case escalation:** raises overdue unresolved cases below High to High
+  and lists unassigned cases. Ownership, work notes, Critical severity, and human
+  resolution are preserved.
+- **End-of-day close review:** captures unsettled work, bank cash, funding forecast,
+  holds, returns, and control findings, and creates a daily review case. It does not
+  certify or automatically close a banking day.
+
+Case identity includes bank, job type, and source reference. Repeat observations
+retain existing cases, including resolved human decisions for unchanged findings; changed captured evidence, new source events, and
+new stalled payment states can create new cases. End-of-day cases are deduplicated
+by lab date and wall-clock UTC date. Operational effects and their evidence snapshot
+commit together under the current run lease; lease recovery reuses that snapshot
+instead of applying effects again. The existing task/run/case/handoff tables are
+reused; new enum names fit their existing SQL lengths, so no schema migration is
+needed. All job schedules still require the web host to be running.
+
+Verification of the operational jobs against an isolated temporary SQL database:
+
+```bash
+BANKING_RUN_JOB_INTEGRATION=1 dotnet test tests/Banking.Domain.Tests --filter FullyQualifiedName~OperationalJobIntegrationTests
+```
+
+The integration test covers all twelve jobs twice, case/handoff deduplication,
+unchanged bank/customer cash, hold idempotency, bank isolation, approval boundaries,
+future-effective batches/backoff, saved-file/outbox atomicity, and stale lease recovery.
+The existing ACH traffic integration test exercises the extracted processor through
+actual workers, NACHA operator results, settlement, and balanced accounting.

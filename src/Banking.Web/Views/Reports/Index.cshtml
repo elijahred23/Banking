@@ -1,24 +1,33 @@
 @model ReportLibraryViewModel
 @{ ViewData["Title"] = "Tasks & reports"; }
-<header class="page-heading mb-4"><div><span class="eyebrow">AUTOMATION & INSIGHT · @Model.Bank.Name</span><h1>Tasks &amp; reports</h1><p class="text-secondary mb-0">Schedule a check. Run it now. Keep the evidence.</p></div><a class="btn btn-primary" asp-action="Task">＋ Create report task</a></header>
+<header class="page-heading mb-4"><div><span class="eyebrow">AUTOMATION & INSIGHT · @Model.Bank.Name</span><h1>Tasks &amp; reports</h1><p class="text-secondary mb-0">Schedule a check. Run it now. Keep the evidence.</p></div><a class="btn btn-primary" asp-action="Task">＋ Create task</a></header>
 <section class="surface report-bank-bar mb-4">
     <div><strong>@Model.Bank.Name</strong><small>Schedules and saved reports belong to this bank.</small></div>
     <form asp-controller="Auth" asp-action="Switch" method="post"><input type="hidden" name="role" value="@(User.HasAllPermissions() ? "all" : "operations")" /><input type="hidden" name="returnUrl" value="@Url.Action("Index", "Reports")" /><label class="visually-hidden" for="report-bank">Report bank</label><select class="form-select" name="bankId" id="report-bank">@foreach (var bank in Model.Banks) { <option value="@bank.Id" selected="@(bank.Id == Model.Bank.Id)">@bank.Name</option> }</select><button class="btn btn-outline-primary" type="submit">View bank</button></form>
 </section>
-<div class="report-template-grid mb-4">
-@foreach (var kind in Enum.GetValues<BankReportKind>())
+<section class="mb-4" aria-labelledby="operational-templates-heading">
+<div class="panel-heading"><div><span class="eyebrow">READY-TO-USE JOBS</span><h2 class="h4 mb-0" id="operational-templates-heading">Operational jobs</h2></div><form asp-action="InstallJobs" method="post"><button class="btn btn-outline-primary" type="submit">Add all 12 jobs for this bank</button></form></div>
+<p class="small text-secondary">Adds missing job types as paused tasks with suggested schedules. Existing tasks are preserved. Detection jobs open review cases; preparation and cutoff jobs process only released ACH work. Inspect each job's effects before enabling its schedule.</p>
+<details class="surface report-template-disclosure"><summary>Explore the 12 operational job types</summary><div class="report-template-grid mt-3">
+@foreach (var kind in Enum.GetValues<BankReportKind>().Where(ReportSchedulePolicy.IsOperational))
 {
-    var description = kind switch { BankReportKind.PaymentActivity => "ACH and wire volume, amounts, recorded states, and payment evidence.", BankReportKind.Reconciliation => "Journal balance, missing postings, held funds, and transport controls.", BankReportKind.Liquidity => "Bank cash, customer ledger balances, available funds, and holds.", _ => "Rejected and returned payments, corrections, and open operations cases." };
-    <a asp-action="Task" asp-route-kind="@kind" class="surface report-template"><span class="eyebrow">REPORT TEMPLATE</span><h2>@ReportSchedulePolicy.Title(kind)</h2><p>@description</p><span>Create task →</span></a>
+    <a asp-action="Task" asp-route-kind="@kind" class="surface report-template"><span class="eyebrow">OPERATIONAL JOB</span><h3 class="h6">@ReportSchedulePolicy.Title(kind)</h3><p>@ReportSchedulePolicy.Description(kind)</p><span>Configure job →</span></a>
 }
-</div>
+</div></details>
+</section>
+<details class="surface report-template-disclosure mb-4"><summary>Reporting templates · four observation-only reports</summary><div class="report-template-grid mt-3">
+@foreach (var kind in Enum.GetValues<BankReportKind>().Where(x => !ReportSchedulePolicy.IsOperational(x)))
+{
+    <a asp-action="Task" asp-route-kind="@kind" class="surface report-template"><span class="eyebrow">REPORT TEMPLATE</span><h2>@ReportSchedulePolicy.Title(kind)</h2><p>@ReportSchedulePolicy.Description(kind)</p><span>Create task →</span></a>
+}
+</div></details>
 <section class="surface report-panel mb-4">
     <div class="panel-heading"><div><span class="eyebrow">BANK AUTOMATION</span><h2 class="h4 mb-0">Scheduled tasks</h2></div><span class="small text-secondary">@Model.Tasks.Count task(s)</span></div>
-    <p class="small text-secondary">Schedules use UTC wall time and run while Banking.Web is running. Paused schedules still support Run now. After downtime, one current report replaces missed intervals. Reporting never moves funds or advances the shared lab clock.</p>
-    @if (Model.Tasks.Count == 0) { <div class="desk-empty">Create a task from a template above. Start paused, run it manually, then enable a schedule when ready.</div> }
+    <p class="small text-secondary">Schedules use UTC wall time and run while Banking.Web is running. Paused schedules still support Run now. After downtime, one current report replaces missed intervals. Operational jobs can create cases, raise overdue severity, prepare approved ACH work, queue NACHA files, and reschedule eligible original deliveries. They never approve payments, correct journals, or advance the shared lab clock.</p>
+    @if (Model.Tasks.Count == 0) { <div class="desk-empty">Add the operational jobs or create a task from a template above. Start paused, run it manually, then enable a schedule when ready.</div> }
     @foreach (var task in Model.Tasks)
     {
-        <article class="report-task-row"><div><strong>@task.Name</strong><small>@ReportSchedulePolicy.Title(task.Kind) · rolling @task.LookbackHours hours</small><small>@ReportSchedulePolicy.Cadence(task.Frequency, task.DailyAtUtc)</small></div><div><span class="status @(task.Enabled ? "status-settled" : "")">@(task.Enabled ? "Scheduled" : "Paused")</span><small>@(task.Enabled ? $"Next {task.NextRunAt:MMM dd, HH:mm} UTC" : "Manual runs available")</small></div><div class="report-task-actions"><a class="btn btn-sm btn-outline-secondary" asp-action="Task" asp-route-id="@task.Id">Edit schedule</a><form asp-action="RunNow" method="post"><input type="hidden" name="id" value="@task.Id" /><button class="btn btn-sm btn-primary">Run now →</button></form></div></article>
+        <article class="report-task-row"><div><strong>@task.Name</strong><small>@ReportSchedulePolicy.Title(task.Kind) · @(ReportSchedulePolicy.IsOperational(task.Kind) ? "Operational job" : $"rolling {task.LookbackHours} hours")</small><small>@ReportSchedulePolicy.Cadence(task.Frequency, task.DailyAtUtc)</small></div><div><span class="status @(task.Enabled ? "status-settled" : "")">@(task.Enabled ? "Scheduled" : "Paused")</span><small>@(task.Enabled ? $"Next {task.NextRunAt:MMM dd, HH:mm} UTC" : "Manual runs available")</small></div><div class="report-task-actions"><a class="btn btn-sm btn-outline-secondary" asp-action="Task" asp-route-id="@task.Id">Edit schedule</a><form asp-action="RunNow" method="post"><input type="hidden" name="id" value="@task.Id" /><button class="btn btn-sm btn-primary">Run now →</button></form></div></article>
     }
 </section>
 <section class="surface report-panel">

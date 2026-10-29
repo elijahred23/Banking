@@ -2,7 +2,13 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Banking.Domain;
 
-public enum BankReportKind { PaymentActivity, Reconciliation, Liquidity, Exceptions }
+public enum BankReportKind
+{
+    PaymentActivity, Reconciliation, Liquidity, Exceptions,
+    AchBatchPreparation, AchCutoffProcessing, ReturnNocReview, StuckPayments,
+    SettlementReconciliation, HoldReconciliation, LiquidityForecast, DuplicateScreening,
+    DeliveryRecovery, ApprovalReminders, CaseEscalation, EndOfDayClose
+}
 public enum ReportFrequency { Every15Minutes, Hourly, Daily }
 public enum ReportRunStatus { Queued, Running, Succeeded, Failed }
 
@@ -68,7 +74,47 @@ public static class ReportSchedulePolicy
         BankReportKind.Reconciliation => "Reconciliation controls",
         BankReportKind.Liquidity => "Liquidity & account balances",
         BankReportKind.Exceptions => "Exceptions & operations cases",
+        BankReportKind.AchBatchPreparation => "ACH batch preparation",
+        BankReportKind.AchCutoffProcessing => "ACH cutoff processing",
+        BankReportKind.ReturnNocReview => "Return & NOC review",
+        BankReportKind.StuckPayments => "Stuck-payment detection",
+        BankReportKind.SettlementReconciliation => "Settlement reconciliation",
+        BankReportKind.HoldReconciliation => "Hold reconciliation",
+        BankReportKind.LiquidityForecast => "Liquidity forecasting",
+        BankReportKind.DuplicateScreening => "Duplicate-payment screening",
+        BankReportKind.DeliveryRecovery => "Delivery recovery",
+        BankReportKind.ApprovalReminders => "Approval reminders",
+        BankReportKind.CaseEscalation => "Operations case escalation",
+        BankReportKind.EndOfDayClose => "End-of-day close review",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+    public static bool IsOperational(BankReportKind kind) => kind >= BankReportKind.AchBatchPreparation && Enum.IsDefined(kind);
+    public static string Description(BankReportKind kind) => kind switch
+    {
+        BankReportKind.PaymentActivity => "Capture payment volumes, face amounts, recorded states, and evidence.",
+        BankReportKind.Reconciliation => "Capture journal, hold, and transport controls without changing records.",
+        BankReportKind.Liquidity => "Capture bank cash, customer balances, available funds, and holds.",
+        BankReportKind.Exceptions => "Capture payment exceptions and open operations cases.",
+        BankReportKind.AchBatchPreparation => "Validate and batch already-released ACH entries; retain independent approval and funds/exposure checks.",
+        BankReportKind.AchCutoffProcessing => "Close eligible ACH batches and queue saved NACHA files through the durable outbox. Uses the shared lab banking date.",
+        BankReportKind.ReturnNocReview => "Create operations work items for recorded ACH returns and NOCs, preserving original and reversing evidence.",
+        BankReportKind.StuckPayments => "Find wires idle for 15 minutes and ACH processing older than an hour; exclude future-dated batches. Open review cases.",
+        BankReportKind.SettlementReconciliation => "Check final wire/ACH posting evidence and wire network settlement records; create cases for discrepancies.",
+        BankReportKind.HoldReconciliation => "Compare customer holds with outstanding validated credit instructions and open discrepancy cases.",
+        BankReportKind.LiquidityForecast => "Compare bank liquidity with outstanding outgoing Fedwire and ACH credit face amounts; create funding-gap cases.",
+        BankReportKind.DuplicateScreening => "Flag similar originating instructions in the activity window for review. Does not reject or release payments.",
+        BankReportKind.DeliveryRecovery => "Make eligible failed original outbox messages due for retry. Preserve payload, queue, attempts, and stable delivery ID. Dead letters require review.",
+        BankReportKind.ApprovalReminders => "Create in-app Approver reminders for instructions awaiting independent approval for at least 15 minutes.",
+        BankReportKind.CaseEscalation => "Raise overdue unresolved cases to High severity and flag unassigned cases without changing ownership, notes, or resolution.",
+        BankReportKind.EndOfDayClose => "Save a closing review of unsettled work, controls, returns, funding, and cases. A person must assess and close the review.",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+    public static ReportFrequency DefaultFrequency(BankReportKind kind) => kind switch
+    {
+        BankReportKind.EndOfDayClose => ReportFrequency.Daily,
+        BankReportKind.AchBatchPreparation or BankReportKind.AchCutoffProcessing or BankReportKind.StuckPayments
+            or BankReportKind.LiquidityForecast or BankReportKind.ApprovalReminders or BankReportKind.DeliveryRecovery => ReportFrequency.Every15Minutes,
+        _ => ReportFrequency.Hourly
     };
     public static string Cadence(ReportFrequency frequency, TimeOnly at) => frequency switch
     {

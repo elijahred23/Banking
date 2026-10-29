@@ -5,10 +5,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Banking.Infrastructure;
 
 public sealed class BankReportBuilder(IDbContextFactory<BankingDbContext> factory,
-    PaymentReconciliationService reconciliation)
+    PaymentReconciliationService reconciliation, BankOperationalJobService? operationalJobs = null)
 {
     public async Task<BankReportDocument> BuildAsync(BankReportRun run, CancellationToken token)
     {
+        if (ReportSchedulePolicy.IsOperational(run.Kind))
+            return await (operationalJobs ?? throw new InvalidOperationException("Operational job services are not configured.")).ExecuteAsync(run, token);
         await using var db = await factory.CreateDbContextAsync(token);
         var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == run.BankId, token);
         var lab = await db.SimulationStates.AsNoTracking().SingleAsync(x => x.Name == "default", token);
