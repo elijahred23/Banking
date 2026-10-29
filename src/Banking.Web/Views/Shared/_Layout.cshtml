@@ -1,7 +1,5 @@
 @inject IDbContextFactory<BankingDbContext> DbFactory
 @{
-    var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
-    var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
     var activeBankName = User.FindFirst("bank_name")?.Value;
     var activeBankId = User.Identity?.IsAuthenticated == true ? User.BankId() : Guid.Empty;
     var hasAllPermissions = User.IsInRole(BankSecurity.PaymentCreator)
@@ -32,52 +30,37 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
-<body>
+<body class="@(User.Identity?.IsAuthenticated == true ? "workspace-authenticated" : "workspace-public")">
 <a class="skip-link" href="#main-content">Skip to main content</a>
-<header class="topbar">
-    <nav class="navbar navbar-expand-xl navbar-dark container py-3" aria-label="Primary navigation">
-        <a class="navbar-brand fw-semibold" asp-controller="Home" asp-action="Index"><span class="brand-mark">B</span> Bank Payments Lab</a>
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <aside class="workspace-sidebar">
+        <a class="workspace-brand" asp-controller="Home" asp-action="Index"><span class="brand-mark">B</span><span>Bank Payments<span class="workspace-brand-subtitle">THE SIMULATION LAB</span></span></a>
+        <partial name="_AppNavigation" />
+        <div class="workspace-sidebar-note"><span class="workspace-lab-dot" aria-hidden="true"></span><div><strong>Learning environment</strong><small>Simulated funds. Real understanding.</small></div></div>
+    </aside>
+    <div class="offcanvas offcanvas-start workspace-mobile-nav" tabindex="-1" id="workspace-menu" aria-labelledby="workspace-menu-title">
+        <div class="offcanvas-header"><h2 class="h5 mb-0" id="workspace-menu-title">Bank Payments Lab</h2><button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close navigation"></button></div>
+        <div class="offcanvas-body"><partial name="_AppNavigation" /></div>
+    </div>
+}
+<header class="workspace-topbar">
+    <div class="workspace-page-context">
         @if (User.Identity?.IsAuthenticated == true)
         {
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle primary navigation"><span class="navbar-toggler-icon"></span></button>
-            <div id="nav" class="collapse navbar-collapse">
-                <ul class="navbar-nav ms-xl-4 me-auto">
-                    <li class="nav-item"><a class="nav-link @(currentController == "Home" ? "active" : "")" asp-controller="Home" asp-action="Index">Overview</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Operations" ? "active" : "")" asp-controller="Operations" asp-action="Index">Operations</a></li>
-                    @if (User.IsInRole(BankSecurity.Operations))
-                    {
-                        <li class="nav-item"><a class="nav-link @(currentController == "PaymentDesk" ? "active" : "")" asp-controller="PaymentDesk" asp-action="Index">Payment desk</a></li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle @(currentController is "Simulator" or "AchSimulator" or "StudioCampaigns" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Studios</a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" asp-controller="Simulator" asp-action="Index">Wire studio</a></li>
-                                <li><a class="dropdown-item" asp-controller="AchSimulator" asp-action="Index">ACH city studio</a></li>
-                                <li><a class="dropdown-item" asp-controller="StudioCampaigns" asp-action="Index" asp-route-kind="Wire">Wire campaign room</a></li>
-                                <li><a class="dropdown-item" asp-controller="StudioCampaigns" asp-action="Index" asp-route-kind="Ach">ACH campaign room</a></li>
-                            </ul>
-                        </li>
-                    }
-                    <li class="nav-item"><a class="nav-link @(currentController == "StudioCampaigns" ? "active" : "")" asp-controller="StudioCampaigns" asp-action="Index">Campaigns</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Learning" ? "active" : "")" asp-controller="Learning" asp-action="Index">Learn</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && currentAction == "Index" && !Context.Request.Query.ContainsKey("direction") ? "active" : "")" asp-controller="Wires" asp-action="Index">All wires</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Outgoing" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Outgoing">Outgoing</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Wires" && Context.Request.Query["direction"] == "Incoming" ? "active" : "")" asp-controller="Wires" asp-action="Index" asp-route-direction="Incoming">Incoming</a></li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle @(currentAction is "Instructions" or "MessageWorkflows" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">How to create</a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" asp-controller="Wires" asp-action="Instructions">Wires</a></li>
-                            <li><a class="dropdown-item" asp-controller="Wires" asp-action="MessageWorkflows">Non-value messages</a></li>
-                            <li><a class="dropdown-item" asp-controller="Ach" asp-action="Instructions">ACH</a></li>
-                            <li><a class="dropdown-item" asp-controller="Check" asp-action="Instructions">Checks</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Ach" && currentAction != "Instructions" ? "active" : "")" asp-controller="Ach" asp-action="Index">ACH</a></li>
-                    <li class="nav-item"><a class="nav-link @(currentController == "Check" && currentAction != "Instructions" ? "active" : "")" asp-controller="Check" asp-action="Index">Checks</a></li>
-                </ul>
-                <a class="btn btn-sm btn-outline-light me-2" asp-controller="Learning" asp-action="Glossary">Glossary</a>
-            </div>
-                <div class="dropup context-switcher">
-                    <button class="btn btn-sm btn-outline-light dropdown-toggle context-switcher-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Switch bank or user. Currently @activeRoleLabel at @activeBankName">
+            <button class="workspace-menu-toggle btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#workspace-menu" aria-controls="workspace-menu" aria-label="Open navigation"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+            <span class="workspace-breadcrumb">Workspace <span aria-hidden="true">/</span> <strong>@ViewData["Title"]</strong></span>
+        }
+        else
+        {
+            <a class="workspace-login-brand" asp-controller="Home" asp-action="Index"><span class="brand-mark">B</span> Bank Payments Lab</a>
+        }
+    </div>
+    <div class="workspace-header-actions"><span class="workspace-environment"><span aria-hidden="true"></span> Simulation</span>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+<div class="dropdown context-switcher">
+                    <button class="btn btn-sm dropdown-toggle context-switcher-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Switch bank or user. Currently @activeRoleLabel at @activeBankName">
                         <span class="context-switcher-label">@activeBankName</span>
                         <span class="context-switcher-role">@activeRoleLabel</span>
                     </button>
@@ -115,15 +98,16 @@
                         </form>
                     </div>
                 </div>
-        }
-    </nav>
+    }
+    </div>
 </header>
-<main id="main-content" class="container app-main py-4 py-lg-5" tabindex="-1">
+<main id="main-content" class="app-main workspace-content" tabindex="-1">
     @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status">@notice</div> }
     @if (TempData["Error"] is string error) { <div class="alert alert-danger" role="alert">@error</div> }
     @RenderBody()
 </main>
-<footer class="container app-footer py-4 text-secondary small border-top">Fedwire, FedNow, SWIFT CBPR+, ACH, and check processing learning environment · All balances and messages are simulated.</footer>
+<footer class="app-footer workspace-footer"><span>Bank Payments Lab</span><span>Learning simulator · All balances and messages are simulated.</span></footer>
+<script src="~/lib/jquery/dist/jquery.min.js"></script>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 <script src="~/js/site.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)

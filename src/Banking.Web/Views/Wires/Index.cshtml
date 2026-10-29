@@ -4,4 +4,9 @@
     <div><div class="eyebrow">@Model.Bank.Name</div><h1>@ViewData["Title"]</h1></div>
     <div class="page-actions"><a class="btn btn-outline-primary" asp-action="MessageWorkflows">Non-value messages</a>@if (User.IsInRole(BankSecurity.PaymentCreator)) { <a class="btn btn-primary" asp-action="Create">Create outgoing payment</a> } else { <span class="btn btn-primary disabled" aria-disabled="true" title="Maker permission required">Create payment · Maker only</span> }</div>
 </div>
+<nav class="payment-view-tabs" aria-label="Wire direction">
+    <a asp-action="Index" class="@(Model.Direction is null ? "is-selected" : "")" aria-current="@(Model.Direction is null ? "page" : null)">All wires</a>
+    <a asp-action="Index" asp-route-direction="Outgoing" class="@(Model.Direction == WireDirection.Outgoing ? "is-selected" : "")" aria-current="@(Model.Direction == WireDirection.Outgoing ? "page" : null)">Outgoing</a>
+    <a asp-action="Index" asp-route-direction="Incoming" class="@(Model.Direction == WireDirection.Incoming ? "is-selected" : "")" aria-current="@(Model.Direction == WireDirection.Incoming ? "page" : null)">Incoming</a>
+</nav>
 <partial name="_WireTable" model="Model.Wires" />

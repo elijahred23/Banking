@@ -1,19 +1,26 @@
 @model DashboardViewModel
 @{ ViewData["Title"] = "Overview"; }
-<div class="page-heading mb-4">
-    <div><div class="eyebrow">CURRENT PERSONA</div><h1 class="mb-1">@Model.Bank.Name</h1><div class="text-secondary">Routing @Model.Bank.RoutingNumber · BIC @Model.Bank.Bic · @Model.Bank.FedParticipantId</div></div>
+<section class="overview-hero">
+    <div><span class="eyebrow">YOUR BANK AT A GLANCE</span><h1>@Model.Bank.Name</h1><p>Every payment has a story.<br />Follow it from instruction to settlement.</p><div class="overview-bank-meta"><span>Routing @Model.Bank.RoutingNumber</span><span>BIC @Model.Bank.Bic</span></div></div>
+    <div class="overview-hero-aside"><span class="overview-hero-symbol" aria-hidden="true"><svg viewBox="0 0 120 120" fill="none"><rect x="20" y="28" width="70" height="48" rx="9" stroke="currentColor" stroke-width="2"/><path d="M20 43h70M32 62h18M75 72v26m-10-10 10 10 10-10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="91" cy="29" r="13" fill="#c5e8d8"/><path d="m85 29 4 4 7-8" stroke="#174e47" stroke-width="2" stroke-linecap="round"/></svg></span>
     @if (User.IsInRole(BankSecurity.PaymentCreator))
-    { <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create outgoing payment</a> }
+    { <a class="btn btn-primary" asp-controller="Wires" asp-action="Create">Create a payment <span aria-hidden="true">↗</span></a> }
     else
-    { <span class="btn btn-primary disabled" aria-disabled="true" title="Maker permission required">Create outgoing payment · Maker only</span> }
-</div>
-<div class="row g-3 mb-5">
+    { <a class="btn btn-primary" asp-controller="Wires" asp-action="Index">Explore payment activity <span aria-hidden="true">↗</span></a> }
+    </div>
+</section>
+<div class="row g-3 mb-4 overview-metrics">
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Master account</span><strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong><small>Simulated Fed balance</small></div></div>
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Outgoing payments</span><strong>@Model.OutgoingCount</strong><small>@Model.OutgoingTotal.ToString("C") in recent activity</small></div></div>
     <div class="col-sm-6 col-lg-4"><div class="metric h-100"><span>Incoming payments</span><strong>@Model.IncomingCount</strong><small>For the active persona</small></div></div>
 </div>
-<section class="surface learning-home-callout mb-5">
-    <div><div class="eyebrow">NEW TO THE LAB?</div><h2 class="h4 mb-1">Learn through guided payment missions</h2><p class="text-secondary mb-0">Choose a role-focused path, predict the outcome, run the live workflow, and verify your explanation against messages and accounting evidence.</p></div>
+<section class="overview-shortcuts" aria-label="Explore the lab">
+    <a asp-controller="Wires" asp-action="Index"><span class="shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16m-5-5 5 5-5 5M20 17H4m5-5-5 5 5 5" /></svg></span><div><strong>Wire payments</strong><small>Individual transfers, messages &amp; settlement</small></div><span aria-hidden="true">→</span></a>
+    <a asp-controller="Ach" asp-action="Index"><span class="shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h4" /></svg></span><div><strong>ACH processing</strong><small>Entries, batches &amp; NACHA files</small></div><span aria-hidden="true">→</span></a>
+    <a asp-controller="Learning" asp-action="Index"><span class="shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h8l2 2 2-2h8v15h-8l-2 2-2-2H2zM12 6v15" /></svg></span><div><strong>Guided learning</strong><small>Predict, observe &amp; explain</small></div><span aria-hidden="true">→</span></a>
+</section>
+<section class="surface learning-home-callout mb-4">
+    <div><div class="eyebrow">BUILD YOUR UNDERSTANDING</div><h2 class="h4 mb-1">Learn through guided payment missions</h2><p class="text-secondary mb-0">Choose a role-focused path, predict the outcome, run the live workflow, and verify your explanation against messages and accounting evidence.</p></div>
     <a class="btn btn-outline-primary" asp-controller="Learning" asp-action="Index">Open Learning Center</a>
 </section>
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Recent payment activity</h2><a asp-controller="Wires" asp-action="Index">View all</a></div>
