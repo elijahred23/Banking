@@ -17,6 +17,7 @@ public static class ServiceRegistration
             options.UseSqlServer(sql, sqlOptions => sqlOptions.EnableRetryOnFailure()));
         services.AddSingleton<IMessageBus, RabbitMqMessageBus>();
         services.AddSingleton<MessageReliabilityStore>();
+        services.AddSingleton<OutboxDispatcher>();
         services.AddSingleton<PaymentReconciliationService>();
         services.AddSingleton<AchBatchProcessor>();
         services.AddSingleton<BankOperationalJobService>();

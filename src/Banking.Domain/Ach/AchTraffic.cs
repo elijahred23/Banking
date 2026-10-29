@@ -5,6 +5,13 @@ public enum AchTrafficMode { Payroll, Suppliers, Utilities, Mixed, Rent, Subscri
 public static class AchTraffic
 {
     public const string Prefix = "ach-traffic:";
+    public static bool TryGetBankId(string name, out Guid bankId)
+    {
+        bankId = default;
+        return name.StartsWith(Prefix, StringComparison.Ordinal)
+            && Guid.TryParse(name[Prefix.Length..].Split(':')[0], out bankId);
+    }
+
     public const string Maker = "ach-traffic:maker";
     public const string Approver = "ach-traffic:approver";
     public static string BankPrefix(Guid bankId) => $"{Prefix}{bankId:N}:";

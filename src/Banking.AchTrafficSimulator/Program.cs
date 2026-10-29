@@ -1,8 +1,4 @@
-using Banking.Infrastructure;
 using Banking.AchTrafficSimulator;
+using Banking.Infrastructure;
 
-var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddBankingInfrastructure(builder.Configuration);
-builder.Services.AddSingleton<AchTrafficService>();
-builder.Services.AddHostedService<Worker>();
-await builder.Build().RunAsync();
+await BankingWorkerHost.RunAsync<Worker>(args, services => services.AddSingleton<AchTrafficService>());

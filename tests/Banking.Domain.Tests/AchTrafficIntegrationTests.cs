@@ -65,7 +65,7 @@ public sealed class AchTrafficIntegrationTests
             workers.Add(new Banking.FedAchSimulator.Worker(bus, factory, new NachaFileParser(),
                 NullLogger<Banking.FedAchSimulator.Worker>.Instance));
             workers.Add(new Banking.MessageManager.Worker(bus, factory, NullLogger<Banking.MessageManager.Worker>.Instance));
-            workers.Add(new OutboxPublisher(factory, bus, NullLogger<OutboxPublisher>.Instance));
+            workers.Add(new OutboxPublisher(new OutboxDispatcher(factory, bus, NullLogger<OutboxDispatcher>.Instance)));
             foreach (var worker in workers) await worker.StartAsync(timeout.Token);
             foreach (var mode in new[] { AchTrafficMode.Payroll, AchTrafficMode.Suppliers, AchTrafficMode.Utilities })
             {

@@ -4,6 +4,13 @@ namespace Banking.Domain;
 public static class WireTraffic
 {
     public const string Prefix = "wire-traffic:";
+    public static bool TryGetBankId(string name, out Guid bankId)
+    {
+        bankId = default;
+        return name.StartsWith(Prefix, StringComparison.Ordinal)
+            && Guid.TryParse(name[Prefix.Length..], out bankId);
+    }
+
     public const string Maker = "traffic-simulator:maker";
     public const string Approver = "traffic-simulator:approver";
     public static string StateName(Guid bankId) => $"{Prefix}{bankId:N}";

@@ -5,29 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Banking.WireTrafficSimulator;
 
 public sealed class Worker(IDbContextFactory<BankingDbContext> factory,
-    WireTrafficService traffic, ILogger<Worker> logger) : BackgroundService
+    WireTrafficService traffic, ILogger<Worker> logger) : TrafficSimulationWorker(factory, logger)
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
-        {
-            try
-            {
-                await using var db = await factory.CreateDbContextAsync(stoppingToken);
-                var names = await db.SimulationStates.AsNoTracking()
-                    .Where(x => x.Name.StartsWith(WireTraffic.Prefix) && !x.IsPaused)
-                    .Select(x => x.Name).ToListAsync(stoppingToken);
-                foreach (var name in names)
-                    if (Guid.TryParse(name[WireTraffic.Prefix.Length..], out var bankId))
-                    {
-                        try { await traffic.TickAsync(bankId, stoppingToken); }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        { logger.LogWarning(ex, "Traffic tick failed for {BankId}; will retry", bankId); }
-                    }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            { logger.LogWarning(ex, "Traffic simulator waiting for database"); }
-        }
-    }
+    protected override string StatePrefix => WireTraffic.Prefix;
+    protected override bool TryResolveBankId(string name, out Guid bankId) =>
+        WireTraffic.TryGetBankId(name, out bankId);
+    protected override Task TickAsync(Guid bankId, CancellationToken token) => traffic.TickAsync(bankId, token);
 }
