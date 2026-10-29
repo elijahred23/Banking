@@ -5,6 +5,7 @@
     <span class="badge text-bg-light align-self-start">@entry.Status</span>
 </div>
 <partial name="_AchNav" />
+<partial name="_PaymentAttention" model="PaymentAttentionPolicy.For(entry)" />
 @if (entry.OriginatingBankId == Model.Bank.Id && entry.AchBatchId is Guid batchId)
 {
     <section class="surface p-3 mb-4 d-flex flex-wrap align-items-center gap-3">

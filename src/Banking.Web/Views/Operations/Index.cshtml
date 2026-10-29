@@ -17,6 +17,7 @@
     </div>
 </div>
 
+<p><a class="btn btn-primary" asp-controller="PaymentDesk" asp-action="Index">Open payment desk · blockers, clock &amp; reconciliation →</a></p>
 <div class="row g-4 mt-1">
     <section class="col-lg-5" aria-labelledby="clock-heading">
         <div class="surface operations-panel h-100">
@@ -238,6 +239,7 @@
                 <dt class="col-8">Unreplayed dead letters</dt><dd class="col-4 text-end">@Model.Reconciliation.DeadLetterMessages</dd>
                 <dt class="col-8">Unbalanced journals</dt><dd class="col-4 text-end">@Model.Reconciliation.UnbalancedJournals</dd>
                 <dt class="col-8">Customer hold mismatches</dt><dd class="col-4 text-end">@Model.Reconciliation.HoldMismatches</dd>
+                <dt class="col-8">Settled ACH without journals</dt><dd class="col-4 text-end">@Model.Reconciliation.SettledAchWithoutJournals</dd>
                 <dt class="col-8">Settled wires without journals</dt><dd class="col-4 text-end">@Model.Reconciliation.SettledWiresWithoutJournals</dd>
             </dl>
             <p class="form-text mt-3 mb-0">Lab control only. It compares payment state, transport records, holds, and journals for the active bank.</p>

@@ -1,0 +1,5 @@
+@model PaymentAttention
+<div class="payment-attention attention-@Model.Category">
+    <div><span class="desk-label">NEXT STEP · @Model.Owner</span><h3>@Model.Title</h3><p>@Model.Action</p></div>
+    <details><summary>Evidence &amp; funds impact</summary><dl><dt>Verify</dt><dd>@Model.Evidence</dd><dt>Funds</dt><dd>@Model.Funds</dd></dl></details>
+</div>

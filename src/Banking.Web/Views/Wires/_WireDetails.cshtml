@@ -1,4 +1,5 @@
 @model WireDetailsViewModel
+<partial name="_PaymentAttention" model="PaymentAttentionPolicy.For(Model.Wire)" />
 @{
     var wire = Model.Wire;
     var paymentMessageType = wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer

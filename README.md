@@ -346,3 +346,37 @@ creation, and journal lines. It does not invent timestamps for unrecorded states
 reprocess payments, or reconstruct unavailable historical balances. The transcript
 and interactive stepping are presentation-only. Campaign target assessments use
 recorded evidence and remain distinct from durable guided-mission completion.
+
+## Unified payment desk
+
+Operations users can open **Payment desk** (`/PaymentDesk`) for a responsive,
+searchable cross-rail queue, explicit blockers and action owners, funding/exposure
+planning, and reconciliation controls. The queue covers the latest 100 bank-visible
+wires and 100 ACH entries; totals labeled as forecasts and reconciliation controls
+are bank-wide. Receiving banks do not see unreleased originating ACH instructions.
+Shared attention explanations also appear in both studios and payment details.
+
+**Advance shared clock to next date** selects the earliest future banking date of
+this bank's batched ACH entries, or the next banking day when none exists. The
+server recomputes the date under a serializable transaction. This advances the
+shared clock for every bank, including eligible work outside the current bank.
+It does not force settlement, pause workers, or change generator pace. The existing
+short ACH file cutoff, wire processing, and investigation reply delays still use
+wall time. This is an eligible-date step, not a full event scheduler or an
+authoritative operating-hours profile.
+
+Reconciliation includes missing ACH/wire journals, expected-versus-observed customer
+holds, and individual journal controls. Downloaded JSON captures scoped evidence;
+it is not an independently imported operator statement. Review explanations are
+saved with freshly computed counts in the existing Operations case queue for human
+assessment. They never automatically certify a day or complete a learning mission.
+Six repeatable fictional decision exercises cover unknown wire outcomes, future
+payroll, ACH returns, duplicate delivery, wire cancellation after settlement, and
+NOCs. They require a prediction and explanation before feedback and remain separate
+from live payments. Keyword feedback is explicitly a self-review aid.
+
+This release provides the shared observation and review interface. Full deterministic
+isolated campaign reruns, authoritative processing-window scheduling, bulk NACHA
+intake, interactive receiver decisions, and new correspondent fee/posting-exception
+workflows remain future extensions; existing campaign and case workflows are linked
+from the desk.

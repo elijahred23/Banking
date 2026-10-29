@@ -241,7 +241,7 @@ public sealed class OperationsController(
             x.SenderBankId == bankId ? -x.Amount : x.Amount, x.CreatedDate)));
         result.AddRange(ach.Select(x => new SettlementMovementViewModel("ACH", x.Id.ToString("N")[..8],
             x.OriginatingBankId == bankId ? BankName(bankNames, x.ReceivingBankId) : BankName(bankNames, x.OriginatingBankId),
-            x.OriginatingBankId == bankId ? -x.Amount : x.Amount, x.CreatedDate)));
+            PaymentAttentionPolicy.AchSettlementMovement(bankId, x), x.CreatedDate)));
         result.AddRange(checks.Select(x => new SettlementMovementViewModel("Check",
             x.CorrelationId.ToString("N")[..8],
             x.DepositoryBankId == bankId ? BankName(bankNames, x.PayingBankId) : BankName(bankNames, x.DepositoryBankId),

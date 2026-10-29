@@ -75,6 +75,7 @@
                             <div><strong>@entry.ReceiverName</strong><span>@entry.ReceivingBank?.Name · •••• @entry.ReceivingAccountNumber.Substring(Math.Max(0, entry.ReceivingAccountNumber.Length - 4))</span></div>
                             <div><strong>@entry.Amount.ToString("C")</strong><span class="traffic-pill">@entry.Status</span></div>
                             <dl class="traffic-reference"><dt>Trace</dt><dd>@(entry.TraceNumber ?? "Assigned at file cutoff")</dd><dt>Approval</dt><dd>@(entry.ApprovedBy ?? "Waiting for separate simulated approver")</dd><dt>NACHA file</dt><dd>@(entry.Batch?.File is null ? "Draft available above once batched; saved file waits for eligible cutoff" : $"{entry.Batch.File.Id.ToString()[..8]} · {entry.Batch.File.Status}")</dd><dt>Posting evidence</dt><dd>@(posting is null ? "No journal posted yet" : $"{posting.PostedAt.ToLocalTime():HH:mm:ss} · debits {posting.Debits:C} / credits {posting.Credits:C}")</dd></dl>
+                            <partial name="_PaymentAttention" model="PaymentAttentionPolicy.For(entry, date)" />
                             <a asp-controller="Ach" asp-action="Details" asp-route-id="@entry.Id">Inspect lifecycle &amp; accounting →</a>
                             @if (entry.OriginatingBankId == Model.Bank.Id && entry.Batch?.AchFileId is Guid fileId)
                             { <a asp-controller="Ach" asp-action="Explorer" asp-route-id="@fileId">Explore NACHA records →</a> }

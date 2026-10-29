@@ -27,8 +27,7 @@
         @foreach (var wire in Model.Wires)
         {
             var rejected = wire.Status == WireStatus.Rejected;
-            var delivered = wire.Events.Any(x => x.EventType == "Delivered");
-            var complete = wire.Status == WireStatus.Completed || delivered;
+            var complete = wire.Status == WireStatus.Completed;
             var settled = wire.Status is WireStatus.Settled or WireStatus.Completed;
             var sent = wire.Status is WireStatus.SentToFed or WireStatus.PendingAtFed || settled;
             var approved = wire.ApprovedBy is not null || wire.Direction == WireDirection.Incoming;
@@ -42,6 +41,7 @@
                     </span>
                 </summary>
                 <div class="traffic-wire-body">
+                    <partial name="_PaymentAttention" model="PaymentAttentionPolicy.For(wire)" />
                     <p><a asp-controller="Wires" asp-action="Details" asp-route-id="@wire.Id">Open full lifecycle, ISO messages &amp; accounting →</a></p>
                     <dl class="traffic-reference"><dt>Correlation</dt><dd>@wire.CorrelationId</dd><dt>Maker / approver</dt><dd>@(wire.CreatedBy ?? "Receiving bank") / @(wire.ApprovedBy ?? "—")</dd><dt>IMAD</dt><dd>@(wire.Imad ?? "Awaiting acceptance")</dd></dl>
                     <ol class="traffic-timeline">

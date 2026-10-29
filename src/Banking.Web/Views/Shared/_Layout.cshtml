@@ -46,6 +46,7 @@
                     <li class="nav-item"><a class="nav-link @(currentController == "Operations" ? "active" : "")" asp-controller="Operations" asp-action="Index">Operations</a></li>
                     @if (User.IsInRole(BankSecurity.Operations))
                     {
+                        <li class="nav-item"><a class="nav-link @(currentController == "PaymentDesk" ? "active" : "")" asp-controller="PaymentDesk" asp-action="Index">Payment desk</a></li>
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle @(currentController is "Simulator" or "AchSimulator" or "StudioCampaigns" ? "active" : "")" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Studios</a>
                             <ul class="dropdown-menu">

@@ -1,0 +1,80 @@
+@model PaymentDeskViewModel
+@{ ViewData["Title"] = "Payment desk"; }
+<section class="payment-desk" data-payment-desk>
+    <header class="desk-hero">
+        <div><span class="desk-label">BANK PAYMENTS LAB / @Model.Bank.Name</span><h1>Your payment desk.</h1><p>Know what is waiting. Decide what happens next. Follow the evidence.</p></div>
+        <div class="desk-hero-actions"><a class="btn btn-light" asp-controller="AchSimulator" asp-action="Index">ACH studio ↗</a><a class="btn btn-outline-light" asp-controller="Simulator" asp-action="Index">Wire studio ↗</a></div>
+    </header>
+    <nav class="desk-tabs" aria-label="Payment desk sections"><a href="#desk-work">Work queue</a><a href="#desk-controls">Time &amp; liquidity</a><a href="#desk-reconcile">Reconcile</a><a href="#desk-decisions">Practice a decision</a></nav>
+    <div class="desk-stats">
+        <article><span>Needs a decision</span><strong>@Model.Items.Count(x => x.Attention.Category == "action")</strong><small>In the recent snapshot</small></article>
+        <article><span>Waiting for processing</span><strong>@Model.Items.Count(x => x.Attention.Category == "waiting")</strong><small>Inspect the blocker below</small></article>
+        <article><span>Recorded exceptions</span><strong>@Model.Items.Count(x => x.Attention.Category == "review")</strong><small>Outcomes to investigate</small></article>
+        <article><span>Accounting control</span><strong>@(Model.Reconciliation.IsClear ? "Clear" : "Review")</strong><small>Live evidence, not a certification</small></article>
+    </div>
+    <section id="desk-work" class="desk-surface">
+        <div class="desk-section-heading"><div><span class="desk-label">01 / LIVE LAB WORK</span><h2>What needs attention?</h2></div><a class="btn btn-sm btn-outline-secondary" asp-action="Index">Refresh evidence</a></div>
+        <p class="text-secondary">Latest 100 wires and 100 ACH entries visible to this bank. Recorded exceptions may already have been reviewed. Actions open the existing authorized workflow.</p>
+        <div class="desk-filters"><div><label for="desk-search">Find a payment</label><input id="desk-search" type="search" class="form-control" placeholder="Name, reference, status…" data-desk-search /></div><div><label for="desk-rail">Rail</label><select id="desk-rail" class="form-select" data-desk-rail><option value="all">All rails</option><option value="ACH">ACH</option><option value="wire">Wires</option></select></div><div><label for="desk-state">Focus</label><select id="desk-state" class="form-select" data-desk-category><option value="all">All activity</option><option value="action">Needs a decision</option><option value="waiting">Waiting</option><option value="review">Exceptions / corrections</option><option value="complete">Settlement recorded</option></select></div></div>
+        <p class="small text-secondary" data-desk-count role="status">@Model.Items.Count items visible</p>
+        <div class="desk-work-list">
+        @foreach (var item in Model.Items)
+        {
+            <details class="desk-payment" data-desk-item data-rail="@item.Rail" data-category="@item.Attention.Category">
+                <summary><span class="desk-rail">@item.Rail</span><span class="desk-payment-name"><strong>@item.Party</strong><small>@item.Attention.Title · @item.Attention.Owner</small></span><span class="desk-payment-value"><strong>@item.Amount.ToString("C")</strong><small>@item.Status</small></span></summary>
+                <div class="desk-payment-body"><partial name="_PaymentAttention" model="item.Attention" /><div class="desk-evidence-link"><code>@item.Id</code><a class="btn btn-sm btn-primary" asp-controller="@item.Controller" asp-action="Details" asp-route-id="@item.Id">Open evidence &amp; actions →</a></div></div>
+            </details>
+        }
+        </div>
+        <p class="desk-empty" data-desk-empty hidden>No payments match these filters. Try another rail or focus.</p>
+        @if (Model.Items.Count == 0) { <p class="desk-empty">Start a studio workload or create a payment to see its next step here.</p> }
+        <button type="button" class="btn btn-outline-secondary mt-3" data-desk-more hidden>Show more payments</button>
+    </section>
+    <section id="desk-controls" class="desk-two-column">
+        <article class="desk-surface"><span class="desk-label">02 / SHARED LAB TIME</span><h2>Step into the next banking date</h2><p class="desk-clock">@Model.Clock.CurrentUtc.ToString("MMM dd, yyyy · HH:mm 'UTC'")</p><p>Next: <strong>@Model.Next.At.ToString("MMM dd, yyyy")</strong> · @Model.Next.Label</p>
+            <p class="text-secondary">This changes the shared date for every bank. ACH files become eligible on their effective date, then wait for the worker's configured cutoff. Wire delivery, generators, and desk reply delays still follow wall time.</p>
+            <form asp-action="NextEvent" method="post"><button class="btn btn-primary">Advance shared clock to next date →</button></form><a class="small d-inline-block mt-3" asp-controller="Operations" asp-action="Index">Custom clock controls</a>
+        </article>
+        <article class="desk-surface"><span class="desk-label">BANK-WIDE FORECAST</span><h2>Funding &amp; exposure</h2><dl class="desk-funding"><dt>Settlement cash</dt><dd>@Model.Bank.MasterAccountBalance.ToString("C")</dd><dt>Fedwire credit limit</dt><dd>@Model.Bank.FedwireCreditLimit.ToString("C")</dd><dt>Outstanding outgoing Fedwire</dt><dd>@Model.WireDemand.ToString("C")</dd><dt>Validated ACH credit exposure</dt><dd>@Model.AchCreditExposure.ToString("C") / @Model.Bank.AchExposureLimit.ToString("C")</dd></dl>
+            <p class="text-secondary">Face amounts are a planning view, not reserved settlement liquidity. Pending approval may never be released. Customer balances and holds remain separate.</p><a asp-controller="StudioCampaigns" asp-action="Index" asp-route-kind="Wire">Open treasury funding &amp; campaign handoffs →</a>
+        </article>
+    </section>
+    <section id="desk-reconcile" class="desk-surface">
+        <div class="d-flex justify-content-between flex-wrap gap-2 mb-3"><span class="desk-label">03 / VERIFY THE EVIDENCE</span><a asp-action="Evidence" class="btn btn-sm btn-outline-primary">Download bank evidence (.json)</a></div><h2>Reconcile before you close</h2><p class="text-secondary">Live controls can show transient posting gaps. Investigate each discrepancy before declaring the day complete. This view does not independently certify operator statements or historical bank balances.</p>
+        <div class="desk-control-grid">
+            <a asp-controller="Operations" asp-action="Index"><strong>@Model.Reconciliation.PendingOutboxMessages</strong><span>Unpublished messages</span><small>Inspect publication before resubmitting</small></a>
+            <a asp-controller="Operations" asp-action="Index"><strong>@Model.Reconciliation.IncompleteInboxMessages</strong><span>Incomplete deliveries</span><small>Confirm consumer outcome</small></a>
+            <a asp-controller="Operations" asp-action="Index"><strong>@Model.Reconciliation.DeadLetterMessages</strong><span>Dead letters</span><small>Inspect failure and authorized replay</small></a>
+            <a asp-controller="Operations" asp-action="Index"><strong>@Model.Reconciliation.HoldMismatches</strong><span>Hold discrepancies</span><small>Match reserved funds to open instructions</small></a>
+            <a href="#desk-journals"><strong>@Model.Reconciliation.UnbalancedJournals</strong><span>Unbalanced journals</span><small>Inspect correlated debit and credit lines</small></a>
+            <a href="#desk-findings"><strong>@(Model.Reconciliation.SettledWiresWithoutJournals + Model.Reconciliation.SettledAchWithoutJournals)</strong><span>Settled items missing journals</span><small>Investigate posting evidence</small></a>
+        </div>
+        @if (Model.Reconciliation.Findings.Count > 0)
+        {
+            <div id="desk-findings" class="mt-4"><h3 class="h5">Expected versus observed</h3>
+            @foreach (var finding in Model.Reconciliation.Findings)
+            {
+                <article class="payment-attention attention-review"><h4 class="h6">@finding.Area · @finding.Reference</h4><p>@finding.Explanation</p><p>Expected: @finding.Expected.ToString("N2") · observed: @finding.Observed.ToString("N2") @(finding.Area == "Holds" ? "in account currency" : "journal present (1 = yes)")</p>
+                @if (finding.Area is "Ach" or "Wires") { <a asp-controller="@finding.Area" asp-action="Details" asp-route-id="@finding.ItemId">Inspect item evidence →</a> }
+                else { <a asp-controller="Operations" asp-action="Index">Inspect account availability →</a> }
+                </article>
+            }
+            </div>
+        }
+        <details id="desk-journals" class="mt-4"><summary>Inspect ACH and wire journal controls (@Model.Journals.Count journals)</summary><div class="table-responsive mt-3"><table class="table"><caption>All visible ACH and wire journals; original and reversing journals remain separate.</caption><thead><tr><th>Rail / journal</th><th>Debits</th><th>Credits</th><th>Control</th><th>Evidence</th></tr></thead><tbody>
+        @foreach (var journal in Model.Journals) { <tr><td>@journal.Rail <code>@journal.JournalId.ToString("N")[..12]</code></td><td>@journal.Debits.ToString("C")</td><td>@journal.Credits.ToString("C")</td><td>@(journal.Balanced ? "Balanced" : "Investigate")</td><td><a asp-controller="@journal.Controller" asp-action="Details" asp-route-id="@journal.PaymentId">Open item</a></td></tr> }
+        </tbody></table></div></details>
+        <form asp-action="RecordReview" method="post" class="mt-4">
+            <label for="desk-review" class="form-label fw-semibold">Record your reconciliation review</label>
+            <p id="desk-review-help" class="small text-secondary">Describe the journals, holds, and delivery evidence checked, any unresolved differences, and your next action. Saves a case for human assessment using fresh server-side control counts.</p>
+            <textarea id="desk-review" name="explanation" class="form-control" rows="3" required minlength="30" maxlength="1500" aria-describedby="desk-review-help"></textarea>
+            <button class="btn btn-outline-primary mt-2" type="submit">Save review to Operations inbox</button>
+        </form>
+    </section>
+    <section id="desk-decisions" class="desk-surface">
+        <span class="desk-label">04 / DECISION PRACTICE</span><h2>What would you do next?</h2><p class="text-secondary">Fictional desk exercises. Choose an action and explain your evidence before revealing feedback. Practice does not change payments or award mission completion.</p>
+        <div data-decision-practice></div>
+    </section>
+    <p class="small text-secondary mt-3">Learning simulator · no live rail connectivity or certification. Refresh to retrieve current evidence; filters do not change payment state.</p>
+</section>
+@section Scripts { <script src="~/js/payment-desk.js" asp-append-version="true"></script> }
