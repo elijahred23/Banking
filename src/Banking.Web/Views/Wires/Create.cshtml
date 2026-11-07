@@ -30,7 +30,7 @@
                 <label class="scenario-card"><input asp-for="Scenario" type="radio" value="MalformedIso" /><strong>Malformed ISO</strong><span>See structural validation stop transmission.</span><small>Advanced</small></label>
             </div><div class="form-text">Choose the behavior you want to study. Each scenario has a different evidence trail.</div>
         </fieldset>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Submit for approval</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-outline-primary" type="button" data-message-preview>Preview wire</button><button class="btn btn-primary" type="submit">Submit for approval</button><a class="btn btn-light" asp-action="Index">Cancel</a></div>
     </form>
 </div></div>
 @section Scripts {

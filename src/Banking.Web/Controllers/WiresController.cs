@@ -86,7 +86,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public async Task<IActionResult> CreateRequestForPayment(RequestForPaymentViewModel model,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -112,6 +112,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 "Both institutions must be enabled and online for this FedNow request.");
         if (!ModelState.IsValid)
         {
+            if (preview) return PreviewError();
             TempData["Error"] = string.Join(" ", ModelState.Values.SelectMany(x => x.Errors)
                 .Select(x => x.ErrorMessage));
             return RedirectToAction(nameof(MessageWorkflows));
@@ -126,10 +127,12 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             Details = model.Remittance.Trim(), AccountNumber = account!.AccountNumber,
             Amount = model.Amount
         };
-        AddExchangeMessages(exchange, nonValueMessages.CreateRequestForPayment(exchange.Id,
+        var messages = nonValueMessages.CreateRequestForPayment(exchange.Id,
             account.Customer.Bank, debtorBank, account.Customer.Name, account.AccountNumber,
             model.DebtorName.Trim(), model.DebtorAccount.Trim(), model.Amount,
-            model.Remittance.Trim(), model.Rail));
+            model.Remittance.Trim(), model.Rail);
+        if (preview) return MessagePreview(messages);
+        AddExchangeMessages(exchange, messages);
         db.MessageExchanges.Add(exchange);
         await db.SaveChangesAsync(token);
         TempData["Notice"] =
@@ -139,7 +142,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentApprover)]
     public async Task<IActionResult> RespondToRequest(Guid id, bool approve, string? reason,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -151,6 +154,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         if (exchange is null) return NotFound();
         if (exchange.Status != MessageExchangeStatus.Submitted)
         {
+            if (preview) return PreviewError();
             TempData["Error"] = "This request has already been answered.";
             return RedirectToAction(nameof(MessageWorkflows));
         }
@@ -167,12 +171,14 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                     && x.AccountNumber == debtorAccountNumber, token);
             if (debtorAccount is null)
             {
+                if (preview) return PreviewError();
                 TempData["Error"] =
                     "The requested debtor account does not exist at this bank, so the request cannot be approved.";
                 return RedirectToAction(nameof(MessageWorkflows));
             }
             if (exchange.Amount is null || debtorAccount.AvailableBalance < exchange.Amount.Value)
             {
+                if (preview) return PreviewError();
                 TempData["Error"] = "The debtor account has insufficient available funds.";
                 return RedirectToAction(nameof(MessageWorkflows));
             }
@@ -181,6 +187,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                     || !debtorBank.FedNowSendEnabled || !debtorBank.FedNowOnline
                     || !exchange.Bank.FedNowReceiveEnabled || !exchange.Bank.FedNowOnline))
             {
+                if (preview) return PreviewError();
                 TempData["Error"] =
                     "The approved payment does not meet the FedNow amount or participant availability rules.";
                 return RedirectToAction(nameof(MessageWorkflows));
@@ -216,6 +223,14 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
         var response = nonValueMessages.CreateRequestForPaymentResponse(exchange.Id,
             exchange.Bank, debtorBank, exchange.Rail, approve, reason);
+        if (preview)
+        {
+            var messages = new List<CreatedWireIsoMessage> { response };
+            if (wire is not null)
+                messages.Add(wireMessages.Create("pacs.008", wire, debtorBank, exchange.Bank,
+                    ReadPaymentAccount(exchange.Messages.Single(x => x.MessageType == "pain.013").XmlPayload, "DbtrAcct")));
+            return MessagePreview(messages);
+        }
         db.IsoMessages.Add(new IsoMessage
         {
             MessageExchangeId = exchange.Id, MessageType = response.MessageType,
@@ -248,7 +263,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> CreateAccountReport(AccountReportRequestViewModel model,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -257,6 +272,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         if (model.BusinessDate != today || model.Rail is not (PaymentRail.Fedwire or PaymentRail.FedNow)
             || model.ReportType is not ("Account balance" or "Activity totals" or "Activity details"))
         {
+            if (preview) return PreviewError();
             TempData["Error"] = "Select a supported report and today's business date.";
             return RedirectToAction(nameof(MessageWorkflows));
         }
@@ -267,8 +283,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             Subject = model.ReportType, Details = $"{model.ReportType} for {model.BusinessDate:yyyy-MM-dd}",
             AccountNumber = bank.FedParticipantId
         };
-        AddExchangeMessages(exchange, nonValueMessages.CreateAccountReport(exchange.Id, bank,
-            model.ReportType, model.BusinessDate, bank.MasterAccountBalance, model.Rail));
+        var messages = nonValueMessages.CreateAccountReport(exchange.Id, bank,
+            model.ReportType, model.BusinessDate, bank.MasterAccountBalance, model.Rail);
+        if (preview) return MessagePreview(messages);
+        AddExchangeMessages(exchange, messages);
         db.MessageExchanges.Add(exchange);
         await db.SaveChangesAsync(token);
         TempData["Notice"] = "Account report requested with camt.060 and returned with camt.052.";
@@ -277,7 +295,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> CreateSystemEvent(SystemEventViewModel model,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -286,6 +304,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             && x.Id != bankId && x.FedNowEnabled, token);
         if (!ModelState.IsValid || recipient is null)
         {
+            if (preview) return PreviewError();
             TempData["Error"] = "Select a FedNow participant and provide an event code and details.";
             return RedirectToAction(nameof(MessageWorkflows));
         }
@@ -295,8 +314,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             Type = MessageExchangeType.SystemEvent, Status = MessageExchangeStatus.Responded,
             Rail = PaymentRail.FedNow, Subject = model.EventCode.Trim(), Details = model.Details.Trim()
         };
-        AddExchangeMessages(exchange, nonValueMessages.CreateSystemEvent(exchange.Id, sender,
-            recipient, model.EventCode.Trim(), model.Details.Trim()));
+        var messages = nonValueMessages.CreateSystemEvent(exchange.Id, sender,
+            recipient, model.EventCode.Trim(), model.Details.Trim());
+        if (preview) return MessagePreview(messages);
+        AddExchangeMessages(exchange, messages);
         db.MessageExchanges.Add(exchange);
         await db.SaveChangesAsync(token);
         TempData["Notice"] = "Participant broadcast sent with admi.004 and acknowledged with admi.011.";
@@ -320,7 +341,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
-    public async Task<IActionResult> Create(CreateWireViewModel model, CancellationToken token)
+    public async Task<IActionResult> Create(CreateWireViewModel model, CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -368,7 +389,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             && !CbprPlusProfile.IsValidIban(model.BeneficiaryAccountNumber ?? ""))
             ModelState.AddModelError(nameof(model.BeneficiaryAccountNumber),
                 "Enter a valid IBAN for this international beneficiary.");
-        if (!ModelState.IsValid) return View(await PopulateAsync(model, bankId, db, token));
+        if (!ModelState.IsValid)
+            return preview ? PreviewError()
+                : View(await PopulateAsync(model, bankId, db, token));
 
         var customerReference = model.CustomerReference.Trim().ToUpperInvariant();
         if (await db.WireTransfers.AnyAsync(x => x.BankId == bankId
@@ -376,6 +399,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         {
             ModelState.AddModelError(nameof(model.CustomerReference),
                 "This bank has already used that customer payment reference.");
+            if (preview) return PreviewError();
             return View(await PopulateAsync(model, bankId, db, token));
         }
 
@@ -406,6 +430,15 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                     ? $"Outgoing {model.Rail} payment created using the {model.Scenario} lab scenario."
                     : $"Outgoing international USD wire to {receiverBank.CountryCode} created over SWIFT CBPR+ using the {model.Scenario} lab scenario." }]
         };
+        if (preview)
+        {
+            var messageType = isInstitutionTransfer ? "pacs.009" : "pacs.008";
+            var message = wireMessages.Create(messageType, wire, senderBank, receiverBank!,
+                account?.AccountNumber);
+            if (wire.Scenario == ProcessingScenario.MalformedIso)
+                message = message with { XmlPayload = message.XmlPayload[..^12] };
+            return MessagePreview([message]);
+        }
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
         await LearningRunLinker.AttachAsync(HttpContext, db, bankId, "Wire", wire.Id, token);
@@ -526,15 +559,44 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> OpenCase(Guid id, WireCaseType type, string reason,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
         var normalizedReason = reason?.Trim() ?? string.Empty;
         if (!Enum.IsDefined(type) || normalizedReason.Length is < 10 or > 500)
         {
+            if (preview) return PreviewError();
             TempData["Error"] = "Provide a case reason between 10 and 500 characters.";
             return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (preview)
+        {
+            var wire = await db.WireTransfers.Include(x => x.Cases).AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == id && x.BankId == bankId, token);
+            if (wire is null) return NotFound();
+            if (!(type == WireCaseType.ReturnRequest
+                    ? WireCasePolicy.CanRequestReturn(wire) : WireCasePolicy.CanInvestigate(wire))
+                || wire.Cases.Any(x => x.Type == type && x.Status == WireCaseStatus.Submitted))
+                return BadRequest(new { error = "This wire is not eligible for this case." });
+            var sender = await db.Banks.SingleAsync(x => x.Id == wire.SenderBankId, token);
+            var receiver = await db.Banks.SingleAsync(x => x.Id == wire.ReceiverBankId, token);
+            var wireCase = new WireCase
+            {
+                WireTransferId = wire.Id, RequestedByBankId = bankId, Type = type,
+                Reason = normalizedReason,
+                RequestMessageType = WireCasePolicy.RequestMessageType(type, wire.Rail)
+            };
+            var messages = new List<CreatedWireIsoMessage>
+            {
+                new(wireCase.RequestMessageType, MessageDirection.Outbound,
+                    CreateCaseRequest(wire, wireCase, sender, receiver))
+            };
+            if (type == WireCaseType.ReturnRequest)
+                messages.Add(new("pacs.004", MessageDirection.Inbound,
+                    CreatePaymentReturn(wire, wireCase, receiver, sender)));
+            return MessagePreview(messages);
         }
 
         var caseId = Guid.NewGuid();
@@ -606,7 +668,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> GenerateIsoMessage(Guid id, string messageType, string? details,
-        CancellationToken token)
+        CancellationToken token, bool preview = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
@@ -615,6 +677,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         if (wire is null) return NotFound();
         if (details?.Length > 500)
         {
+            if (preview) return PreviewError();
             TempData["Error"] = "Message details cannot exceed 500 characters.";
             return RedirectToAction(nameof(Details), new { id });
         }
@@ -629,6 +692,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         {
             var created = wireMessages.Create(messageType, wire, banks[wire.SenderBankId],
                 banks[wire.ReceiverBankId], debtorAccount, details);
+            if (preview) return MessagePreview([created]);
             db.IsoMessages.Add(new IsoMessage
             {
                 WireTransferId = wire.Id,
@@ -643,10 +707,23 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            if (preview) return BadRequest(new { error = ex.Message });
             TempData["Error"] = ex.Message;
         }
         return RedirectToAction(nameof(Details), new { id });
     }
+
+    private BadRequestObjectResult PreviewError() => BadRequest(new
+    {
+        error = "Check the form values and wire eligibility.",
+        errors = ModelState.Values.SelectMany(x => x.Errors).Select(x => x.ErrorMessage).ToArray()
+    });
+
+    private JsonResult MessagePreview(IEnumerable<CreatedWireIsoMessage> messages) =>
+        Json(new { messages = messages.Select(x => new
+        {
+            messageType = x.MessageType, direction = x.Direction.ToString(), xml = x.XmlPayload
+        }) });
 
     private async Task<WireDetailsViewModel?> LoadDetailsAsync(Guid id, Guid bankId,
         BankingDbContext db, CancellationToken token)

@@ -737,3 +737,13 @@ body { -webkit-font-smoothing: antialiased; }
 
 .report-template-disclosure { padding: 20px; }
 .report-template-disclosure>summary { cursor: pointer; font-weight: 650; color: var(--ink); }
+
+.wire-preview-dialog {
+    width: min(960px, 94vw);
+    max-height: 90vh;
+    padding: 1.5rem;
+    border: 1px solid var(--bs-border-color, #ccc);
+    overflow: auto;
+}
+.wire-preview-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.wire-preview-dialog .xml-viewer { max-height: 50vh; overflow: auto; }

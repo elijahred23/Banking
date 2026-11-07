@@ -195,10 +195,12 @@
                         <div class="d-flex flex-wrap gap-2">
                             @if (Model.CanRequestReturn)
                             {
+                                <button class="btn btn-outline-secondary" type="button" data-message-preview data-case-type="ReturnRequest">Preview return</button>
                                 <button class="btn btn-danger" name="type" value="ReturnRequest" onclick="return confirm('Submit this return request? In the standard simulation, available beneficiary funds will be returned immediately.')">Request return</button>
                             }
                             @if (Model.CanInvestigate)
                             {
+                                <button class="btn btn-outline-secondary" type="button" data-message-preview data-case-type="Investigation">Preview investigation</button>
                                 <button class="btn btn-outline-primary" name="type" value="Investigation">Open investigation</button>
                             }
                         </div>
@@ -291,6 +293,7 @@
                 <input id="iso-message-details-@wire.Id" name="details" class="form-control" maxlength="500" placeholder="Optional narrative carried in the message" />
             </div>
             <div class="col-md-2 d-grid">
+                <button class="btn btn-outline-secondary" type="button" data-message-preview>Preview message</button>
                 <button class="btn btn-outline-primary" type="submit">Generate</button>
             </div>
         </div>

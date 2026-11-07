@@ -22,7 +22,7 @@
                 <div class="col-md-6"><div class="field-label-row"><label class="form-label" for="rfp-amount">Requested amount</label><partial name="_ValuePicker" model='Picker("rfp-amount")' /></div><div class="input-group"><span class="input-group-text">$</span><input id="rfp-amount" name="Amount" type="number" min="0.01" step="0.01" class="form-control" required /></div></div>
                 <div class="col-md-6"><div class="field-label-row"><label class="form-label" for="rfp-rail">Rail</label><partial name="_ValuePicker" model='Picker("rfp-rail")' /></div><select id="rfp-rail" name="Rail" class="form-select"><option value="Fedwire">Fedwire</option><option value="FedNow">FedNow</option></select></div>
                 <div class="col-12"><div class="field-label-row"><label class="form-label" for="rfp-remittance">Remittance purpose</label><partial name="_ValuePicker" model='Picker("rfp-remittance")' /></div><input id="rfp-remittance" name="Remittance" class="form-control" maxlength="140" placeholder="Invoice 1048" required /></div>
-                <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Send pain.013 request</button></div>
+                <div class="col-12 form-actions"><button class="btn btn-outline-primary" type="button" data-message-preview>Preview message</button><button class="btn btn-primary" type="submit">Send pain.013 request</button></div>
             </form></fieldset>
         </section>
     </div>
@@ -36,7 +36,7 @@
                     <div class="col-sm-6"><div class="field-label-row"><label class="form-label" for="report-type">Report</label><partial name="_ValuePicker" model='Picker("report-type")' /></div><select id="report-type" name="ReportType" class="form-select"><option>Account balance</option><option>Activity totals</option><option>Activity details</option></select></div>
                     <div class="col-sm-6"><div class="field-label-row"><label class="form-label" for="report-rail">Rail</label><partial name="_ValuePicker" model='Picker("report-rail")' /></div><select id="report-rail" name="Rail" class="form-select"><option value="FedNow">FedNow</option><option value="Fedwire">Fedwire</option></select></div>
                     <div class="col-12"><div class="field-label-row"><label class="form-label" for="report-date">Business date</label><partial name="_ValuePicker" model='Picker("report-date")' /></div><input id="report-date" name="BusinessDate" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" class="form-control" required /><div class="form-text">The lab follows the current-business-day request rule.</div></div>
-                    <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Request report</button></div>
+                    <div class="col-12 form-actions"><button class="btn btn-outline-primary" type="button" data-message-preview>Preview message</button><button class="btn btn-primary" type="submit">Request report</button></div>
                 </form></fieldset>
             </section>
 
@@ -47,7 +47,7 @@
                     <div class="col-12"><div class="field-label-row"><label class="form-label" for="event-recipient">Receiving participant</label><partial name="_ValuePicker" model='Picker("event-recipient")' /></div><select id="event-recipient" name="RecipientBankId" asp-items="Model.FedNowBanks" class="form-select" required><option value="">Select an online FedNow participant</option></select></div>
                     <div class="col-12"><div class="field-label-row"><label class="form-label" for="event-code">Event code</label><partial name="_ValuePicker" model='Picker("event-code")' /></div><input id="event-code" name="EventCode" value="PARTICIPANT_NOTICE" maxlength="35" class="form-control" required /></div>
                     <div class="col-12"><div class="field-label-row"><label class="form-label" for="event-details">Event details</label><partial name="_ValuePicker" model='Picker("event-details")' /></div><textarea id="event-details" name="Details" rows="3" minlength="10" maxlength="500" class="form-control" required></textarea></div>
-                    <div class="col-12 form-actions"><button class="btn btn-primary" type="submit">Send broadcast</button></div>
+                    <div class="col-12 form-actions"><button class="btn btn-outline-primary" type="button" data-message-preview>Preview message</button><button class="btn btn-primary" type="submit">Send broadcast</button></div>
                 </form></fieldset>
             </section>
         </div>
@@ -85,12 +85,14 @@ else
                     <form asp-action="RespondToRequest" method="post">
                         <input type="hidden" name="id" value="@exchange.Id" />
                         <input type="hidden" name="approve" value="true" />
+                        <button class="btn btn-outline-primary" type="button" data-message-preview>Preview payment and response</button>
                         <button class="btn btn-primary" type="submit">Approve and send payment</button>
                     </form>
                     <form asp-action="RespondToRequest" method="post" class="d-flex gap-2 flex-grow-1">
                         <input type="hidden" name="id" value="@exchange.Id" />
                         <input type="hidden" name="approve" value="false" />
                         <input class="form-control" name="reason" maxlength="500" placeholder="Reason for rejection (optional)" />
+                        <button class="btn btn-outline-secondary" type="button" data-message-preview>Preview response</button>
                         <button class="btn btn-outline-danger" type="submit">Reject</button>
                     </form>
                 </div>
