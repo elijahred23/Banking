@@ -11,6 +11,7 @@ builder.Services.AddSingleton<WireUpdateTracker>();
 builder.Services.AddHostedService<WireUpdateBroadcaster>();
 builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddHostedService<BankReportWorker>();
+builder.Services.AddHostedService<StatementWorker>();
 builder.Services.AddScoped<LearningEvidenceService>();
 builder.Services.AddScoped<StudioDayService>();
 builder.Services.AddScoped<StudioCampaignService>();

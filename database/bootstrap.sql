@@ -46,4 +46,6 @@ SET QUOTED_IDENTIFIER ON;
 
 :r database/tables/050_FedFunds.sql
 
+:r database/tables/051_AccountStatements.sql
+
 PRINT 'BankingDb baseline schema is ready.';

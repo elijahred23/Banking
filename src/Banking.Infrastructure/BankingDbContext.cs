@@ -5,6 +5,14 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<CorrespondentAccount> CorrespondentAccounts => Set<CorrespondentAccount>();
+    public DbSet<CorrespondentPaymentLink> CorrespondentPaymentLinks => Set<CorrespondentPaymentLink>();
+    public DbSet<CorrespondentLedgerEntry> CorrespondentLedgerEntries => Set<CorrespondentLedgerEntry>();
+    public DbSet<AccountStatement> AccountStatements => Set<AccountStatement>();
+    public DbSet<AccountStatementEntry> AccountStatementEntries => Set<AccountStatementEntry>();
+    public DbSet<StatementSchedule> StatementSchedules => Set<StatementSchedule>();
+    public DbSet<StatementDelivery> StatementDeliveries => Set<StatementDelivery>();
+    public DbSet<StatementReconciliation> StatementReconciliations => Set<StatementReconciliation>();
     public DbSet<FedFundsTrade> FedFundsTrades => Set<FedFundsTrade>();
     public DbSet<FedFundsQuote> FedFundsQuotes => Set<FedFundsQuote>();
     public DbSet<FedFundsCreditLine> FedFundsCreditLines => Set<FedFundsCreditLine>();
@@ -60,9 +68,25 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     public DbSet<SimulationState> SimulationStates => Set<SimulationState>();
     public DbSet<OperationsCase> OperationsCases => Set<OperationsCase>();
 
+    private void ValidateImmutableRecords()
+    {
+        ChangeTracker.DetectChanges();
+        if (ChangeTracker.Entries().Any(x => x.State is EntityState.Modified or EntityState.Deleted
+            && x.Entity is AccountStatement or AccountStatementEntry or CorrespondentLedgerEntry))
+            throw new InvalidOperationException("Statement snapshots and posted correspondent journals are immutable; publish a correction or append a new posting.");
+    }
+    public override int SaveChanges() { ValidateImmutableRecords(); return base.SaveChanges(); }
+    public override int SaveChanges(bool acceptAllChangesOnSuccess) { ValidateImmutableRecords(); return base.SaveChanges(acceptAllChangesOnSuccess); }
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    { ValidateImmutableRecords(); return base.SaveChangesAsync(cancellationToken); }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    { ValidateImmutableRecords(); return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         FedFundsModelConfiguration.Configure(modelBuilder);
+        StatementModelConfiguration.Configure(modelBuilder);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Frequency).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);

@@ -85,6 +85,10 @@ public sealed class MessageReliabilityStore(IDbContextFactory<BankingDbContext> 
         try { root = JsonSerializer.Deserialize<JsonElement>(body); }
         catch (JsonException) { return null; }
 
+        if (FindGuid(root, "StatementId") is { } statementId)
+            return await db.AccountStatements.Where(x => x.Id == statementId).Select(x => (Guid?)x.RecipientBankId).SingleOrDefaultAsync(token);
+        if (FindGuid(root, "PostingId") is not null && FindGuid(root, "AccountId") is { } correspondentAccount)
+            return await db.CorrespondentAccounts.Where(x => x.Id == correspondentAccount).Select(x => (Guid?)x.RespondentBankId).SingleOrDefaultAsync(token);
         if (FindGuid(root, "BankId") is { } direct) return direct;
         if (FindGuid(root, "OriginatingBankId") is { } origin) return origin;
         if (FindGuid(root, "DepositoryBankId") is { } depository) return depository;

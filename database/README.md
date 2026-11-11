@@ -155,3 +155,7 @@ existing bank-scoped case indexes; resolved cases are retained rather than reope
 ### Treasury / federal funds
 
 `050_FedFunds.sql` and `202611112000_fed_funds_treasury.sql` introduce the seven agreement, quote, credit-line, approval, accrual, obligation, and event tables. Startup loads the baseline as the embedded `FedFunds.sql` resource through `LabSchemaUpgradeRunner`; EF uses matching checks, precisions, restrictive foreign keys, unique keys, and rowversions. The Treasury worker must run alongside the existing Web outbox publisher and wire/network workers for automatic processing. No new cash settlement mechanism is added. See `../FED_FUNDS.md` for configuration, operator steps, accounting, and isolated SQL/Rabbit tests.
+
+### Correspondent statements and reconciliation
+
+`051_AccountStatements.sql` / `202611112200_account_statements.sql` add eight tables: correspondent account/payment-link/journal foundations plus immutable statement headers/entries, daily schedules, deliveries, and reconciliation results. EF, startup's embedded `AccountStatements.sql`, baseline bootstrap, and the forward migration share the same precision, FKs, indexes, checks, and unique keys. Web hosts the statement worker and existing outbox publisher; wire settlement remains in the existing workers. See `../STATEMENTS.md` for the operational workflow, synthetic opening positions, ledger coverage, calendar behavior, recovery, and SQL/Rabbit tests.

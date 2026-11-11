@@ -23,7 +23,7 @@ public sealed class RabbitMqOperationsMonitor(
 {
     private static readonly string[] MonitoredQueues =
     [
-        Queues.FedOutbound, Queues.FedInbound,
+        Queues.FedOutbound, Queues.FedInbound, StatementQueues.Posting, StatementQueues.Delivery,
         Queues.FedNowOutbound, Queues.FedNowInbound,
         Queues.AchEntryCreated, Queues.AchBatchReady, Queues.AchOutbound, Queues.AchInbound,
         Queues.AchReturnInbound, Queues.AchNocInbound, Queues.AchSettled,

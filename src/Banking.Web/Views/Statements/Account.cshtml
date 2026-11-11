@@ -1,0 +1,50 @@
+@model StatementAccountViewModel
+@{ ViewData["Title"] = "Correspondent account"; var account = Model.Account; var issuer = Model.BankId == account.IssuerBankId; }
+<h1>Account @account.AccountNumber</h1>
+<p>@Model.Banks[account.RespondentBankId] at @Model.Banks[account.IssuerBankId] · USD · learning simulator</p>
+<p>Issuer position @account.IssuerBalance.ToString("C") · Respondent due-from @account.RespondentBalance.ToString("C") · Reserved for pending transfers @account.HeldBalance.ToString("C").</p>
+@if (User.IsInRole(BankSecurity.Operations))
+{
+<section class="surface section mb-4"><h2 class="h5">Generate a booked report</h2><p>Enter explicit ISO UTC timestamps. Daily intervals exclude their end; intraday reports include the cutoff instant so entries at the current lab-clock time appear. Daily statements are issuer-only; either participant can request an intraday report.</p>
+<form asp-action="Generate" method="post" class="row g-3"><input type="hidden" name="AccountId" value="@account.Id" />
+<div class="col-md-3"><label for="report-kind" class="form-label">Report type</label><select id="report-kind" name="Kind" class="form-select"><option value="Intraday">Intraday camt.052</option>@if (issuer) { <option value="Daily">Daily camt.053</option> }</select></div>
+<div class="col-md-4"><label for="report-from" class="form-label">Period start (UTC ISO)</label><input id="report-from" name="PeriodStart" value="@account.CreatedAt.ToString("O")" required class="form-control" /></div>
+<div class="col-md-4"><label for="report-to" class="form-label">Period end (UTC ISO)</label><input id="report-to" name="PeriodEnd" value="@Model.Now.ToString("O")" required class="form-control" /></div>
+<div class="col-md-1 align-self-end"><button class="btn btn-primary" type="submit">Generate</button></div></form></section>
+}
+@if (!issuer && User.IsInRole(BankSecurity.PaymentCreator))
+{
+<section class="surface section mb-4"><h2 class="h5">Request a Fedwire through your correspondent</h2><p>The issuer must approve the outgoing institution transfer in its Wires worklist. Its correspondent account debit waits for a finalized cash journal.</p>
+<form asp-action="RequestWire" method="post" class="row g-3"><input type="hidden" name="accountId" value="@account.Id" />
+<div class="col-md-6"><label for="request-bank" class="form-label">Receiving bank</label><select id="request-bank" name="receiverBankId" class="form-select">@foreach (var bank in Model.Banks.Where(x => x.Key != account.IssuerBankId)) { <option value="@bank.Key">@bank.Value</option> }</select></div>
+<div class="col-md-4"><label for="request-amount" class="form-label">USD amount</label><input id="request-amount" name="amount" type="number" min="0.0001" step="0.0001" required class="form-control" /></div>
+<div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Request transfer</button></div></form></section>
+}
+@if (issuer && User.IsInRole(BankSecurity.Operations))
+{
+<section class="surface section mb-4"><h2 class="h5">Assign a posted incoming institution transfer</h2><p>Assign each incoming cash posting to one respondent account. Assignments are unique and only finalized cash journals can credit the account.</p>
+<form asp-action="AssignIncoming" method="post"><input type="hidden" name="accountId" value="@account.Id" /><label for="incoming-wire" class="form-label">Incoming wire</label><select id="incoming-wire" name="wireId" class="form-select mb-2">@foreach (var wire in Model.IncomingWires) { <option value="@wire.Id">@wire.CorrelationId · @wire.Amount.ToString("C") · @wire.SenderName</option> }</select><button class="btn btn-primary" type="submit">Assign incoming credit</button></form></section>
+<section class="surface section mb-4"><h2 class="h5">Daily camt.053 schedule</h2><p>Next run: @(Model.Schedule?.NextRunAt.ToString("u") ?? "Not configured"). Period cursor is retained across downtime. XML, PDF, and CSV are always available after publication. Delivery is automatic.</p>
+@if (Model.Schedule?.LastError is string error) { <p class="text-danger">@error</p> }
+<form asp-action="SaveSchedule" method="post" class="row g-3"><input type="hidden" name="AccountId" value="@account.Id" />
+<div class="col-md-4"><label for="schedule-zone" class="form-label">IANA time zone</label><input id="schedule-zone" name="TimeZone" value="@(Model.Schedule?.TimeZone ?? "America/Chicago")" required class="form-control" /></div>
+<div class="col-md-3"><label for="schedule-at" class="form-label">Local business-day time</label><input id="schedule-at" name="LocalTime" type="time" value="@(Model.Schedule?.LocalTime.ToString("HH:mm") ?? "18:00")" required class="form-control" /></div>
+<div class="col-md-3"><label for="schedule-enabled" class="form-label">Schedule state</label><select id="schedule-enabled" name="Enabled" class="form-select"><option value="true" selected="@(Model.Schedule?.Enabled != false)">Enabled</option><option value="false" selected="@(Model.Schedule?.Enabled == false)">Paused</option></select></div>
+<div class="col-12"><label for="schedule-holidays" class="form-label">Calendar holidays (YYYY-MM-DD, comma separated)</label><input id="schedule-holidays" name="Holidays" value="@(Model.Schedule is null ? "" : string.Join(",", (System.Text.Json.JsonSerializer.Deserialize<DateOnly[]>(Model.Schedule.HolidaysJson) ?? []).Select(x => x.ToString("yyyy-MM-dd"))))" class="form-control" /></div>
+<div class="col-12"><button class="btn btn-primary" type="submit">Save schedule</button></div></form></section>
+}
+@if (issuer && User.IsInRole(BankSecurity.PaymentApprover))
+{
+<section class="surface section mb-4"><h2 class="h5">Approve a service fee assessment</h2><form asp-action="Fee" method="post" class="row g-3"><input type="hidden" name="accountId" value="@account.Id" />
+<div class="col-md-3"><label for="fee-amount" class="form-label">USD fee</label><input id="fee-amount" name="amount" type="number" min="0.0001" step="0.0001" required class="form-control" /></div>
+<div class="col-md-6"><label for="fee-reference" class="form-label">Fee reference</label><input id="fee-reference" name="reference" maxlength="180" required class="form-control" /></div>
+<div class="col-md-3 align-self-end"><button class="btn btn-primary" type="submit">Post approved fee</button></div></form></section>
+}
+<h2>Account-linked transfers</h2><table class="table"><thead><tr><th>Direction</th><th>Status</th><th>Value date</th><th>Wire evidence</th></tr></thead><tbody>
+@foreach (var payment in Model.Payments) { <tr><td>@(payment.IsCredit ? "Credit" : "Debit")</td><td>@payment.Status</td><td>@payment.ValueDate</td><td>@if (issuer) { <a asp-controller="Wires" asp-action="Details" asp-route-id="@payment.WireTransferId">Issuer wire</a> } else { <span>Shared correspondent reference: @payment.Id</span> }</td></tr> }
+</tbody></table>
+<h2>This bank's correspondent journal</h2><p>Latest 200 lines. The account line and its offset form a balanced journal. These book reclassifications do not move reserve cash again.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Booked</th><th>Value</th><th>Reference</th><th>Account</th><th>Debit</th><th>Credit</th></tr></thead><tbody>
+@foreach (var item in Model.Ledger) { <tr><td>@item.BookingAt.ToString("u")</td><td>@item.ValueDate</td><td>@item.Reference</td><td>@item.AccountCode</td><td>@item.Debit.ToString("F4")</td><td>@item.Credit.ToString("F4")</td></tr> }
+</tbody></table></div>
+<a asp-action="Index">Statement center</a>

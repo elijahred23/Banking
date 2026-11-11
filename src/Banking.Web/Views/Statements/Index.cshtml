@@ -1,0 +1,24 @@
+@model StatementsIndexViewModel
+@{ ViewData["Title"] = "Statements & reconciliation"; }
+<h1>Correspondent statements &amp; reporting</h1>
+<p>Immutable snapshots of booked correspondent account entries, not payment-status summaries. Simulation time: @Model.Now.ToString("u"). Respondent statements become visible after durable delivery.</p>
+<h2>Correspondent accounts</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Account</th><th>Issuer</th><th>Respondent</th><th>Issuer position</th><th>Respondent due-from</th><th>Held</th></tr></thead><tbody>
+@foreach (var account in Model.Accounts) { <tr><td><a asp-action="Account" asp-route-id="@account.Id">@account.AccountNumber</a></td><td>@Model.Banks[account.IssuerBankId]</td><td>@Model.Banks[account.RespondentBankId]</td><td>@account.IssuerBalance.ToString("C")</td><td>@account.RespondentBalance.ToString("C")</td><td>@account.HeldBalance.ToString("C")</td></tr> }
+</tbody></table></div>
+<h2>Statement history &amp; inbox</h2><p>Latest 100 visible snapshots. Each correction retains its previous version.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Statement</th><th>Type</th><th>Period end</th><th>Version</th><th>Opening</th><th>Closing</th><th>Delivery</th><th>Reconciliation</th></tr></thead><tbody>
+@foreach (var statement in Model.Statements)
+{ var delivery = Model.Deliveries.FirstOrDefault(x => x.StatementId == statement.Id); var result = Model.Reconciliations.FirstOrDefault(x => x.StatementId == statement.Id);
+<tr><td><a asp-action="Details" asp-route-id="@statement.Id">@statement.StatementNumber</a></td><td>@StatementPolicy.MessageType(statement.Kind)</td><td>@statement.PeriodEnd.ToString("u")</td><td>@statement.Version</td><td>@(statement.Kind == StatementKind.Notification ? "—" : statement.OpeningBalance.ToString("C"))</td><td>@(statement.Kind == StatementKind.Notification ? "—" : statement.ClosingBalance.ToString("C"))</td><td>@(statement.GenerationDifference != 0 ? "Held: balance exception" : delivery?.Status.ToString() ?? "Pending")</td><td>@(result?.Status.ToString() ?? "Not run")</td></tr> }
+</tbody></table></div>
+@if (User.IsInRole(BankSecurity.PaymentApprover))
+{
+<section class="surface section"><h2 class="h5">Open a synthetic respondent account at your bank</h2><p>Creates a matched opening book position at the issuer and respondent for learning. It does not transfer Fed reserve cash or change existing balances.</p>
+<form asp-action="Open" method="post" class="row g-3">
+<div class="col-md-4"><label for="open-respondent" class="form-label">Respondent bank</label><select name="RespondentBankId" id="open-respondent" class="form-select">@foreach (var bank in Model.Banks.Where(x => x.Key != Model.BankId)) { <option value="@bank.Key">@bank.Value</option> }</select></div>
+<div class="col-md-3"><label for="open-number" class="form-label">Account identifier</label><input name="AccountNumber" id="open-number" maxlength="34" required class="form-control" /></div>
+<div class="col-md-3"><label for="open-balance" class="form-label">Opening USD position</label><input name="OpeningBalance" id="open-balance" value="500000" type="number" min="0" step="0.0001" required class="form-control" /></div>
+<div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Open lab account</button></div>
+</form></section>
+}

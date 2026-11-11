@@ -31,6 +31,11 @@ public static class ServiceRegistration
         services.AddSingleton<FedFundsReadService>();
         services.AddSingleton<IFedFundsTradeService>(sp => sp.GetRequiredService<FedFundsTradeService>());
         services.AddSingleton<IFedFundsAccrualService>(sp => sp.GetRequiredService<FedFundsTradeService>());
+        services.AddSingleton<CorrespondentPostingService>();
+        services.AddSingleton<StatementGenerationService>();
+        services.AddSingleton<StatementScheduleService>();
+        services.AddSingleton<StatementReconciliationService>();
+        services.AddSingleton<StatementExportService>();
         services.AddSingleton<UnifiedJournalService>();
         services.AddSingleton<LabSchemaUpgradeRunner>();
         services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();

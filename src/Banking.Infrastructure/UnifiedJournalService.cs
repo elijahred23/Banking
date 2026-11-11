@@ -20,6 +20,9 @@ public sealed class UnifiedJournalService(IDbContextFactory<BankingDbContext> db
             .Where(x => x.CheckDeposit.DepositoryBankId == bankId || x.CheckDeposit.PayingBankId == bankId)
             .Select(x => new UnifiedJournalLine(x.JournalId, PaymentRail.Check, x.CheckDepositId,
                 x.AccountCode, x.AccountName, x.Debit, x.Credit, x.CreatedDate)).ToListAsync(token);
-        return wires.Concat(ach).Concat(checks).OrderBy(x => x.PostedDate).ToList();
+        var correspondent = await db.CorrespondentLedgerEntries.AsNoTracking().Where(x => x.BankId == bankId)
+            .Select(x => new UnifiedJournalLine(x.JournalId, PaymentRail.CorrespondentBook, x.PostingId,
+                x.AccountCode, x.AccountCode, x.Debit, x.Credit, x.BookingAt)).ToListAsync(token);
+        return wires.Concat(ach).Concat(checks).Concat(correspondent).OrderBy(x => x.PostedDate).ToList();
     }
 }

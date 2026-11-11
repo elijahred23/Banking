@@ -21,4 +21,5 @@
   <ItemGroup><EmbeddedResource Include="../../database/tables/048_StudioCampaigns.sql" LogicalName="StudioCampaigns.sql" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../database/tables/049_BankReportJobs.sql" LogicalName="BankReportJobs.sql" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../database/tables/050_FedFunds.sql" LogicalName="FedFunds.sql" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../database/tables/051_AccountStatements.sql" LogicalName="AccountStatements.sql" /></ItemGroup>
 </Project>

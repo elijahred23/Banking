@@ -26,7 +26,8 @@ public enum PaymentRail
     FedNow,
     [Display(Name = "SWIFT international wire (CBPR+)")] SwiftCbprPlus,
     Ach,
-    Check
+    Check,
+    [Display(Name = "Correspondent book entries")] CorrespondentBook
 }
 public enum AccountStatus { Open, Restricted, Frozen, Closed }
 public enum OperationsCaseStatus { Open, Assigned, Investigating, Resolved }

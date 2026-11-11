@@ -42,11 +42,15 @@ public sealed class PaymentReconciliationService(IDbContextFactory<BankingDbCont
         var checkLines = await db.CheckLedgerEntries.AsNoTracking()
             .Where(x => x.CheckDeposit.DepositoryBankId == bankId || x.CheckDeposit.PayingBankId == bankId)
             .Select(x => new { x.JournalId, x.Debit, x.Credit }).ToListAsync(token);
+        var correspondentLines = await db.CorrespondentLedgerEntries.AsNoTracking().Where(x => x.BankId == bankId)
+            .Select(x => new { x.JournalId, x.Debit, x.Credit }).ToListAsync(token);
         var unbalanced = wireLines.GroupBy(x => x.JournalId)
             .Count(x => !JournalControl.IsBalanced(x.Select(y => new JournalLine(y.Debit, y.Credit))))
             + achLines.GroupBy(x => x.JournalId)
                 .Count(x => !JournalControl.IsBalanced(x.Select(y => new JournalLine(y.Debit, y.Credit))))
             + checkLines.GroupBy(x => x.JournalId)
+                .Count(x => !JournalControl.IsBalanced(x.Select(y => new JournalLine(y.Debit, y.Credit))))
+            + correspondentLines.GroupBy(x => x.JournalId)
                 .Count(x => !JournalControl.IsBalanced(x.Select(y => new JournalLine(y.Debit, y.Credit))));
 
         var accounts = await db.Accounts.AsNoTracking().Where(x => x.Customer.BankId == bankId)

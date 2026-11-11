@@ -1,0 +1,38 @@
+@model StatementDetailsViewModel
+@{ ViewData["Title"] = "Account statement"; var statement = Model.Statement; var latest = Model.Reconciliations.FirstOrDefault(); }
+<div class="eyebrow">@statement.IssuerName · @StatementPolicy.MessageType(statement.Kind)</div>
+<h1>@statement.RecipientName account statement</h1>
+<p>Account <strong>@statement.AccountNumber</strong> · @statement.StatementNumber · Version @statement.Version · Sequence @statement.SequenceNumber</p>
+<p>@statement.PeriodStart.ToString("u") to @statement.PeriodEnd.ToString("u") (@(statement.Kind == StatementKind.Intraday ? "cutoff included" : "end excluded")). Generated @statement.CreatedAt.ToString("u"). Immutable learning-only booked snapshot.</p>
+@if (statement.PreviousStatementId is Guid previous) { <p>Explicit correction of <a asp-action="Details" asp-route-id="@previous">previous statement @previous</a>. The original remains unchanged.</p> }
+@if (statement.GenerationDifference != 0) { <div class="alert alert-danger">Held from delivery: issuer ledger validation difference @statement.GenerationDifference.ToString("F4"). Investigate the ledger and issue a correction.</div> }
+<p>Delivery: <strong>@(Model.Delivery?.Status.ToString() ?? "Not queued")</strong> · Delivered @Model.Delivery?.DeliveredAt?.ToString("u") · Reconciliation: <strong>@(latest?.Status.ToString() ?? "Not run")</strong></p>
+<div class="d-flex flex-wrap gap-2 mb-4"><a class="btn btn-outline-primary" asp-action="Download" asp-route-id="@statement.Id" asp-route-format="xml">Download ISO XML</a><a class="btn btn-outline-primary" asp-action="Download" asp-route-id="@statement.Id" asp-route-format="pdf">Download PDF</a><a class="btn btn-outline-primary" asp-action="Download" asp-route-id="@statement.Id" asp-route-format="csv">Download CSV</a>
+@if (User.IsInRole(BankSecurity.Operations) && statement.Kind != StatementKind.Notification)
+{ <form asp-action="Reconcile" method="post"><input type="hidden" name="id" value="@statement.Id" /><button class="btn btn-primary" type="submit">Reconcile against respondent due-from</button></form> }
+</div>
+@if (statement.Kind != StatementKind.Notification)
+{
+<table class="table"><thead><tr><th>Opening USD</th><th>Total credits USD</th><th>Total debits USD</th><th>Closing USD</th></tr></thead><tbody><tr><td>@statement.OpeningBalance.ToString("F4")</td><td>@statement.TotalCredits.ToString("F4")</td><td>@statement.TotalDebits.ToString("F4")</td><td>@statement.ClosingBalance.ToString("F4")</td></tr></tbody></table>
+<p>Opening + credits - debits = closing.</p>
+}
+else
+{ <p>Single-entry notification: debits @statement.TotalDebits.ToString("F4") USD · credits @statement.TotalCredits.ToString("F4") USD. No full-period balance is asserted.</p> }
+<h2>Booked account entries</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Booking timestamp</th><th>Value date</th><th>Transaction</th><th>Debit USD</th><th>Credit USD</th></tr></thead><tbody>
+@foreach (var entry in statement.Entries.OrderBy(x => x.BookingAt).ThenBy(x => x.PostingId))
+{ <tr id="entry-@entry.Id"><td>@entry.BookingAt.ToString("u")</td><td>@entry.ValueDate</td><td><details><summary>@entry.Reference</summary><p>Posting @entry.PostingId<br />Payment correlation @entry.CorrelationId<br />Finalized ledger entry @entry.LedgerEntryId</p>@if (entry.WireTransferId is Guid wireId && Model.OwnWires.Contains(wireId)) { <a asp-controller="Wires" asp-action="Details" asp-route-id="@wireId">Open originating wire and ISO evidence</a> } else { <span>Shared statement evidence; the other bank's internal payment record is access-restricted.</span> }</details></td><td>@(!entry.IsCredit ? entry.Amount.ToString("F4") : "—")</td><td>@(entry.IsCredit ? entry.Amount.ToString("F4") : "—")</td></tr> }
+</tbody></table></div>
+<h2>Reconciliation history</h2>
+@foreach (var result in Model.Reconciliations)
+{
+    var findings = System.Text.Json.JsonSerializer.Deserialize<List<StatementFinding>>(result.FindingsJson) ?? [];
+    <section class="surface section mb-3"><h3 class="h5">@result.Status · @result.CreatedAt.ToString("u")</h3><p>Expected @result.ExpectedBalance.ToString("F4") · Observed @result.ActualBalance.ToString("F4") · Difference @result.Difference.ToString("F4")</p>
+    <ul>@foreach (var finding in findings) { <li><strong>@finding.Type</strong> · @finding.Reference · @finding.Difference.ToString("F4") · @finding.Explanation</li> }</ul></section>
+}
+@if (Model.BankId == statement.IssuerBankId && User.IsInRole(BankSecurity.Operations) && statement.Kind != StatementKind.Notification)
+{
+<form asp-action="Generate" method="post" class="mb-4"><input type="hidden" name="AccountId" value="@statement.AccountId" /><input type="hidden" name="Kind" value="@statement.Kind" /><input type="hidden" name="PeriodStart" value="@statement.PeriodStart.ToString("O")" /><input type="hidden" name="PeriodEnd" value="@statement.PeriodEnd.ToString("O")" /><input type="hidden" name="Corrects" value="@statement.Id" /><button class="btn btn-outline-primary" type="submit">Issue a new corrected version from the current booked ledger</button></form>
+}
+<details><summary>Stored @StatementPolicy.MessageType(statement.Kind) XML · version .001.08 lab profile</summary><pre class="mt-3">@statement.XmlPayload</pre></details>
+<a asp-action="Account" asp-route-id="@statement.AccountId">Account, schedule &amp; journals</a>

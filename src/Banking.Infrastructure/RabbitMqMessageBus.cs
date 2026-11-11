@@ -20,6 +20,7 @@ public sealed class RabbitMqMessageBus(IConfiguration configuration,
             ?? throw new InvalidOperationException("RabbitMq:UserName is required."),
         Password = configuration["RabbitMq:Password"]
             ?? throw new InvalidOperationException("RabbitMq:Password is required."),
+        VirtualHost = configuration["RabbitMq:VirtualHost"] ?? "/",
         AutomaticRecoveryEnabled = true,
         NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
     };
