@@ -5,6 +5,11 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<CorrespondentAuthorizationEvent> CorrespondentAuthorizationEvents => Set<CorrespondentAuthorizationEvent>();
+    public DbSet<CorrespondentServiceAgreement> CorrespondentServiceAgreements => Set<CorrespondentServiceAgreement>();
+    public DbSet<CorrespondentBookOrder> CorrespondentBookOrders => Set<CorrespondentBookOrder>();
+    public DbSet<CorrespondentFundingRule> CorrespondentFundingRules => Set<CorrespondentFundingRule>();
+    public DbSet<CorrespondentFundingRun> CorrespondentFundingRuns => Set<CorrespondentFundingRun>();
     public DbSet<CorrespondentAccount> CorrespondentAccounts => Set<CorrespondentAccount>();
     public DbSet<CorrespondentPaymentLink> CorrespondentPaymentLinks => Set<CorrespondentPaymentLink>();
     public DbSet<CorrespondentLedgerEntry> CorrespondentLedgerEntries => Set<CorrespondentLedgerEntry>();
@@ -72,7 +77,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     {
         ChangeTracker.DetectChanges();
         if (ChangeTracker.Entries().Any(x => x.State is EntityState.Modified or EntityState.Deleted
-            && x.Entity is AccountStatement or AccountStatementEntry or CorrespondentLedgerEntry))
+            && x.Entity is AccountStatement or AccountStatementEntry or CorrespondentLedgerEntry or CorrespondentAuthorizationEvent or CorrespondentFundingRun))
             throw new InvalidOperationException("Statement snapshots and posted correspondent journals are immutable; publish a correction or append a new posting.");
     }
     public override int SaveChanges() { ValidateImmutableRecords(); return base.SaveChanges(); }
@@ -87,6 +92,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     {
         FedFundsModelConfiguration.Configure(modelBuilder);
         StatementModelConfiguration.Configure(modelBuilder);
+        CorrespondentPlatformConfiguration.Configure(modelBuilder);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Frequency).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);

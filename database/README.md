@@ -159,3 +159,38 @@ existing bank-scoped case indexes; resolved cases are retained rather than reope
 ### Correspondent statements and reconciliation
 
 `051_AccountStatements.sql` / `202611112200_account_statements.sql` add eight tables: correspondent account/payment-link/journal foundations plus immutable statement headers/entries, daily schedules, deliveries, and reconciliation results. EF, startup's embedded `AccountStatements.sql`, baseline bootstrap, and the forward migration share the same precision, FKs, indexes, checks, and unique keys. Web hosts the statement worker and existing outbox publisher; wire settlement remains in the existing workers. See `../STATEMENTS.md` for the operational workflow, synthetic opening positions, ledger coverage, calendar behavior, recovery, and SQL/Rabbit tests.
+
+### Correspondent book payments and authorized funding
+
+`052_CorrespondentPlatform.sql` and migration `202611111800_correspondent_platform.sql`
+add bilateral service agreements, reserved book payment orders, immutable authorization
+receipts, weekday funding authority and durable execution evidence. The startup upgrader
+applies the same embedded baseline idempotently. Existing correspondent account balances,
+ledger, outbox, statements and reconciliation remain authoritative; customer Accounts are
+not suitable for these bank-owned due-to/due-from positions.
+
+Open `/Correspondent` (also linked from the statement center). Open synthetic accounts
+through Statements, propose an agreement as issuer maker, and approve it using distinct
+issuer/respondent approvers. Book payments require respondent maker and issuer approver.
+Funding requires source respondent maker plus separate source/issuer approvals. Three
+strategies support fixed amounts, destination threshold replenishment, and source excess
+sweeps. Funding is strictly between pre-funded respondent accounts at the same issuer;
+no reserve cash or loan is created. Existing Fed funds loans and external wire funding
+remain separate workflows. Existing legacy wire-only accounts remain usable without an
+agreement; configuring an agreement gates new correspondent wire requests as well.
+
+Funding runs and ledger postings commit in one serializable transaction. No external
+side effect occurs inside the transaction, so a long-running lease is unnecessary.
+The unique rule/scheduled-time key and the serializable cursor update prevent duplicate
+runs. Failures roll back both postings and cursor; delivery uses the existing outbox.
+Daily UTC weekday schedules coalesce missed dates into one current-balance evaluation,
+then advance to the next weekday at the current evaluation time. Weekends are skipped;
+holiday calendars and arbitrary schedule frequencies are not yet supported for funding.
+Funds held by pending orders are excluded from funding capacity. Agreement suspension
+blocks new requests and book approvals; pending orders can still be rejected to release
+holds. Disable a funding rule to revoke future execution. Rule terms are immutable:
+create and approve a replacement instead of editing approved authority.
+
+External funding obligations with unknown settlement, per-rail service permissions,
+portfolio credit limits, and automatic Fed funds borrowing are future extensions.
+Do not represent these book funding rules as external settlement or lending authority.

@@ -176,6 +176,59 @@ public sealed class StatementIntegrationTests
             lab.Other.Id, 100, "other-bank", default));
     }
 
+    [Fact, Trait("Category", "ExternalIntegration")]
+    public async Task Approved_book_orders_and_concurrent_funding_use_existing_statements_without_moving_reserves()
+    {
+        if (!Enabled) return;
+        await using var lab = await Lab.CreateAsync(false);
+        var service = lab.Services.GetRequiredService<CorrespondentPlatformService>();
+        var source = await lab.Postings.OpenAsync(lab.Issuer.Id, lab.Respondent.Id, "SOURCE", 500_000, default);
+        var destination = await lab.Postings.OpenAsync(lab.Issuer.Id, lab.Other.Id, "DEST", 0, default);
+        foreach (var (account, respondent) in new[] { (source, lab.Respondent.Id), (destination, lab.Other.Id) })
+        {
+            var agreement = await service.ProposeAgreementAsync(lab.Issuer.Id, account, 500_000, "agreement-maker", default);
+            await Assert.ThrowsAsync<ArgumentException>(() => service.ApproveAgreementAsync(lab.Issuer.Id, agreement, "agreement-maker", false, default));
+            await service.ApproveAgreementAsync(lab.Issuer.Id, agreement, "issuer-approver", false, default);
+            await service.ApproveAgreementAsync(respondent, agreement, "respondent-approver", false, default);
+        }
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.RequestBookAsync(lab.Unrelated.Id, source, destination, 100_000, "intruder", default));
+        var order = await service.RequestBookAsync(lab.Respondent.Id, source, destination, 100_000, "payment-maker", default);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.DecideBookAsync(lab.Issuer.Id, order, "payment-maker", true, default));
+        await service.DecideBookAsync(lab.Issuer.Id, order, "issuer-approver", true, default);
+        await service.DecideBookAsync(lab.Issuer.Id, order, "issuer-approver", true, default);
+        var clock = new DateTimeOffset(2026, 11, 10, 14, 0, 0, TimeSpan.Zero);
+        var rule = await service.ProposeFundingAsync(lab.Respondent.Id, new CorrespondentFundingRule {
+            SourceAccountId = source, DestinationAccountId = destination, Strategy = CorrespondentFundingStrategy.Fixed,
+            Maximum = 250_000, NextRunAt = clock }, "funding-maker", default);
+        await service.ApproveFundingAsync(lab.Issuer.Id, rule, "issuer-approver", false, default);
+        await service.ApproveFundingAsync(lab.Respondent.Id, rule, "source-approver", false, default);
+        await Task.WhenAll(service.ProcessDueAsync(default), service.ProcessDueAsync(default));
+        await lab.Services.GetRequiredService<SimulationStateService>().AdvanceAsync(TimeSpan.FromHours(1));
+        var statement = await lab.Generation.GenerateAsync(lab.Issuer.Id, destination, StatementKind.Daily, clock, clock.AddHours(1), null, default);
+        await using var db = await lab.Factory.CreateDbContextAsync();
+        Assert.Equal(150_000, (await db.CorrespondentAccounts.FindAsync(source))!.IssuerBalance);
+        Assert.Equal(350_000, (await db.CorrespondentAccounts.FindAsync(destination))!.IssuerBalance);
+        Assert.Equal(0, (await db.CorrespondentAccounts.FindAsync(source))!.HeldBalance);
+        Assert.Equal(1, await db.CorrespondentFundingRuns.CountAsync());
+        Assert.Equal(350_000, (await db.AccountStatements.FindAsync(statement))!.ClosingBalance);
+        Assert.Equal(0, await db.FedSettlements.CountAsync());
+        var lines = await db.CorrespondentLedgerEntries.ToListAsync();
+        Assert.All(lines.GroupBy(x => x.JournalId), journal => Assert.Equal(journal.Sum(x => x.Debit), journal.Sum(x => x.Credit)));
+        Assert.Equal(0, lines.Where(x => x.AccountCode == "CORRESPONDENT_BOOK_CLEARING").Sum(x => x.Debit - x.Credit));
+        Assert.Equal(11, await db.CorrespondentAuthorizationEvents.CountAsync());
+        var sourceAgreement = await db.CorrespondentServiceAgreements.SingleAsync(x => x.AccountId == source);
+        var rejected = await service.RequestBookAsync(lab.Respondent.Id, source, destination, 10_000, "payment-maker", default);
+        await service.ApproveAgreementAsync(lab.Issuer.Id, sourceAgreement.Id, "issuer-approver", true, default);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.DecideBookAsync(lab.Issuer.Id, rejected, "issuer-approver", true, default));
+        await service.DecideBookAsync(lab.Issuer.Id, rejected, "issuer-approver", false, default);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.RequestBookAsync(lab.Respondent.Id, source, destination, 1, "payment-maker", default));
+        await db.Entry(await db.CorrespondentAccounts.SingleAsync(x => x.Id == source)).ReloadAsync();
+        Assert.Equal(0, (await db.CorrespondentAccounts.FindAsync(source))!.HeldBalance);
+        var receipt = await db.CorrespondentAuthorizationEvents.FirstAsync();
+        receipt.Actor = "tampered";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+    }
+
     private static bool Enabled => Environment.GetEnvironmentVariable("BANKING_RUN_EXTERNAL_INTEGRATION") == "1";
 
     private sealed class Lab : IAsyncDisposable
@@ -216,7 +269,7 @@ public sealed class StatementIntegrationTests
                 await lab.Start(new Banking.WireService.Worker(lab.Bus, factory, iso, new CbprPlusMessageService(iso), services.GetRequiredService<IPaymentRouteResolver>(), new WireComplianceService(), NullLogger<Banking.WireService.Worker>.Instance));
                 await lab.Start(new Banking.MessageManager.Worker(lab.Bus, factory, NullLogger<Banking.MessageManager.Worker>.Instance));
                 await lab.Start(new Banking.FedwireSimulator.Worker(lab.Bus, new FedwirePaymentProcessor(new FedwireSettlementService(factory, iso), new FedwireResponsePublisher(lab.Bus, iso), NullLogger<FedwirePaymentProcessor>.Instance)));
-                await lab.Start(new StatementWorker(lab.Bus, lab.Postings, lab.Generation, lab.Reconciliation, lab.Schedules, NullLogger<StatementWorker>.Instance));
+                await lab.Start(new StatementWorker(lab.Bus, lab.Postings, lab.Generation, services.GetRequiredService<CorrespondentPlatformService>(), lab.Reconciliation, lab.Schedules, NullLogger<StatementWorker>.Instance));
             }
             return lab;
         }

@@ -32,6 +32,7 @@ public static class ServiceRegistration
         services.AddSingleton<IFedFundsTradeService>(sp => sp.GetRequiredService<FedFundsTradeService>());
         services.AddSingleton<IFedFundsAccrualService>(sp => sp.GetRequiredService<FedFundsTradeService>());
         services.AddSingleton<CorrespondentPostingService>();
+        services.AddSingleton<CorrespondentPlatformService>();
         services.AddSingleton<StatementGenerationService>();
         services.AddSingleton<StatementScheduleService>();
         services.AddSingleton<StatementReconciliationService>();

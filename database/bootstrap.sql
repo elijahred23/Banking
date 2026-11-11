@@ -48,4 +48,6 @@ SET QUOTED_IDENTIFIER ON;
 
 :r database/tables/051_AccountStatements.sql
 
+:r database/tables/052_CorrespondentPlatform.sql
+
 PRINT 'BankingDb baseline schema is ready.';

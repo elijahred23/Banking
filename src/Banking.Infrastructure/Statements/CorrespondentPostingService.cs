@@ -28,6 +28,8 @@ public sealed class CorrespondentPostingService(IDbContextFactory<BankingDbConte
             if (account.RespondentBankId != bankId) throw new ArgumentException("Only the respondent maker can request its account transfer.");
             if (amount <= 0 || decimal.Round(amount, 4) != amount || account.IssuerBalance - account.HeldBalance < amount)
                 throw new ArgumentException("Insufficient available correspondent balance or invalid amount.");
+            if (await db.CorrespondentServiceAgreements.AnyAsync(x => x.AccountId == accountId, ct))
+                await CorrespondentPlatformService.Eligible(db, accountId, amount, ct);
             var sender = await db.Banks.SingleAsync(x => x.Id == account.IssuerBankId, ct);
             var receiver = await db.Banks.SingleOrDefaultAsync(x => x.Id == receiverBankId && x.Id != sender.Id && x.CountryCode == "US", ct)
                 ?? throw new ArgumentException("Select a different domestic receiving bank.");
@@ -120,12 +122,12 @@ public sealed class CorrespondentPostingService(IDbContextFactory<BankingDbConte
             var delta = source.Credit - source.Debit;
             var now = await StatementTransactions.Now(db, ct);
             Post(db, account, account.RespondentBankId, source.PostingId, source.CorrelationId, delta, now,
-                source.ValueDate, source.WireTransferId, source.Reference, source.WireTransferId is null ? "FEE_EXPENSE" : "PAYMENT_CLEARING");
+                source.ValueDate, source.WireTransferId, source.Reference, source.WireTransferId is null && source.Reference.StartsWith("Fee: ", StringComparison.Ordinal) ? "FEE_EXPENSE" : "PAYMENT_CLEARING");
             account.RespondentBalance += delta;
             return true;
         }, ct);
 
-    private static void Post(BankingDbContext db, CorrespondentAccount account, Guid bankId, Guid postingId, Guid correlation,
+    internal static void Post(BankingDbContext db, CorrespondentAccount account, Guid bankId, Guid postingId, Guid correlation,
         decimal delta, DateTimeOffset now, DateOnly valueDate, Guid? wireId, string reference, string offset)
     {
         var issuer = bankId == account.IssuerBankId;

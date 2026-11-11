@@ -22,4 +22,5 @@
   <ItemGroup><EmbeddedResource Include="../../database/tables/049_BankReportJobs.sql" LogicalName="BankReportJobs.sql" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../database/tables/050_FedFunds.sql" LogicalName="FedFunds.sql" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../database/tables/051_AccountStatements.sql" LogicalName="AccountStatements.sql" /></ItemGroup>
+<ItemGroup><EmbeddedResource Include="../../database/tables/052_CorrespondentPlatform.sql" LogicalName="CorrespondentPlatform.sql" /></ItemGroup>
 </Project>

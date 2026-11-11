@@ -1,0 +1,58 @@
+@model Banking.Web.Controllers.CorrespondentPortal
+@{ ViewData["Title"] = "Correspondent banking"; var creator = User.IsInRole(BankSecurity.PaymentCreator); var approver = User.IsInRole(BankSecurity.PaymentApprover); }
+<h1>Correspondent banking</h1>
+<p>Learning simulator · USD book transfers between respondents at one correspondent. No reserve movement or credit creation occurs. External Fedwire instructions, daily statements and reconciliation are available in the <a asp-controller="Statements" asp-action="Index">statement center</a>.</p>
+<p>Agreements require separate issuer and respondent approvals. Funding requires issuer and source respondent approval by operators other than its maker. Missed funding dates coalesce into one evaluation; schedules use UTC weekdays and resume from the current lab time.</p>
+@if (TempData["Error"] is string error) { <p role="alert" class="text-danger">@error</p> }
+@if (TempData["Notice"] is string notice) { <p role="status">@notice</p> }
+<h2>Accounts and agreements</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Account</th><th>Your capacity</th><th>Booked / held</th><th>Agreement</th><th>Actions</th></tr></thead><tbody>
+@foreach (var account in Model.Accounts) {
+    var issuer = account.IssuerBankId == Model.BankId; var agreement = Model.Agreements.SingleOrDefault(x => x.AccountId == account.Id);
+    <tr><td><a asp-controller="Statements" asp-action="Account" asp-route-id="@account.Id">@account.AccountNumber</a></td><td>@(issuer ? "Correspondent" : "Respondent")</td><td>@account.IssuerBalance.ToString("C") / @account.HeldBalance.ToString("C")</td><td>@(agreement is null ? "Legacy wire account; no book/funding authority" : agreement.Suspended ? "Suspended" : agreement.IsActive ? "Active" : "Awaiting bilateral approval")<br />Limit: @(agreement?.TransferLimit.ToString("C"))</td><td>
+    @if (agreement is null && issuer && creator) { <form asp-action="Agreement" method="post"><input type="hidden" name="accountId" value="@account.Id" /><label for="limit-@account.Id">Transfer limit USD</label><input id="limit-@account.Id" name="limit" type="number" min="0.0001" step="0.0001" required /><button class="btn btn-primary">Propose agreement</button></form> }
+    @if (agreement is not null && approver) { <form asp-action="ApproveAgreement" method="post"><input type="hidden" name="id" value="@agreement.Id" /><button name="suspend" value="false" class="btn btn-primary">Approve for my bank</button> <button name="suspend" value="true" class="btn btn-secondary">Suspend new instructions</button></form> }
+    </td></tr>
+}
+</tbody></table></div>
+@if (creator) {
+<h2>Request an internal payment</h2>
+<form asp-action="Book" method="post" class="surface section mb-4">
+<label for="book-source">Your source account</label><select id="book-source" name="sourceAccountId" class="form-select">@foreach (var a in Model.Accounts.Where(x => x.RespondentBankId == Model.BankId)) { <option value="@a.Id">@a.AccountNumber</option> }</select>
+<label for="book-destination">Receiving respondent account</label><select id="book-destination" name="destinationAccountId" required class="form-select">@foreach (var destination in Model.Destinations) { <option value="@destination.Id">@destination.BankName · @destination.AccountNumber</option> }</select>
+<label for="book-amount">Amount USD</label><input id="book-amount" name="amount" type="number" min="0.0001" step="0.0001" required class="form-control" />
+<button class="btn btn-primary">Reserve and request issuer approval</button></form>
+<h2>Propose automated funding authority</h2>
+<p>The source must be an existing funded respondent account. Borrowing and external funding continue through the existing Fed funds and wire workflows.</p>
+<form asp-action="Funding" method="post" class="surface section mb-4">
+<label for="fund-source">Your source account</label><select id="fund-source" name="sourceAccountId" class="form-select">@foreach (var a in Model.Accounts.Where(x => x.RespondentBankId == Model.BankId)) { <option value="@a.Id">@a.AccountNumber</option> }</select>
+<label for="fund-destination">Receiving respondent account</label><select id="fund-destination" name="destinationAccountId" required class="form-select">@foreach (var destination in Model.Destinations) { <option value="@destination.Id">@destination.BankName · @destination.AccountNumber</option> }</select>
+<label for="strategy">Strategy</label><select id="strategy" name="strategy" class="form-select"><option>Fixed</option><option>Threshold</option><option>Sweep</option></select>
+<label for="threshold">Destination trigger threshold USD</label><input id="threshold" name="threshold" type="number" min="0" step="0.0001" value="0" required class="form-control" />
+<label for="target">Target USD (destination for replenishment; source retention for sweep)</label><input id="target" name="target" type="number" min="0" step="0.0001" value="0" required class="form-control" />
+<label for="maximum">Maximum transfer USD (fixed amount for fixed funding)</label><input id="maximum" name="maximum" type="number" min="0.0001" step="0.0001" required class="form-control" />
+<label for="next-run">First execution (ISO UTC timestamp)</label><input id="next-run" name="nextRunAt" placeholder="2026-11-12T14:00:00Z" required class="form-control" />
+<button class="btn btn-primary">Propose weekday funding rule</button></form>
+}
+<h2>Payment instructions</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Reference</th><th>Amount</th><th>Status</th><th>Decision</th></tr></thead><tbody>
+@foreach (var order in Model.Orders) { <tr><td>@order.Id</td><td>@order.Amount.ToString("C")</td><td>@order.Status</td><td>
+@if (approver && order.Status == Banking.Domain.CorrespondentOrderStatus.Pending && Model.Accounts.Any(x => x.Id == order.SourceAccountId && x.IssuerBankId == Model.BankId)) { <form asp-action="Decide" method="post"><input type="hidden" name="id" value="@order.Id" /><button name="approve" value="true" class="btn btn-primary">Approve and post</button> <button name="approve" value="false" class="btn btn-secondary">Reject and release hold</button></form> }
+else { <span>@order.DecidedBy @order.DecidedAt</span> }
+</td></tr> }
+</tbody></table></div>
+<h2>Funding rules</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Rule</th><th>Strategy / maximum</th><th>Next evaluation UTC</th><th>Authority</th><th>Actions</th></tr></thead><tbody>
+@foreach (var rule in Model.Rules) { <tr><td>@rule.Id</td><td>@rule.Strategy / @rule.Maximum.ToString("C")</td><td>@rule.NextRunAt.ToString("u")</td><td>Enabled: @rule.Enabled · Issuer approved: @rule.IssuerApproved · Source approved: @rule.SourceApproved</td><td>
+@if (approver && Model.Accounts.Any(x => x.Id == rule.SourceAccountId)) { <form asp-action="ApproveFunding" method="post"><input type="hidden" name="id" value="@rule.Id" /><button name="disable" value="false" class="btn btn-primary">Approve for my bank</button> <button name="disable" value="true" class="btn btn-secondary">Disable</button></form> }
+</td></tr> }
+</tbody></table></div>
+<h2>Funding execution evidence</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Run / posting correlation</th><th>Scheduled UTC</th><th>Amount</th><th>Outcome</th></tr></thead><tbody>
+@foreach (var run in Model.Runs) { <tr><td>@run.Id</td><td>@run.ScheduledFor.ToString("u")</td><td>@run.Amount.ToString("C")</td><td>@run.Outcome</td></tr> }
+</tbody></table></div>
+
+<h2>Authorization audit</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>UTC</th><th>Action</th><th>Operator / bank</th><th>Subject</th></tr></thead><tbody>
+@foreach (var entry in Model.Audit) { <tr><td>@entry.CreatedAt.ToString("u")</td><td>@entry.Action</td><td>@entry.Actor / @entry.BankId</td><td>@entry.SubjectId</td></tr> }
+</tbody></table></div>

@@ -4,10 +4,10 @@ using Banking.Infrastructure;
 namespace Banking.Web;
 
 public sealed class StatementWorker(IMessageBus bus, CorrespondentPostingService postings, StatementGenerationService generation,
-    StatementReconciliationService reconciliation, StatementScheduleService schedules, ILogger<StatementWorker> logger) : BackgroundService
+    CorrespondentPlatformService platform, StatementReconciliationService reconciliation, StatementScheduleService schedules, ILogger<StatementWorker> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken token) => Task.WhenAll(
-        Loop(async ct => { await postings.ProcessPaymentsAsync(ct); await schedules.ProcessDueAsync(ct); }, token),
+        Loop(async ct => { await postings.ProcessPaymentsAsync(ct); await platform.ProcessDueAsync(ct); await schedules.ProcessDueAsync(ct); }, token),
         bus.ConsumeAsync<CorrespondentPostingNotice>(StatementQueues.Posting, async (message, ct) => {
             await postings.MirrorAsync(message, ct);
             await generation.NotifyAsync(message, ct);
