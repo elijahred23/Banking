@@ -5,6 +5,13 @@ namespace Banking.Infrastructure;
 
 public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options) : DbContext(options)
 {
+    public DbSet<FedFundsTrade> FedFundsTrades => Set<FedFundsTrade>();
+    public DbSet<FedFundsQuote> FedFundsQuotes => Set<FedFundsQuote>();
+    public DbSet<FedFundsCreditLine> FedFundsCreditLines => Set<FedFundsCreditLine>();
+    public DbSet<FedFundsApproval> FedFundsApprovals => Set<FedFundsApproval>();
+    public DbSet<FedFundsAccrual> FedFundsAccruals => Set<FedFundsAccrual>();
+    public DbSet<FedFundsPaymentObligation> FedFundsPaymentObligations => Set<FedFundsPaymentObligation>();
+    public DbSet<FedFundsEvent> FedFundsEvents => Set<FedFundsEvent>();
     public DbSet<BankReportTask> BankReportTasks => Set<BankReportTask>();
     public DbSet<BankReportRun> BankReportRuns => Set<BankReportRun>();
     public DbSet<StudioScenario> StudioScenarios => Set<StudioScenario>();
@@ -55,6 +62,7 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        FedFundsModelConfiguration.Configure(modelBuilder);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().Property(x => x.Frequency).HasConversion<string>().HasMaxLength(24);
         modelBuilder.Entity<BankReportTask>().HasOne<Bank>().WithMany().HasForeignKey(x => x.BankId).OnDelete(DeleteBehavior.Restrict);

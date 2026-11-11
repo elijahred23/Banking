@@ -11,7 +11,7 @@ public sealed class LabSchemaUpgradeRunner
     public async Task UpgradeAsync(BankingDbContext db, CancellationToken token = default)
     {
         await ApplyLabSchemaUpgradeAsync(db, token);
-        foreach (var resource in new[] { "StudioSupport.sql", "StudioDays.sql", "StudioCampaigns.sql", "BankReportJobs.sql" })
+        foreach (var resource in new[] { "StudioSupport.sql", "StudioDays.sql", "StudioCampaigns.sql", "BankReportJobs.sql", "FedFunds.sql" })
         {
             using var stream = typeof(LabSchemaUpgradeRunner).Assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);

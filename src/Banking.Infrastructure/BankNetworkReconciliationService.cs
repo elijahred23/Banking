@@ -19,8 +19,15 @@ public sealed class BankNetworkReconciliationService(IDbContextFactory<BankingDb
             .ToListAsync(token);
         var ownWires = await db.WireTransfers.AsNoTracking().Where(x => x.BankId == bankId && x.Rail == PaymentRail.Fedwire)
             .Select(x => new { x.Id, x.CorrelationId, x.Direction, x.Status }).ToListAsync(token);
+        var obligationJournals = await db.FedFundsPaymentObligations.AsNoTracking()
+            .Where(x => x.Trade.LenderBankId == bankId || x.Trade.BorrowerBankId == bankId)
+            .Select(x => x.Trade.LenderBankId == bankId ? x.LenderJournalId : x.BorrowerJournalId).ToListAsync(token);
+        var accrualJournals = await db.FedFundsAccruals.AsNoTracking()
+            .Where(x => x.Trade.LenderBankId == bankId || x.Trade.BorrowerBankId == bankId)
+            .Select(x => x.Trade.LenderBankId == bankId ? x.LenderJournalId : x.BorrowerJournalId).ToListAsync(token);
+        var treasuryJournals = obligationJournals.Where(x => x.HasValue).Select(x => x!.Value).Concat(accrualJournals).ToList();
         var entries = await db.LedgerEntries.AsNoTracking().Where(x => x.WireTransfer.BankId == bankId
-            && x.WireTransfer.Rail == PaymentRail.Fedwire)
+            && x.WireTransfer.Rail == PaymentRail.Fedwire && !treasuryJournals.Contains(x.JournalId))
             .Select(x => new { x.WireTransferId, x.JournalId, x.Debit, x.Credit }).ToListAsync(token);
         return payments.Select(payment =>
         {

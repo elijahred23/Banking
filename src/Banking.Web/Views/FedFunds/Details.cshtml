@@ -1,0 +1,40 @@
+@model FedFundsDetailsViewModel
+@{ ViewData["Title"] = "Federal funds trade"; var trade = Model.Trade; }
+<div class="eyebrow">Treasury · simulated overnight USD</div><h1>Trade @trade.Id.ToString()[..8]</h1>
+<p>Lender: <strong>@Model.BankNames[trade.LenderBankId]</strong> · Borrower: <strong>@Model.BankNames[trade.BorrowerBankId]</strong></p>
+<p>Principal @trade.Principal.ToString("C") · Agreed rate @trade.AnnualRate.ToString("F4")% ACT/360 · Value @trade.ValueDate · Maturity @trade.MaturityDate</p>
+<p>Status: <strong>@trade.Status</strong>. Trade status is independent of payment settlement. Overdue debt remains payable; a failed repayment never reverses the original funding.</p>
+<div class="d-flex flex-wrap gap-2 mb-4">
+@if (trade.Status == FedFundsTradeStatus.Proposed && trade.ProposalBankId != Model.BankId && User.IsInRole(BankSecurity.PaymentCreator))
+{
+    <form asp-action="Accept" method="post"><input type="hidden" name="id" value="@trade.Id" /><button class="btn btn-primary" name="accept" value="true">Accept terms as maker</button><button class="btn btn-outline-danger" name="accept" value="false">Reject terms</button></form>
+}
+@if (trade.Status == FedFundsTradeStatus.PendingApprovals && User.IsInRole(BankSecurity.PaymentApprover) && !trade.Approvals.Any(x => x.BankId == Model.BankId))
+{
+    <form asp-action="Approve" method="post"><input type="hidden" name="id" value="@trade.Id" /><button class="btn btn-primary" name="approve" value="true">Approve for this bank</button><button class="btn btn-outline-danger" name="approve" value="false">Reject</button></form>
+}
+@if (User.IsInRole(BankSecurity.Operations))
+{
+    @if (trade.LenderBankId == Model.BankId && trade.Status is FedFundsTradeStatus.FundingPending or FedFundsTradeStatus.FundingException)
+    { <form asp-action="Fund" method="post"><input type="hidden" name="id" value="@trade.Id" /><button class="btn btn-primary" type="submit">Request / retry funding</button></form> }
+    @if (trade.BorrowerBankId == Model.BankId && trade.Status is FedFundsTradeStatus.MaturityDue or FedFundsTradeStatus.Overdue)
+    { <form asp-action="Retry" method="post"><input type="hidden" name="id" value="@trade.Id" /><button class="btn btn-primary" type="submit">Retry failed repayment obligations</button></form> }
+}
+@if (User.IsInRole(BankSecurity.PaymentApprover) && trade.Status is FedFundsTradeStatus.Proposed or FedFundsTradeStatus.PendingApprovals or FedFundsTradeStatus.FundingException)
+{ <form asp-action="Cancel" method="post"><input type="hidden" name="id" value="@trade.Id" /><button class="btn btn-outline-danger" type="submit">Cancel unfunded agreement &amp; release exposure</button></form> }
+</div>
+<h2>Independent approvals</h2><p>Proposal maker: @trade.CreatedBy · Counterparty maker: @(trade.AcceptedBy ?? "Not accepted"). Each bank must use a different approver.</p>
+<ul>@foreach (var approval in trade.Approvals) { <li>@Model.BankNames[approval.BankId]: @(approval.Approved ? "Approved" : "Rejected") by @approval.OperatorId at @approval.DecidedAt.ToString("u")</li> }</ul>
+<h2>Durable payment obligations</h2>
+<div class="table-responsive"><table class="table"><thead><tr><th>Type</th><th>Amount</th><th>Due</th><th>Status</th><th>Attempt</th><th>Correlation</th><th>Own wire evidence</th></tr></thead><tbody>
+@foreach (var item in trade.Obligations.OrderBy(x => x.Type))
+{ <tr><td>@item.Type</td><td>@item.Amount.ToString("F4")</td><td>@item.DueDate</td><td>@item.Status</td><td>@item.Attempts</td><td>@item.CorrelationId</td><td>@if (Model.OwnWires.TryGetValue(item.CorrelationId, out var wireId)) { <a asp-controller="Wires" asp-action="Details" asp-route-id="@wireId">ISO, settlement &amp; delivery</a> }</td></tr> }
+</tbody></table></div>
+<h2>Interest accruals</h2><p>Amounts retain four decimal places; elapsed calendar days accrue through contractual maturity. No automatic penalty or post-maturity interest is added.</p>
+<table class="table"><thead><tr><th>Period start</th><th>Amount</th></tr></thead><tbody>@foreach (var item in trade.Accruals.OrderBy(x => x.AccrualDate)) { <tr><td>@item.AccrualDate</td><td>@item.Amount.ToString("F4")</td></tr> }</tbody></table>
+<h2>This bank's Treasury journal entries</h2><p>The existing wire journals contain reserve/clearing entries. These Treasury journals reclassify clearing and record accruals; no reserve balance is moved a second time.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Journal</th><th>Account</th><th>Debit</th><th>Credit</th></tr></thead><tbody>
+@foreach (var entry in Model.Journals) { <tr><td>@entry.JournalId</td><td>@entry.AccountCode</td><td>@entry.Debit.ToString("F4")</td><td>@entry.Credit.ToString("F4")</td></tr> }
+</tbody></table></div>
+<h2>Trade history</h2><ol>@foreach (var item in trade.Events.OrderBy(x => x.CreatedAt)) { <li><strong>@item.EventType</strong> · @item.CreatedAt.ToString("u") · @item.ActorId — @item.Details</li> }</ol>
+<a asp-action="Index">Treasury dashboard</a>

@@ -26,6 +26,11 @@ public static class ServiceRegistration
         services.AddSingleton<BankReportBuilder>();
         services.AddSingleton<BankReportJobService>();
         services.AddSingleton<SimulationStateService>();
+        services.Configure<Banking.Domain.FedFundsOptions>(configuration.GetSection("FedFunds"));
+        services.AddSingleton<FedFundsTradeService>();
+        services.AddSingleton<FedFundsReadService>();
+        services.AddSingleton<IFedFundsTradeService>(sp => sp.GetRequiredService<FedFundsTradeService>());
+        services.AddSingleton<IFedFundsAccrualService>(sp => sp.GetRequiredService<FedFundsTradeService>());
         services.AddSingleton<UnifiedJournalService>();
         services.AddSingleton<LabSchemaUpgradeRunner>();
         services.AddSingleton<IQueueOperationsMonitor, RabbitMqOperationsMonitor>();

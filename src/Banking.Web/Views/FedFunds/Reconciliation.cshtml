@@ -1,0 +1,8 @@
+@model IReadOnlyList<FedFundsReconciliation>
+@{ ViewData["Title"] = "Treasury reconciliation"; }
+<h1>Treasury reconciliation</h1>
+<p>Only your bank's agreements and journals are included. Compare obligations with Treasury principal/interest balances and network reserve receipts with wire reserve journals. Pending delivery or posting can temporarily show a difference.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Trade</th><th>Expected principal</th><th>Journal principal</th><th>Expected interest</th><th>Journal interest</th><th>Network cash delta</th><th>Journal cash delta</th><th>Journals balanced</th><th>Result</th></tr></thead><tbody>
+@foreach (var row in Model) { <tr><td><a asp-action="Details" asp-route-id="@row.TradeId">@row.TradeId.ToString()[..8]</a></td><td>@row.ExpectedPrincipal.ToString("F4")</td><td>@row.JournalPrincipal.ToString("F4")</td><td>@row.ExpectedInterest.ToString("F4")</td><td>@row.JournalInterest.ToString("F4")</td><td>@row.NetworkCash.ToString("F4")</td><td>@row.JournalCash.ToString("F4")</td><td>@row.JournalsBalanced</td><td>@(row.IsClear ? "Reconciled" : "Review difference / pending processing")</td></tr> }
+</tbody></table></div>
+<a asp-action="Index">Treasury dashboard</a>

@@ -1,0 +1,20 @@
+@model FedFundsTradeDeskViewModel
+@{ ViewData["Title"] = "Federal funds trade desk"; }
+<h1>Federal funds trade desk</h1>
+<p>Indicative offers as of @Model.Now.ToString("u"). Synthetic reference @Model.ReferenceRate.ToString("F4")%. Quotes are invitations to negotiate, not automatic loans or a calculated effective federal funds rate. A proposal still requires counterparty acceptance and independent bilateral approvals.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Bank</th><th>Side</th><th>Minimum</th><th>Maximum</th><th>Rate</th><th>Expiry</th><th>Action</th></tr></thead><tbody>
+@foreach (var quote in Model.Quotes)
+{ <tr><td>@Model.BankNames.GetValueOrDefault(quote.BankId, "Participant")</td><td>@quote.Side</td><td>@quote.MinAmount.ToString("C")</td><td>@quote.MaxAmount.ToString("C")</td><td>@quote.Rate.ToString("F4")%</td><td>@quote.ExpiresAt.ToString("u")</td><td>@if (quote.BankId != Model.BankId && User.IsInRole(BankSecurity.PaymentCreator)) { <a asp-action="Create" asp-route-quoteId="@quote.Id">Negotiate from quote</a> }</td></tr> }
+</tbody></table></div>
+@if (User.IsInRole(BankSecurity.PaymentCreator))
+{
+<h2>Publish indicative quote</h2><p>Expires after one simulated day. Publication does not reserve credit or reserves.</p>
+<form method="post" asp-action="Quote" class="row g-3">
+<div class="col-md-2"><label for="quote-side" class="form-label">Side</label><select name="Side" id="quote-side" class="form-select"><option value="Borrow">Borrow</option><option value="Lend">Lend</option></select></div>
+<div class="col-md-3"><label for="quote-min" class="form-label">Minimum USD</label><input id="quote-min" name="MinAmount" type="number" step="0.0001" min="0.0001" required class="form-control" /></div>
+<div class="col-md-3"><label for="quote-max" class="form-label">Maximum USD</label><input id="quote-max" name="MaxAmount" type="number" step="0.0001" min="0.0001" required class="form-control" /></div>
+<div class="col-md-2"><label for="quote-rate" class="form-label">Rate (%)</label><input id="quote-rate" name="Rate" type="number" step="0.00000001" min="0" max="100" required class="form-control" /></div>
+<div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Publish quote</button></div>
+</form>
+}
+<a asp-action="Index">Treasury dashboard</a>

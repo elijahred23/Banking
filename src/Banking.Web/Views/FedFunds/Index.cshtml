@@ -1,0 +1,43 @@
+@model FedFundsDashboardViewModel
+@{ ViewData["Title"] = "Treasury · federal funds"; }
+<div class="page-heading"><div><div class="eyebrow">@Model.Bank.Name · Treasury</div><h1>Federal funds &amp; liquidity</h1></div></div>
+<p>Simulated unsecured bilateral USD lending between banks. This is separate from the Federal Reserve discount window.</p>
+<p>Business date: <strong>@Model.BusinessDate</strong> · Reserve balance: <strong>@Model.Bank.MasterAccountBalance.ToString("C")</strong> · Synthetic reference: @Model.ReferenceRate.ToString("F4")% (indicative; trade rates are negotiated).</p>
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <a class="btn btn-outline-primary" asp-action="TradeDesk">Trade desk &amp; quotes</a>
+    @if (User.IsInRole(BankSecurity.PaymentCreator)) { <a class="btn btn-primary" asp-action="Create">Propose overnight trade</a> }
+    @if (User.IsInRole(BankSecurity.Operations))
+    {
+        <a class="btn btn-outline-primary" asp-action="Reconciliation">Reconciliation</a>
+        <form method="post" asp-action="Process"><button class="btn btn-outline-primary" type="submit">Process this bank's Treasury agreements</button></form>
+    }
+</div>
+<h2>Treasury cash projection</h2>
+<p>Contracted inflows: @Model.Liquidity.ExpectedInflows.ToString("C") · Contracted outflows: @Model.Liquidity.ExpectedOutflows.ToString("C") · Projected reserve balance: <strong>@Model.Liquidity.ProjectedReserveBalance.ToString("C")</strong>.</p>
+<p>Projection includes approved pending funding and unpaid loan maturities. Settled cash is already in the reserve balance. Expected counterparty receipts are not guaranteed, especially for overdue loans. Other payment rails and future customer flows are excluded.</p>
+<h2>Positions &amp; approvals</h2>
+<p>Outstanding sold: @Model.Positions.Where(x => x.Side == "Sold / lender").Sum(x => x.OutstandingPrincipal).ToString("C") · Outstanding purchased: @Model.Positions.Where(x => x.Side == "Purchased / borrower").Sum(x => x.OutstandingPrincipal).ToString("C"). Cash moves only on confirmed Fedwire settlement.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Trade</th><th>Counterparty</th><th>Position</th><th>Status</th><th>Principal</th><th>Rate</th><th>Maturity</th><th>Outstanding</th><th>Accrued interest</th></tr></thead>
+<tbody>@foreach (var item in Model.Positions)
+{ <tr><td><a asp-action="Details" asp-route-id="@item.TradeId">@item.TradeId.ToString()[..8]</a></td><td>@item.Counterparty</td><td>@item.Side</td><td>@item.Status</td><td>@item.Principal.ToString("C")</td><td>@item.Rate.ToString("F4")%</td><td>@item.Maturity</td><td>@item.OutstandingPrincipal.ToString("C")</td><td>@item.AccruedInterest.ToString("F4")</td></tr> }
+</tbody></table></div>
+<h2>Lender counterparty limits</h2>
+<p>Only your bank's lending limits are shown. Pending funding, active loans, and overdue loans retain committed exposure until unfunded cancellation or final repayment.</p>
+<table class="table"><thead><tr><th>Borrower</th><th>Limit</th><th>Committed</th><th>Active</th></tr></thead><tbody>
+@foreach (var line in Model.CreditLines) { <tr><td>@Model.BankNames[line.BorrowerBankId]</td><td>@line.ApprovedLimit.ToString("C")</td><td>@line.ReservedAmount.ToString("C")</td><td>@line.IsActive</td></tr> }
+</tbody></table>
+@if (User.IsInRole(BankSecurity.PaymentApprover))
+{
+    <section class="surface section mb-4"><h3 class="h5">Set lending limit</h3>
+    <form method="post" asp-action="CreditLine" class="row g-3">
+        <div class="col-md-4"><label for="credit-borrower" class="form-label">Borrower bank</label><select id="credit-borrower" name="BorrowerBankId" class="form-select">@foreach (var bank in Model.BankNames.Where(x => x.Key != Model.Bank.Id)) { <option value="@bank.Key">@bank.Value</option> }</select></div>
+        <div class="col-md-3"><label for="credit-limit" class="form-label">Approved USD limit</label><input id="credit-limit" name="ApprovedLimit" type="number" min="0" step="0.0001" required class="form-control" /></div>
+        <div class="col-md-3"><label for="credit-active" class="form-label">Availability for new funding</label><select id="credit-active" name="IsActive" class="form-select"><option value="true">Active</option><option value="false">Suspended</option></select></div>
+        <div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Save limit</button></div>
+    </form></section>
+}
+@if (User.IsInRole(BankSecurity.Operations))
+{
+    <section class="surface section"><h2 class="h5">Simulation time</h2><p>Advances the shared clock for every bank by 24 hours. The Treasury worker then accrues elapsed calendar days and schedules maturities. Weekend and configured holiday interest uses ACT/360.</p>
+    <form method="post" asp-controller="Operations" asp-action="AdvanceClock"><input type="hidden" name="hours" value="24" /><button type="submit" class="btn btn-outline-primary">Advance shared clock one day</button></form></section>
+}

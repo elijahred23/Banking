@@ -140,8 +140,8 @@ public sealed class IsoMessageService : IIsoMessageService
                         new XElement(Pacs009 + "EndToEndId", wire.CustomerReference ?? messageId),
                         new XElement(Pacs009 + "UETR", wire.CorrelationId.ToString().ToLowerInvariant())),
                     new XElement(Pacs009 + "IntrBkSttlmAmt", new XAttribute("Ccy", "USD"),
-                        wire.Amount.ToString("0.00", CultureInfo.InvariantCulture)),
-                    new XElement(Pacs009 + "IntrBkSttlmDt", DateTime.UtcNow.ToString("yyyy-MM-dd")),
+                        wire.Amount.ToString("0.00##", CultureInfo.InvariantCulture)),
+                    new XElement(Pacs009 + "IntrBkSttlmDt", wire.CreatedDate.UtcDateTime.ToString("yyyy-MM-dd")),
                     FinancialInstitution(Pacs009, "Dbtr", senderBank),
                     FinancialInstitution(Pacs009, "Cdtr", receiverBank))));
         return EnvelopeMessage(Header(senderBank.RoutingNumber, receiverBank.RoutingNumber,

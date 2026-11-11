@@ -13,6 +13,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Banking.WireService/Banking.WireService.csproj" />
     <ProjectReference Include="../../src/Banking.Domain/Banking.Domain.csproj" />
     <ProjectReference Include="../../src/Banking.Infrastructure/Banking.Infrastructure.csproj" />
     <ProjectReference Include="../../src/Banking.Web/Banking.Web.csproj" />
