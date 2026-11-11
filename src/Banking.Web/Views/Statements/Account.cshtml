@@ -14,9 +14,9 @@
 }
 @if (!issuer && User.IsInRole(BankSecurity.PaymentCreator))
 {
-<section class="surface section mb-4"><h2 class="h5">Request a Fedwire through your correspondent</h2><p>The issuer must approve the outgoing institution transfer in its Wires worklist. Its correspondent account debit waits for a finalized cash journal.</p>
+<section class="surface section mb-4"><h2 class="h5">Request a transfer through your correspondent</h2><p>Affiliates at the same correspondent route to an internal book payment, approved in <a asp-controller="Correspondent" asp-action="Index">Correspondent banking</a>. Other banks route to Fedwire, approved in the issuer’s Wires worklist. Funds are reserved until posting or rejection. External account debits require a finalized cash journal and matching simulated settlement evidence.</p>
 <form asp-action="RequestWire" method="post" class="row g-3"><input type="hidden" name="accountId" value="@account.Id" />
-<div class="col-md-6"><label for="request-bank" class="form-label">Receiving bank</label><select id="request-bank" name="receiverBankId" class="form-select">@foreach (var bank in Model.Banks.Where(x => x.Key != account.IssuerBankId)) { <option value="@bank.Key">@bank.Value</option> }</select></div>
+<div class="col-md-6"><label for="request-bank" class="form-label">Receiving bank</label><select id="request-bank" name="receiverBankId" class="form-select">@foreach (var bank in Model.Banks.Where(x => x.Key != account.IssuerBankId && x.Key != account.RespondentBankId)) { <option value="@bank.Key">@bank.Value</option> }</select></div>
 <div class="col-md-4"><label for="request-amount" class="form-label">USD amount</label><input id="request-amount" name="amount" type="number" min="0.0001" step="0.0001" required class="form-control" /></div>
 <div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Request transfer</button></div></form></section>
 }

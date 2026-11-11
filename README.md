@@ -531,3 +531,12 @@ eliminated by compiling the same views in a fresh compiler process. The setting
 applies automatically to solution builds, `run_all.py`, and the VS Code build task;
 no generated-file edits or recurring compiler-server reset is required. It affects
 build-time compiler reuse, not application behavior or Razor validation.
+
+### Correspondent banking platform
+
+The **Correspondent banking** dashboard shows ledger-derived affiliate balances,
+reserved and available liquidity, recent wire/posting states, and accounting breaks.
+Account transfer requests automatically use internal book settlement for affiliates
+at the same issuer, with separate approval. Funding supports replenishment to minimum
+or target and a calculation preview. See [the platform guide](docs/correspondent-platform.md)
+for accounting controls, routing, verification, and remaining roadmap work.

@@ -28,6 +28,12 @@ public sealed class CorrespondentPostingService(IDbContextFactory<BankingDbConte
             if (account.RespondentBankId != bankId) throw new ArgumentException("Only the respondent maker can request its account transfer.");
             if (amount <= 0 || decimal.Round(amount, 4) != amount || account.IssuerBalance - account.HeldBalance < amount)
                 throw new ArgumentException("Insufficient available correspondent balance or invalid amount.");
+            if (string.IsNullOrWhiteSpace(actor) || actor.Length > 120)
+                throw new ArgumentException("A named operator is required.");
+            var internalDestination = await db.CorrespondentAccounts.SingleOrDefaultAsync(x =>
+                x.IssuerBankId == account.IssuerBankId && x.RespondentBankId == receiverBankId, ct);
+            if (internalDestination is not null)
+                return await CorrespondentPlatformService.ReserveBook(db, bankId, accountId, internalDestination.Id, amount, actor, ct);
             if (await db.CorrespondentServiceAgreements.AnyAsync(x => x.AccountId == accountId, ct))
                 await CorrespondentPlatformService.Eligible(db, accountId, amount, ct);
             var sender = await db.Banks.SingleAsync(x => x.Id == account.IssuerBankId, ct);

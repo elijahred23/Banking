@@ -15,10 +15,11 @@ public sealed record PaymentReconciliationResult(
     int SettledWiresWithoutJournals)
 {
     public int SettledAchWithoutJournals { get; init; }
+    public int CorrespondentBreaks { get; init; }
     public IReadOnlyList<ReconciliationFinding> Findings { get; init; } = [];
     public bool IsClear => PendingOutboxMessages == 0 && DeadLetterMessages == 0
         && IncompleteInboxMessages == 0 && UnbalancedJournals == 0
-        && HoldMismatches == 0 && SettledWiresWithoutJournals == 0 && SettledAchWithoutJournals == 0;
+        && HoldMismatches == 0 && SettledWiresWithoutJournals == 0 && SettledAchWithoutJournals == 0 && CorrespondentBreaks == 0;
 }
 
 public sealed class PaymentReconciliationService(IDbContextFactory<BankingDbContext> dbFactory)
@@ -98,8 +99,13 @@ public sealed class PaymentReconciliationService(IDbContextFactory<BankingDbCont
             .Concat(wireMissing.Select(x => new ReconciliationFinding("Wires", x.Id,
                 x.CustomerReference ?? x.Id.ToString("N")[..8], 1, 0,
                 "Settlement is recorded but no wire journal exists. Inspect status and posting evidence."))).ToList();
+        var positions = await CorrespondentPlatformService.ReadPositionsAsync(db, bankId, token);
+        var correspondentFindings = positions.SelectMany(x => x.Position.Findings.Select(finding =>
+            new ReconciliationFinding("Correspondent", x.AccountId, $"Correspondent account {x.AccountId:N}",
+                0, 1, finding))).ToList();
+        findings.AddRange(correspondentFindings);
         return new PaymentReconciliationResult(pendingOutbox, deadLetters, incompleteInbox,
             unbalanced, holdMismatches, settledWithoutJournal)
-        { SettledAchWithoutJournals = achMissing.Count, Findings = findings };
+        { SettledAchWithoutJournals = achMissing.Count, CorrespondentBreaks = correspondentFindings.Count, Findings = findings };
     }
 }

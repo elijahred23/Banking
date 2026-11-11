@@ -26,7 +26,7 @@ public sealed class CorrespondentBookOrder
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DecidedAt { get; set; }
 }
-public enum CorrespondentFundingStrategy { Fixed, Threshold, Sweep }
+public enum CorrespondentFundingStrategy { Fixed, Threshold, Sweep, ReplenishToMinimum }
 public sealed class CorrespondentFundingRule
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -59,6 +59,7 @@ public static class CorrespondentFundingPolicy
                 CorrespondentFundingStrategy.Fixed => maximum,
                 CorrespondentFundingStrategy.Threshold when destinationAvailable < threshold => target - destinationAvailable,
                 CorrespondentFundingStrategy.Sweep => sourceAvailable - target,
+                CorrespondentFundingStrategy.ReplenishToMinimum when destinationAvailable < threshold => threshold - destinationAvailable,
                 _ => 0
             }))), 4, MidpointRounding.ToZero);
     // Coalesce missed weekdays into one evaluation; never replay missed transfers on clock jumps.

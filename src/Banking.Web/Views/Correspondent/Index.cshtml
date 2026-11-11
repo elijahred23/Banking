@@ -5,6 +5,34 @@
 <p>Agreements require separate issuer and respondent approvals. Funding requires issuer and source respondent approval by operators other than its maker. Missed funding dates coalesce into one evaluation; schedules use UTC weekdays and resume from the current lab time.</p>
 @if (TempData["Error"] is string error) { <p role="alert" class="text-danger">@error</p> }
 @if (TempData["Notice"] is string notice) { <p role="status">@notice</p> }
+@if (TempData["FundingPreview"] is string preview) { <p role="status">@preview</p> }
+<h2>Affiliate liquidity and settlement</h2>
+<p>Positions are reconstructed from opening balances and immutable journals. Available funds subtract all pending book and wire reservations. Today's volume uses the UTC lab date and includes linked incoming and outgoing instructions, including rejected wires. Mirror differences may reflect asynchronous delivery.</p>
+@foreach (var dashboard in Model.Positions) {
+    var account = Model.Accounts.Single(x => x.Id == dashboard.AccountId);
+    var position = dashboard.Position;
+    <section class="surface section mb-4" aria-labelledby="position-@account.Id">
+    <h3 id="position-@account.Id">Account @account.AccountNumber</h3>
+    <dl class="row">
+        <dt class="col-sm-4">Ledger balance USD</dt><dd class="col-sm-8">@position.LedgerBalance.ToString("C")</dd>
+        <dt class="col-sm-4">Available balance USD</dt><dd class="col-sm-8">@position.AvailableBalance.ToString("C")</dd>
+        <dt class="col-sm-4">Reserved outgoing USD</dt><dd class="col-sm-8">@position.PendingOutgoing.ToString("C")</dd>
+        <dt class="col-sm-4">Today's wire volume USD</dt><dd class="col-sm-8">@dashboard.TodaysWireVolume.ToString("C")</dd>
+        <dt class="col-sm-4">Respondent ledger USD</dt><dd class="col-sm-8">@position.RespondentLedgerBalance.ToString("C")</dd>
+        <dt class="col-sm-4">Issuer / respondent difference USD</dt><dd class="col-sm-8">@position.MirrorDifference.ToString("C")</dd>
+    </dl>
+    @if (position.Findings.Count == 0) { <p role="status">Ledger and reservation controls agree.</p> }
+    else { <div role="alert"><p>Accounting review required:</p><ul>@foreach (var finding in position.Findings) { <li>@finding</li> }</ul></div> }
+    <h4>Recent external wires</h4>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Correlation</th><th>Direction</th><th>Amount USD</th><th>Wire state</th><th>Account posting</th></tr></thead><tbody>
+    @foreach (var wire in dashboard.RecentWires) {
+        <tr><td>@wire.CorrelationId</td><td>@(wire.IsCredit ? "Incoming" : "Outgoing")</td><td>@wire.Amount.ToString("C")</td><td>@wire.WireStatus</td><td>@wire.AccountingStatus</td></tr>
+    }
+    @if (dashboard.RecentWires.Count == 0) { <tr><td colspan="5">No linked external wires.</td></tr> }
+    </tbody></table></div>
+    <p><a asp-controller="Statements" asp-action="Account" asp-route-id="@account.Id">Open statements and account journals</a></p>
+    </section>
+}
 <h2>Accounts and agreements</h2>
 <div class="table-responsive"><table class="table"><thead><tr><th>Account</th><th>Your capacity</th><th>Booked / held</th><th>Agreement</th><th>Actions</th></tr></thead><tbody>
 @foreach (var account in Model.Accounts) {
@@ -27,11 +55,12 @@
 <form asp-action="Funding" method="post" class="surface section mb-4">
 <label for="fund-source">Your source account</label><select id="fund-source" name="sourceAccountId" class="form-select">@foreach (var a in Model.Accounts.Where(x => x.RespondentBankId == Model.BankId)) { <option value="@a.Id">@a.AccountNumber</option> }</select>
 <label for="fund-destination">Receiving respondent account</label><select id="fund-destination" name="destinationAccountId" required class="form-select">@foreach (var destination in Model.Destinations) { <option value="@destination.Id">@destination.BankName · @destination.AccountNumber</option> }</select>
-<label for="strategy">Strategy</label><select id="strategy" name="strategy" class="form-select"><option>Fixed</option><option>Threshold</option><option>Sweep</option></select>
+<label for="strategy">Strategy</label><select id="strategy" name="strategy" class="form-select"><option>Fixed</option><option value="Threshold">Replenish to target</option><option value="ReplenishToMinimum">Replenish to minimum</option><option>Sweep</option></select>
 <label for="threshold">Destination trigger threshold USD</label><input id="threshold" name="threshold" type="number" min="0" step="0.0001" value="0" required class="form-control" />
 <label for="target">Target USD (destination for replenishment; source retention for sweep)</label><input id="target" name="target" type="number" min="0" step="0.0001" value="0" required class="form-control" />
 <label for="maximum">Maximum transfer USD (fixed amount for fixed funding)</label><input id="maximum" name="maximum" type="number" min="0.0001" step="0.0001" required class="form-control" />
 <label for="next-run">First execution (ISO UTC timestamp)</label><input id="next-run" name="nextRunAt" placeholder="2026-11-12T14:00:00Z" required class="form-control" />
+<button asp-action="PreviewFunding" class="btn btn-secondary" formnovalidate>Calculate funding preview</button>
 <button class="btn btn-primary">Propose weekday funding rule</button></form>
 }
 <h2>Payment instructions</h2>

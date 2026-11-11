@@ -111,7 +111,7 @@ public sealed class StatementsController(IDbContextFactory<BankingDbContext> fac
     {
         await using var db = await factory.CreateDbContextAsync(ct);
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, ct);
-        try { await postings.RequestWireAsync(bankId, accountId, receiverBankId, amount, User.Identity!.Name!, ct); TempData["Notice"] = "Transfer requested. The issuer must approve the outgoing wire; the correspondent amount is held until posting or rejection."; }
+        try { await postings.RequestWireAsync(bankId, accountId, receiverBankId, amount, User.Identity!.Name!, ct); TempData["Notice"] = "Transfer requested. Same-correspondent affiliates route to an internal book payment; external destinations route to Fedwire. The issuer must approve; funds remain held until posting or rejection."; }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { TempData["Error"] = ex.Message; }
         return RedirectToAction(nameof(Account), new { id = accountId });

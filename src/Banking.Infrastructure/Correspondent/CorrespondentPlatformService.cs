@@ -4,6 +4,37 @@ namespace Banking.Infrastructure;
 
 public sealed class CorrespondentPlatformService(IDbContextFactory<BankingDbContext> factory)
 {
+    public Task<List<CorrespondentAccountPosition>> PositionsAsync(Guid bank, CancellationToken ct) =>
+        StatementTransactions.Run(factory, db => ReadPositionsAsync(db, bank, ct), ct);
+
+    internal static async Task<List<CorrespondentAccountPosition>> ReadPositionsAsync(BankingDbContext db, Guid bank, CancellationToken ct)
+    {
+        var accounts = await db.CorrespondentAccounts.AsNoTracking()
+            .Where(x => x.IssuerBankId == bank || x.RespondentBankId == bank).ToListAsync(ct);
+        if (accounts.Count == 0) return [];
+        var ids = accounts.Select(x => x.Id).ToList();
+        var entries = await db.CorrespondentLedgerEntries.AsNoTracking()
+            .Where(x => ids.Contains(x.AccountId)).ToListAsync(ct);
+        var books = await db.CorrespondentBookOrders.AsNoTracking()
+            .Where(x => ids.Contains(x.SourceAccountId) && x.Status == CorrespondentOrderStatus.Pending).ToListAsync(ct);
+        var payments = await (from link in db.CorrespondentPaymentLinks.AsNoTracking()
+            join wire in db.WireTransfers.AsNoTracking() on link.WireTransferId equals wire.Id
+            where ids.Contains(link.AccountId)
+            select new { Link = link, Wire = wire }).ToListAsync(ct);
+        var now = await StatementTransactions.Now(db, ct);
+        var start = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        return accounts.Select(account => new CorrespondentAccountPosition(account.Id,
+            CorrespondentPositionPolicy.Evaluate(account, entries,
+                books.Where(x => x.SourceAccountId == account.Id).Sum(x => x.Amount)
+                + payments.Where(x => x.Link.AccountId == account.Id && !x.Link.IsCredit
+                    && x.Link.Status == CorrespondentPaymentStatus.Pending).Sum(x => x.Wire.Amount)),
+            payments.Where(x => x.Link.AccountId == account.Id && x.Wire.CreatedDate >= start && x.Wire.CreatedDate <= now)
+                .Sum(x => x.Wire.Amount),
+            payments.Where(x => x.Link.AccountId == account.Id).OrderByDescending(x => x.Wire.CreatedDate).Take(10)
+                .Select(x => new CorrespondentWireActivity(x.Wire.Id, x.Wire.CorrelationId, x.Wire.Amount,
+                    x.Link.IsCredit, x.Wire.Status, x.Link.Status)).ToList())).ToList();
+    }
+
     public Task<Guid> ProposeAgreementAsync(Guid bank, Guid accountId, decimal limit, string actor, CancellationToken ct) =>
         StatementTransactions.Run(factory, async db => {
             await StatementTransactions.Account(db, bank, accountId, true, ct);
@@ -41,21 +72,25 @@ public sealed class CorrespondentPlatformService(IDbContextFactory<BankingDbCont
     }
 
     public Task<Guid> RequestBookAsync(Guid bank, Guid sourceId, Guid destinationId, decimal amount, string actor, CancellationToken ct) =>
-        StatementTransactions.Run(factory, async db => {
-            var source = await StatementTransactions.Account(db, bank, sourceId, false, ct);
-            if (bank != source.RespondentBankId) throw new ArgumentException("The source respondent must make the instruction.");
-            Money(amount); Actor(actor);
-            await Pair(db, source, destinationId, ct);
-            await Eligible(db, sourceId, amount, ct);
-            await Eligible(db, destinationId, amount, ct);
-            if (source.IssuerBalance - source.HeldBalance < amount) throw new ArgumentException("Insufficient available funds.");
-            source.HeldBalance += amount;
-            var order = new CorrespondentBookOrder { SourceAccountId = sourceId, DestinationAccountId = destinationId,
-                Amount = amount, CreatedBy = actor, CreatedAt = await StatementTransactions.Now(db, ct) };
-            db.CorrespondentBookOrders.Add(order);
-            await Audit(db, source.Id, order.Id, bank, actor, "Book payment requested", ct);
-            return order.Id;
-        }, ct);
+        StatementTransactions.Run(factory, db => ReserveBook(db, bank, sourceId, destinationId, amount, actor, ct), ct);
+
+    internal static async Task<Guid> ReserveBook(BankingDbContext db, Guid bank, Guid sourceId,
+        Guid destinationId, decimal amount, string actor, CancellationToken ct)
+    {
+        var source = await StatementTransactions.Account(db, bank, sourceId, false, ct);
+        if (bank != source.RespondentBankId) throw new ArgumentException("The source respondent must make the instruction.");
+        Money(amount); Actor(actor);
+        await Pair(db, source, destinationId, ct);
+        await Eligible(db, sourceId, amount, ct);
+        await Eligible(db, destinationId, amount, ct);
+        if (source.IssuerBalance - source.HeldBalance < amount) throw new ArgumentException("Insufficient available funds.");
+        source.HeldBalance += amount;
+        var order = new CorrespondentBookOrder { SourceAccountId = sourceId, DestinationAccountId = destinationId,
+            Amount = amount, CreatedBy = actor, CreatedAt = await StatementTransactions.Now(db, ct) };
+        db.CorrespondentBookOrders.Add(order);
+        await Audit(db, source.Id, order.Id, bank, actor, "Book payment requested", ct);
+        return order.Id;
+    }
 
     public Task DecideBookAsync(Guid bank, Guid id, string actor, bool approve, CancellationToken ct) =>
         StatementTransactions.Run(factory, async db => {
@@ -76,16 +111,33 @@ public sealed class CorrespondentPlatformService(IDbContextFactory<BankingDbCont
             return true;
         }, ct);
 
+    public Task<decimal> PreviewFundingAsync(Guid bank, Guid sourceId, Guid destinationId,
+        CorrespondentFundingStrategy strategy, decimal threshold, decimal target, decimal maximum, CancellationToken ct) =>
+        StatementTransactions.Run(factory, async db => {
+            var source = await StatementTransactions.Account(db, bank, sourceId, false, ct);
+            if (source.RespondentBankId != bank) throw new ArgumentException("Only the source respondent can preview funding.");
+            var destination = await Pair(db, source, destinationId, ct);
+            ValidateFunding(strategy, threshold, target, maximum);
+            await Eligible(db, source.Id, maximum, ct); await Eligible(db, destination.Id, maximum, ct);
+            return CorrespondentFundingPolicy.Calculate(strategy, source.IssuerBalance - source.HeldBalance,
+                destination.IssuerBalance - destination.HeldBalance, threshold, target, maximum);
+        }, ct);
+
+    private static void ValidateFunding(CorrespondentFundingStrategy strategy, decimal threshold, decimal target, decimal maximum)
+    {
+        Money(maximum);
+        if (!Enum.IsDefined(strategy) || threshold < 0 || target < 0
+            || decimal.Round(target, 4) != target || decimal.Round(threshold, 4) != threshold
+            || strategy == CorrespondentFundingStrategy.Threshold && target < threshold)
+            throw new ArgumentException("Choose a valid strategy, threshold and target.");
+    }
+
     public Task<Guid> ProposeFundingAsync(Guid bank, CorrespondentFundingRule input, string actor, CancellationToken ct) =>
         StatementTransactions.Run(factory, async db => {
             var source = await StatementTransactions.Account(db, bank, input.SourceAccountId, false, ct);
             if (bank != source.RespondentBankId) throw new ArgumentException("The funding source respondent must authorize the proposal.");
             await Pair(db, source, input.DestinationAccountId, ct);
-            Money(input.Maximum); Actor(actor);
-            if (!Enum.IsDefined(input.Strategy) || input.Threshold < 0 || input.Target < 0
-                || decimal.Round(input.Target, 4) != input.Target || decimal.Round(input.Threshold, 4) != input.Threshold
-                || input.Strategy == CorrespondentFundingStrategy.Threshold && input.Target < input.Threshold)
-                throw new ArgumentException("Choose a valid strategy, threshold and target.");
+            ValidateFunding(input.Strategy, input.Threshold, input.Target, input.Maximum); Actor(actor);
             await Eligible(db, source.Id, input.Maximum, ct); await Eligible(db, input.DestinationAccountId, input.Maximum, ct);
             var now = await StatementTransactions.Now(db, ct);
             if (input.NextRunAt < now) throw new ArgumentException("Choose a future first execution in UTC.");

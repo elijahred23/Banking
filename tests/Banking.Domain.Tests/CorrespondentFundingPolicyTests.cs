@@ -9,6 +9,9 @@ public sealed class CorrespondentFundingPolicyTests
     [InlineData(CorrespondentFundingStrategy.Threshold, 900000, 250000, 250000, 1000000, 500000, 0)]
     [InlineData(CorrespondentFundingStrategy.Sweep, 600000, 0, 0, 250000, 500000, 350000)]
     [InlineData(CorrespondentFundingStrategy.Sweep, 200000, 0, 0, 250000, 500000, 0)]
+    [InlineData(CorrespondentFundingStrategy.Threshold, 500000, 85000, 100000, 250000, 500000, 165000)]
+    [InlineData(CorrespondentFundingStrategy.ReplenishToMinimum, 500000, 85000, 100000, 250000, 500000, 15000)]
+    [InlineData(CorrespondentFundingStrategy.ReplenishToMinimum, 500000, 100000, 100000, 250000, 500000, 0)]
     [InlineData(CorrespondentFundingStrategy.Fixed, 0, 0, 0, 0, 250000, 0)]
     public void Funding_respects_source_liquidity_trigger_retention_and_caps(CorrespondentFundingStrategy strategy,
         decimal source, decimal destination, decimal threshold, decimal target, decimal maximum, decimal expected) =>

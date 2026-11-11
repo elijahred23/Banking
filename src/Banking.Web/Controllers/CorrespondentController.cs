@@ -8,7 +8,8 @@ namespace Banking.Web.Controllers;
 public sealed record CorrespondentDestination(Guid Id, string AccountNumber, string BankName);
 public sealed record CorrespondentPortal(Guid BankId, List<CorrespondentAccount> Accounts,
     List<CorrespondentServiceAgreement> Agreements, List<CorrespondentBookOrder> Orders,
-    List<CorrespondentFundingRule> Rules, List<CorrespondentFundingRun> Runs, List<CorrespondentAuthorizationEvent> Audit, List<CorrespondentDestination> Destinations);
+    List<CorrespondentFundingRule> Rules, List<CorrespondentFundingRun> Runs, List<CorrespondentAuthorizationEvent> Audit, List<CorrespondentDestination> Destinations,
+    List<CorrespondentAccountPosition> Positions);
 
 [Authorize]
 public sealed class CorrespondentController(IDbContextFactory<BankingDbContext> factory, CorrespondentPlatformService service) : Controller
@@ -30,7 +31,8 @@ public sealed class CorrespondentController(IDbContextFactory<BankingDbContext> 
             await (from account in db.CorrespondentAccounts.AsNoTracking()
                    join respondent in db.Banks on account.RespondentBankId equals respondent.Id
                    where db.CorrespondentAccounts.Any(owned => owned.RespondentBankId == bank && owned.IssuerBankId == account.IssuerBankId)
-                   select new CorrespondentDestination(account.Id, account.AccountNumber, respondent.Name)).ToListAsync(ct)));
+                   select new CorrespondentDestination(account.Id, account.AccountNumber, respondent.Name)).ToListAsync(ct),
+            await service.PositionsAsync(bank, ct)));
     }
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
     public Task<IActionResult> Agreement(Guid accountId, decimal limit, CancellationToken ct) =>
@@ -50,6 +52,14 @@ public sealed class CorrespondentController(IDbContextFactory<BankingDbContext> 
         Execute(async bank => { await service.ProposeFundingAsync(bank, new CorrespondentFundingRule { SourceAccountId = sourceAccountId,
             DestinationAccountId = destinationAccountId, Strategy = strategy, Threshold = threshold, Target = target,
             Maximum = maximum, NextRunAt = nextRunAt }, User.Identity!.Name!, ct); }, ct);
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentCreator)]
+    public Task<IActionResult> PreviewFunding(Guid sourceAccountId, Guid destinationAccountId,
+        CorrespondentFundingStrategy strategy, decimal threshold, decimal target, decimal maximum, CancellationToken ct) =>
+        Execute(async bank => {
+            var amount = await service.PreviewFundingAsync(bank, sourceAccountId, destinationAccountId,
+                strategy, threshold, target, maximum, ct);
+            TempData["FundingPreview"] = $"Calculated funding: {amount:C} USD. Includes current holds and the source liquidity cap. Preview only; no funds reserved or transferred. Scheduled execution rechecks balances and bilateral authority.";
+        }, ct);
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.PaymentApprover)]
     public Task<IActionResult> ApproveFunding(Guid id, bool disable, CancellationToken ct) =>
         Execute(bank => service.ApproveFundingAsync(bank, id, User.Identity!.Name!, disable, ct), ct);
@@ -58,7 +68,7 @@ public sealed class CorrespondentController(IDbContextFactory<BankingDbContext> 
         if (!ModelState.IsValid) { TempData["Error"] = "Enter valid form values."; return RedirectToAction(nameof(Index)); }
         await using var db = await factory.CreateDbContextAsync(ct);
         var bank = await ActiveBank.ResolveAsync(HttpContext, db, ct);
-        try { await action(bank); TempData["Notice"] = "Instruction recorded."; }
+        try { await action(bank); if (!TempData.ContainsKey("FundingPreview")) TempData["Notice"] = "Instruction recorded."; }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { TempData["Error"] = ex.Message; }
         return RedirectToAction(nameof(Index));

@@ -192,7 +192,14 @@ public sealed class StatementIntegrationTests
             await service.ApproveAgreementAsync(respondent, agreement, "respondent-approver", false, default);
         }
         await Assert.ThrowsAsync<KeyNotFoundException>(() => service.RequestBookAsync(lab.Unrelated.Id, source, destination, 100_000, "intruder", default));
-        var order = await service.RequestBookAsync(lab.Respondent.Id, source, destination, 100_000, "payment-maker", default);
+        var order = await lab.Postings.RequestWireAsync(lab.Respondent.Id, source, lab.Other.Id, 100_000, "payment-maker", default);
+        var reserved = Assert.Single(await service.PositionsAsync(lab.Respondent.Id, default));
+        Assert.Equal(500_000, reserved.Position.LedgerBalance);
+        Assert.Equal(400_000, reserved.Position.AvailableBalance);
+        Assert.Empty(reserved.Position.Findings);
+        Assert.Empty(await service.PositionsAsync(lab.Unrelated.Id, default));
+        Assert.Equal(250_000, await service.PreviewFundingAsync(lab.Respondent.Id, source, destination,
+            CorrespondentFundingStrategy.Threshold, 100_000, 250_000, 300_000, default));
         await Assert.ThrowsAsync<ArgumentException>(() => service.DecideBookAsync(lab.Issuer.Id, order, "payment-maker", true, default));
         await service.DecideBookAsync(lab.Issuer.Id, order, "issuer-approver", true, default);
         await service.DecideBookAsync(lab.Issuer.Id, order, "issuer-approver", true, default);
@@ -210,6 +217,13 @@ public sealed class StatementIntegrationTests
         Assert.Equal(350_000, (await db.CorrespondentAccounts.FindAsync(destination))!.IssuerBalance);
         Assert.Equal(0, (await db.CorrespondentAccounts.FindAsync(source))!.HeldBalance);
         Assert.Equal(1, await db.CorrespondentFundingRuns.CountAsync());
+        Assert.Empty(await db.WireTransfers.ToListAsync());
+        var settledPosition = Assert.Single(await service.PositionsAsync(lab.Respondent.Id, default));
+        Assert.Equal(150_000, settledPosition.Position.AvailableBalance);
+        var controls = await lab.Services.GetRequiredService<PaymentReconciliationService>().ReconcileAsync(lab.Respondent.Id, default);
+        Assert.Equal(0, controls.CorrespondentBreaks);
+        Assert.Equal(-350_000, settledPosition.Position.MirrorDifference);
+        Assert.Empty(settledPosition.Position.Findings);
         Assert.Equal(350_000, (await db.AccountStatements.FindAsync(statement))!.ClosingBalance);
         Assert.Equal(0, await db.FedSettlements.CountAsync());
         var lines = await db.CorrespondentLedgerEntries.ToListAsync();

@@ -76,6 +76,9 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
     private void ValidateImmutableRecords()
     {
         ChangeTracker.DetectChanges();
+        foreach (var journal in ChangeTracker.Entries<CorrespondentLedgerEntry>()
+            .Where(x => x.State == EntityState.Added).Select(x => x.Entity).GroupBy(x => x.JournalId))
+            CorrespondentPositionPolicy.RequireJournal(journal.ToList());
         if (ChangeTracker.Entries().Any(x => x.State is EntityState.Modified or EntityState.Deleted
             && x.Entity is AccountStatement or AccountStatementEntry or CorrespondentLedgerEntry or CorrespondentAuthorizationEvent or CorrespondentFundingRun))
             throw new InvalidOperationException("Statement snapshots and posted correspondent journals are immutable; publish a correction or append a new posting.");
