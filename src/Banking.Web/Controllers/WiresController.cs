@@ -437,7 +437,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 account?.AccountNumber);
             if (wire.Scenario == ProcessingScenario.MalformedIso)
                 message = message with { XmlPayload = message.XmlPayload[..^12] };
-            return MessagePreview([message]);
+            return MessagePreview([message], WireVisualizationPolicy.Preview(wire, senderBank, receiverBank!, account));
         }
         db.WireTransfers.Add(wire);
         await db.SaveChangesAsync(token);
@@ -719,8 +719,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         errors = ModelState.Values.SelectMany(x => x.Errors).Select(x => x.ErrorMessage).ToArray()
     });
 
-    private JsonResult MessagePreview(IEnumerable<CreatedWireIsoMessage> messages) =>
-        Json(new { messages = messages.Select(x => new
+    private JsonResult MessagePreview(IEnumerable<CreatedWireIsoMessage> messages, WireVisualization? visualization = null) =>
+        Json(new { visualization, messages = messages.Select(x => new
         {
             messageType = x.MessageType, direction = x.Direction.ToString(), xml = x.XmlPayload
         }) });

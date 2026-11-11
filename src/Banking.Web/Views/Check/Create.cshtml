@@ -19,5 +19,6 @@
     <div class="col-md-6"><label asp-for="BackImage" class="form-label"></label><input asp-for="BackImage" class="form-control" accept=".tif,.tiff,image/tiff" /><div class="form-text">Choose the matching back image generated with the same fixture values.</div></div>
     <div class="col-12 form-actions"><button class="btn btn-primary">Capture check</button><a asp-action="Index" class="btn btn-light">Cancel</a></div>
 </form>
+<partial name="_CheckStoryboard" model="Model.Amount" />
 </div></div>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

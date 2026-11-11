@@ -153,6 +153,29 @@ Both `/Simulator` and `/AchSimulator` open in Simulation mode, leading with live
 
 The bench includes sender balance and journal explanations, bank/role perspectives, clickable instruction-to-message field mappings, a rail comparison, and a simplified processing-window experiment. Links lead to the existing NACHA builder, ISO explorer, operations workflows, and evidence-based missions. Practice stays in page memory and survives live snapshot refreshes, but resets on navigation/reload. It never changes permissions, shared time, payments, or ledger state and does not award durable mission completion. Timing assumes fictional weekday windows without holidays; message excerpts and accounting describe a simplified outgoing credit, not a certified rail implementation.
 
+### Payment visualization previews
+
+On **Create wire**, choose **Preview wire** to explore projected balance changes,
+customer holds, a payment path, and balanced T-accounts by stage. Outcome branches
+cover acceptance, rejection, malformed messages, delayed acceptance, and current
+source-funds failures. Select an instruction field or a marked XML value to trace
+its element path. A separate fictional duplicate-delivery experiment demonstrates
+multiple deliveries converging on one business action and journal. These controls
+never save, reserve, transmit, or post; outcome selection changes the projection,
+while the generated XML remains the instruction from the form. Forecasts assume
+approval and successful downstream eligibility checks, preserve existing holds,
+and omit master-account forecasts for simulated SWIFT correspondent positions.
+
+The **NACHA explorer** adds an expandable file/batch/entry anatomy with inspected
+record counts, declared control totals, and selectable fixed-width field ranges.
+Editing the sandbox marks that snapshot stale until validation refreshes it.
+**Capture check** and check details include a collection storyboard using the
+check amount and fictional opening funds, showing provisional credit separately
+from ledger and available funds through collection or a pre-settlement return.
+These are learning illustrations; recorded payment evidence remains authoritative
+within the simulator.
+
+
 ## Live wire traffic studio
 
 Sign in as **Operations** (or **All permissions**) and open **Wire studio** at

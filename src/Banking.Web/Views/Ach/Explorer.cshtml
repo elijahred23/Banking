@@ -25,6 +25,18 @@
     <div class="alert @(Model.PredictionCorrect == true ? "alert-success" : "alert-warning")"><strong>@(Model.PredictionCorrect == true ? "Prediction supported." : "Prediction did not match the parser.")</strong> Parser outcome: @(Model.Result.IsValid ? "accepted" : "rejected"). @Model.Result.BatchCount batch(es), @Model.Result.EntryCount entry record(s), @Model.Result.TotalDebits.ToString("C") debits, @Model.Result.TotalCredits.ToString("C") credits.</div>
     @if (Model.Result.Errors.Count > 0) { <ul class="alert alert-danger">@foreach (var error in Model.Result.Errors) { <li>@error</li> }</ul> }
 }
+@if (Model.Records.Count > 0)
+{
+    <section class="surface section my-4" data-nacha-anatomy>
+        <div class="eyebrow">FILE ANATOMY</div><h2 class="h5">Explore the file structure</h2>
+        <p>Expand file → batch → entry records, then select a field to highlight its fixed-width position. Counts reflect the inspected payload; control totals are declared values, not proof of validation.</p>
+        <p data-nacha-stale class="text-warning" hidden>The payload has changed. Validate your prediction to refresh this anatomy snapshot.</p>
+        <div data-nacha-tree></div>
+        <div data-nacha-record aria-live="polite"></div>
+        <script type="application/json" data-nacha-records>@Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Records, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)))</script>
+        <noscript>The annotated record tables below show each field without JavaScript.</noscript>
+    </section>
+}
 @foreach (var record in Model.Records)
 {
     <details class="surface p-3 mb-3" open="@(record.Number <= 2)"><summary><strong>Record @record.Number · @record.Name</strong> <code>@record.Type</code></summary>

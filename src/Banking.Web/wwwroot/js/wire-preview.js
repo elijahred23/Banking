@@ -44,18 +44,58 @@
             const result = await response.json();
             if (!response.ok)
                 throw new Error(result.errors?.filter(Boolean).join(' ') || result.error || 'Unable to preview this message.');
+            content.removeAttribute('role');
             content.replaceChildren();
             for (const message of result.messages) {
                 const title = document.createElement('h3');
-                title.className = 'h6 mt-3';
+                title.className = 'h6 mb-0';
                 title.textContent = message.messageType + ' · ' + message.direction;
+                const toolbar = document.createElement('div');
+                toolbar.className = 'd-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-2';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'btn btn-outline-secondary btn-sm';
+                copy.textContent = 'Copy XML';
+                copy.setAttribute('aria-label', 'Copy ' + message.messageType + ' XML');
+                const copyStatus = document.createElement('span');
+                copyStatus.className = 'small text-secondary';
+                copyStatus.setAttribute('role', 'status');
+                copy.addEventListener('click', async () => {
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(message.xml);
+                        } else {
+                            const text = document.createElement('textarea');
+                            text.value = message.xml;
+                            text.setAttribute('aria-label', 'XML to copy');
+                            text.style.position = 'fixed';
+                            text.style.opacity = '0';
+                            dialog.append(text);
+                            try {
+                                text.select();
+                                if (!document.execCommand('copy'))
+                                    throw new Error('Clipboard unavailable');
+                            } finally {
+                                text.remove();
+                                copy.focus();
+                            }
+                        }
+                        copyStatus.textContent = 'XML copied.';
+                    } catch {
+                        copyStatus.textContent = 'Could not copy. Select the XML and copy it manually.';
+                    }
+                });
+                toolbar.append(title, copy, copyStatus);
                 const pre = document.createElement('pre');
                 pre.className = 'xml-viewer';
                 const code = document.createElement('code');
                 code.textContent = message.xml;
                 pre.append(code);
-                content.append(title, pre);
+                content.append(toolbar, pre);
             }
+            window.bankingXmlViewer.highlight(content);
+            if (result.visualization)
+                window.bankingWireVisualization.mount(content, result.visualization, form, result.messages);
         } catch (error) {
             content.setAttribute('role', 'alert');
             content.textContent = error.message || 'Unable to preview this message.';

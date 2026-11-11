@@ -1,7 +1,28 @@
 @model RailComparisonViewModel
 @{ ViewData["Title"] = "Compare payment rails"; }
 <div class="page-heading mb-4"><div><div class="eyebrow">DECISION GUIDE</div><h1>Compare payment rails</h1><p class="text-secondary mb-0">Choose a rail from the payment requirement—not from familiarity.</p></div><a asp-action="Index">Learning Center</a></div>
+<section class="surface mission-section mb-4" id="rail-experiment">
+    <div class="eyebrow">ONE PAYMENT · FOUR PATHS</div>
+    <h2 class="h4">Send a fictional payment across rails</h2>
+    <p>Pay Alex Morgan in USD. Domestic copies use a US beneficiary; the SWIFT copy uses a fictional overseas beneficiary bank. This compares equivalent payment intent, not interchangeable routing details.</p>
+    <p class="section-help">Browser-only teaching experiment. No payments, holds, messages, or ledger entries are saved. Timings are illustrative, exclude holidays and fees, and do not promise service levels. Each copy starts with its own fictional $20,000,000 sender balance and $0 recipient balance.</p>
+    <form id="rail-experiment-form" class="row g-3 align-items-end">
+        <div class="col-md-4"><label for="rail-amount" class="form-label">Payment amount (USD)</label><input id="rail-amount" class="form-control" type="number" min="0.01" max="20000000" step="0.01" value="125.00" required /></div>
+        <div class="col-md-4"><label for="rail-window" class="form-label">Submission conditions</label><select id="rail-window" class="form-select"><option value="open">Banking day, windows open</option><option value="closed">Weekend / after cutoff</option></select></div>
+        <div class="col-md-4"><button class="btn btn-primary" type="submit">Send four fictional copies</button></div>
+    </form>
+    <p class="mt-3">Predict first: which recipient can use the funds soonest, and which payment can still be returned after settlement?</p>
+    <noscript><p class="alert alert-info">Enable JavaScript to run the experiment. The reference guide below remains available.</p></noscript>
+    <div id="rail-run" hidden>
+        <div class="d-flex flex-wrap gap-2 align-items-center my-3"><button type="button" class="btn btn-outline-primary" id="rail-next">Advance to delivery</button><button type="button" class="btn btn-outline-secondary" id="rail-reset">Reset experiment</button><strong id="rail-stage" role="status" aria-live="polite"></strong></div>
+        <p id="rail-run-summary"></p>
+        <div class="rail-experiment-grid" id="rail-results"></div>
+        <p class="section-help mt-3">Stages align lifecycle milestones, not elapsed time. Advancing all four cards does not mean the rails settle simultaneously. A return request alone never restores funds.</p>
+    </div>
+</section>
 <div class="table-responsive surface"><table class="table rail-comparison mb-0"><thead><tr><th>Rail</th><th>Best for</th><th>Speed / finality</th><th>Limit</th><th>Format</th><th>Settlement</th><th>Key lesson</th></tr></thead><tbody>
 @foreach (var rail in Model.Rails) { <tr><th>@rail.Rail</th><td>@rail.BestFor</td><td><strong>@rail.Speed</strong><small>@rail.Finality</small></td><td>@rail.Limit</td><td>@rail.Format</td><td>@rail.Settlement</td><td>@rail.KeyLesson</td></tr> }
 </tbody></table></div>
 <section class="surface mission-section mt-4"><div class="eyebrow">DECISION PRACTICE</div><h2 class="h4">Test the comparison</h2><ol><li>Urgent domestic payment that must settle immediately: identify the participant availability and amount constraints.</li><li>International USD payment: identify the message network and the separate settlement arrangement.</li><li>Ten thousand scheduled payroll credits: identify why batching is useful.</li></ol></section>
+
+@section Scripts { <script src="~/js/rail-comparison.js" asp-append-version="true"></script> }

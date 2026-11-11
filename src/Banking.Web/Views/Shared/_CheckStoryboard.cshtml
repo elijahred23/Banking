@@ -1,0 +1,13 @@
+@model decimal
+<section class="surface section my-4" data-check-storyboard data-amount="@Model.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+    <div class="eyebrow">CHECK CLEARING PREVIEW</div>
+    <h2 class="h5">Follow an image through collection</h2>
+    <p>Fictional depositor with $1,000 opening ledger and available funds, no other holds or uncollected funds. Uses this check's amount. This storyboard does not read or change account balances, upload images, or replay processing.</p>
+    <div class="visual-check-images" aria-label="Image capture illustration"><div><strong>Front image</strong><span>MICR · amount · maker</span><small>Schematic only</small></div><div><strong>Back image</strong><span>Endorsement · capture</span><small>Schematic only</small></div></div>
+    <div class="visual-controls"><label>Collection outcome<select class="form-select" data-check-outcome><option value="collected">Collected</option><option value="returned">Returned before settlement</option></select></label><label>Story stage<input type="range" min="0" max="3" value="0" step="1" data-check-stage /></label></div>
+    <ol class="visual-route" data-check-route aria-label="Check collection stages"><li>Capture images</li><li>Image cash letter</li><li>Operator delivery</li><li>Collection outcome</li></ol>
+    <div data-check-explanation aria-live="polite"></div>
+    <div class="visual-balances" data-check-balances></div>
+    <p class="small text-secondary">Lab model: provisional credit stays outside ledger and available funds until acceptance. A pre-settlement return removes it without a settlement journal. Real availability policies and return timing differ.</p>
+    <noscript>Enable JavaScript to explore collection stages.</noscript>
+</section>

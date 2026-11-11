@@ -12,6 +12,7 @@
     @if (item.ReturnReason is not null) { <dt class="col-sm-3">Return / rejection</dt><dd class="col-sm-9">@item.ReturnCode @item.ReturnReason</dd> }
 </dl></section>
 
+<partial name="_CheckStoryboard" model="item.Amount" />
 <h2 class="h4 mt-4">Images</h2>
 <div class="surface table-responsive"><table class="table mb-0"><thead><tr><th>Side</th><th>File</th><th>Format</th><th>Bytes</th><th>SHA-256</th></tr></thead><tbody>
 @foreach (var image in item.Images.OrderBy(x => x.Side)) { <tr><td>@image.Side</td><td>@image.FileName</td><td>@image.ContentType</td><td>@image.SizeBytes</td><td><code class="small">@image.Sha256Hash</code></td></tr> }
