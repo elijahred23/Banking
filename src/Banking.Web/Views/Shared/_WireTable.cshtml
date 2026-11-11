@@ -12,6 +12,8 @@
             <td data-label="Direction"><span class="direction @wire.Direction.ToString().ToLowerInvariant()">@wire.Direction</span></td>
             <td data-label="Parties"><strong>@wire.SenderName</strong><br><span class="text-secondary">to @wire.ReceiverName</span></td>
             <td data-label="Status"><span class="status status-@wire.Status.ToString().ToLowerInvariant()">@wire.Status</span>
+                @if (wire.Status == WireStatus.Created && wire.Events.Any(x => x.EventType == "AwaitingLiquidity"))
+                { <div class="small">Awaiting customer funds · automatic recheck</div> }
                 @if (wire.Direction == WireDirection.Incoming && wire.Rail == PaymentRail.Fedwire && wire.Status == WireStatus.Received)
                 { <div class="small">@(wire.Events.Any(x => x.EventType == "BeneficiaryException") ? "Beneficiary exception · review required" : "Settled · awaiting posting")</div> }
             </td>

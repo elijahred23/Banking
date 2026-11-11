@@ -13,5 +13,6 @@
 
 @if (User.IsInRole(BankSecurity.Operations))
 {
+    <a class="btn btn-outline-primary mt-3" asp-action="Liquidity">Customer liquidity queue</a>
     <a class="btn btn-outline-primary mt-3" asp-action="NetworkReconciliation">Reconcile bank with simulated network</a>
 }

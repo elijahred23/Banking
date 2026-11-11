@@ -115,3 +115,5 @@ public sealed class SystemEventViewModel
     [Required, StringLength(35)] public string EventCode { get; set; } = "PARTICIPANT_NOTICE";
     [Required, StringLength(500, MinimumLength = 10)] public string Details { get; set; } = "";
 }
+
+public sealed record WireLiquidityViewModel(Bank Bank, IReadOnlyList<WireTransfer> Waiting);

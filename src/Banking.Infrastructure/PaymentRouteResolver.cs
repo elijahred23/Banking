@@ -29,34 +29,6 @@ public sealed class PaymentRouteResolver(IDbContextFactory<BankingDbContext> dbF
         IEnumerable<CorrespondentRelationship> source, Guid originBankId, Guid destinationBankId,
         string currencyCode, string rail)
     {
-        var currency = currencyCode.Trim().ToUpperInvariant();
-        var normalizedRail = rail.Trim().ToUpperInvariant();
-        var relationships = source.Where(x => x.IsActive && x.CurrencyCode == currency
-                && x.Rail == normalizedRail)
-            .OrderBy(x => x.Priority).ThenBy(x => x.Id).ToList();
-        var direct = relationships.FirstOrDefault(x =>
-            x.FromBankId == originBankId && x.ToBankId == destinationBankId);
-        if (direct is not null)
-            return Route(originBankId, destinationBankId, currency, normalizedRail,
-                new ResolvedPaymentRouteStep(1, originBankId, destinationBankId, "Direct"));
-
-        foreach (var firstLeg in relationships.Where(x => x.FromBankId == originBankId
-                     && x.ToBankId != originBankId && x.ToBankId != destinationBankId))
-        {
-            var secondLeg = relationships.FirstOrDefault(x => x.FromBankId == firstLeg.ToBankId
-                && x.ToBankId == destinationBankId);
-            if (secondLeg is null) continue;
-            return Route(originBankId, destinationBankId, currency, normalizedRail,
-                new ResolvedPaymentRouteStep(1, originBankId, firstLeg.ToBankId, "OriginToIntermediary"),
-                new ResolvedPaymentRouteStep(2, firstLeg.ToBankId, destinationBankId, "IntermediaryToBeneficiary"));
-        }
-
-        throw new InvalidOperationException(
-            $"No active {normalizedRail} correspondent route found from bank {originBankId} " +
-            $"to bank {destinationBankId} for {currency}.");
+        return CorrespondentRoutingPolicy.Resolve(source, originBankId, destinationBankId, currencyCode, rail);
     }
-
-    private static ResolvedPaymentRoute Route(Guid origin, Guid destination, string currency,
-        string rail, params ResolvedPaymentRouteStep[] steps) =>
-        new(origin, destination, currency, rail, steps);
 }

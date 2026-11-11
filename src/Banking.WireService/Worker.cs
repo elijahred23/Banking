@@ -13,8 +13,40 @@ public sealed class Worker(
     IWireComplianceService compliance,
     ILogger<Worker> logger) : BackgroundService
 {
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
-        bus.ConsumeAsync<WireCreated>(Queues.WireCreated, ProcessAsync, stoppingToken);
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
+        bus.ConsumeAsync<WireCreated>(Queues.WireCreated, ProcessAsync, stoppingToken),
+        RecheckLiquidityAsync(stoppingToken));
+
+    private async Task RecheckLiquidityAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                await using var db = await dbFactory.CreateDbContextAsync(ct);
+                var waiting = await db.WireTransfers.AsNoTracking()
+                    .Where(x => x.Status == WireStatus.Created && db.WireEvents.Any(e =>
+                        e.WireTransferId == x.Id && e.EventType == "AwaitingLiquidity"))
+                    .OrderBy(x => x.CreatedDate).ThenBy(x => x.Id)
+                    .Select(x => x.Id).ToListAsync(ct);
+                foreach (var id in waiting)
+                {
+                    try { await ProcessAsync(new WireCreated(id), ct); }
+                    catch (DbUpdateConcurrencyException)
+                    {
+                        // Account balances and wire status are optimistic concurrency tokens.
+                        // A competing reservation won; reload on the next funding scan.
+                        logger.LogInformation("Wire {WireId} will retry after a concurrent reservation", id);
+                    }
+                }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                logger.LogError(ex, "Liquidity scan failed; durable waiting wires remain eligible for retry");
+            }
+        }
+    }
 
     private async Task ProcessAsync(WireCreated command, CancellationToken cancellationToken)
     {
@@ -46,8 +78,6 @@ public sealed class Worker(
             : institutionTransfer && sender.MasterAccountBalance < wire.Amount
                 ? "Insufficient master-account liquidity."
             : !institutionTransfer && account is null ? "Originating account was not found."
-            : !institutionTransfer && account!.AvailableBalance < wire.Amount
-                ? "Insufficient available customer funds."
             : null;
         if (rejection is not null)
         {
@@ -55,6 +85,18 @@ public sealed class Worker(
             db.WireEvents.Add(Event(wire.Id, "Rejected", rejection));
             await db.SaveChangesAsync(cancellationToken);
             logger.LogWarning("Wire {WireId} rejected: {Reason}", wire.Id, rejection);
+            return;
+        }
+
+        if (!institutionTransfer && account!.AvailableBalance < wire.Amount)
+        {
+            if (!await db.WireEvents.AnyAsync(x => x.WireTransferId == wire.Id
+                    && x.EventType == "AwaitingLiquidity", cancellationToken))
+            {
+                db.WireEvents.Add(Event(wire.Id, "AwaitingLiquidity",
+                    "Awaiting available customer funds; no hold or accounting posted. Automatically rechecked every 15 seconds in creation order."));
+                await db.SaveChangesAsync(cancellationToken);
+            }
             return;
         }
 
@@ -94,7 +136,7 @@ public sealed class Worker(
             db.PaymentRoutes.Add(paymentRoute);
             db.WireEvents.Add(Event(wire.Id, PaymentEventTypes.RouteSelected,
                 $"Correspondent route selected: {string.Join(" → ", resolved.Steps
-                    .Select(x => names[x.FromBankId]).Append(names[resolved.Steps[^1].ToBankId]))}."));
+                    .Select(x => names[x.FromBankId]).Append(names[resolved.Steps[^1].ToBankId]))}. Fewest active legs selected; configured priority breaks ties."));
         }
 
         if (!institutionTransfer) account!.HeldBalance += wire.Amount;
@@ -103,8 +145,6 @@ public sealed class Worker(
             institutionTransfer
                 ? $"Validation passed; {wire.Amount:C} of master-account liquidity is available."
                 : $"Validation passed; {wire.Amount:C} placed on hold. Ledger balance is unchanged."));
-        await db.SaveChangesAsync(cancellationToken);
-        await bus.PublishAsync(Queues.WireValidated, new { wire.Id, wire.CorrelationId }, cancellationToken);
 
         var messageType = institutionTransfer ? "pacs.009" : "pacs.008";
         var customerAccount = account!;
@@ -145,12 +185,14 @@ public sealed class Worker(
         WireWorkflow.Transition(wire, WireStatus.ReadyForFed);
         db.WireEvents.Add(Event(wire.Id, "IsoGenerated",
             $"{messageType} generated with head.001 business header and UETR; {wire.Rail} lab profile validation passed."));
-        await db.SaveChangesAsync(cancellationToken);
-        await bus.PublishAsync(Queues.WireIsoGenerated, new { wire.Id, MessageType = messageType }, cancellationToken);
-        await bus.PublishAsync(Queues.WireReadyForFed,
+        db.OutboxMessages.Add(Outbox.Message(Queues.WireValidated,
+            new { wire.Id, wire.CorrelationId }, wire.BankId));
+        db.OutboxMessages.Add(Outbox.Message(Queues.WireIsoGenerated,
+            new { wire.Id, MessageType = messageType }, wire.BankId));
+        db.OutboxMessages.Add(Outbox.Message(Queues.WireReadyForFed,
             new WireReadyForFed(wire.Id, wire.CorrelationId, sender.Id, receiver.Id, wire.Amount, xml,
-                messageType, wire.Scenario),
-            cancellationToken);
+                messageType, wire.Scenario), wire.BankId));
+        await db.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Wire {WireId} is ready for {Rail}", wire.Id, wire.Rail);
     }
 

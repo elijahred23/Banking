@@ -68,6 +68,34 @@ public sealed class PaymentRouteResolverTests
         Assert.Contains("No active SWIFT correspondent route", error.Message);
     }
 
+    [Fact]
+    public void Resolve_supports_multiple_intermediaries_and_ignores_cycles()
+    {
+        var second = Guid.NewGuid();
+        var relationships = new[] {
+            Edge(_origin, _origin, 0), Edge(_origin, _intermediary, 1),
+            Edge(_intermediary, _origin, 0), Edge(_intermediary, second, 1),
+            Edge(second, _destination, 1) };
+        var route = PaymentRouteResolver.ResolveFromRelationships(relationships,
+            _origin, _destination, "USD", "SWIFT");
+        Assert.Equal(3, route.Steps.Count);
+        Assert.Equal("IntermediaryToIntermediary", route.Steps[1].StepType);
+        Assert.Equal(new[] { 1, 2, 3 }, route.Steps.Select(x => x.StepNumber));
+        Assert.Equal(_destination, route.Steps[^1].ToBankId);
+    }
+
+    [Fact]
+    public void Resolve_prefers_shorter_path_over_higher_priority_long_path()
+    {
+        var second = Guid.NewGuid();
+        var route = PaymentRouteResolver.ResolveFromRelationships(new[] {
+            Edge(_origin, _intermediary, 1), Edge(_intermediary, second, 1),
+            Edge(second, _destination, 1), Edge(_origin, second, 100) },
+            _origin, _destination, "USD", "SWIFT");
+        Assert.Equal(2, route.Steps.Count);
+        Assert.Equal(second, route.Steps[0].ToBankId);
+    }
+
     private static CorrespondentRelationship Edge(Guid from, Guid to, int priority,
         string type = "Intermediary", bool active = true) => new()
     {

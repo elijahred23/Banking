@@ -29,6 +29,20 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
     }
 
     [HttpGet, Authorize(Roles = BankSecurity.Operations)]
+    public async Task<IActionResult> Liquidity(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        var waiting = await db.WireTransfers.AsNoTracking()
+            .Where(x => x.BankId == bankId && x.Status == WireStatus.Created
+                && x.Events.Any(e => e.EventType == "AwaitingLiquidity"))
+            .Include(x => x.Events).AsSplitQuery()
+            .OrderBy(x => x.CreatedDate).ThenBy(x => x.Id).ToListAsync(token);
+        var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
+        return View(new WireLiquidityViewModel(bank, waiting));
+    }
+
+    [HttpGet, Authorize(Roles = BankSecurity.Operations)]
     public async Task<IActionResult> NetworkReconciliation(CancellationToken token)
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);

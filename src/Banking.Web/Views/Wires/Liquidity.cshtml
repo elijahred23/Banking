@@ -1,0 +1,14 @@
+@model WireLiquidityViewModel
+@{ ViewData["Title"] = "Customer wire liquidity queue"; }
+<div class="page-heading mb-4">
+    <div><div class="eyebrow">@Model.Bank.Name · Simulation</div><h1>@ViewData["Title"]</h1></div>
+    <a class="btn btn-outline-primary" asp-action="Index">All wires</a>
+</div>
+<p>@Model.Waiting.Count wires awaiting customer funds · @Model.Waiting.Sum(x => x.Amount).ToString("C") total demand.</p>
+<p>Approved customer wires below are rechecked every 15 seconds while the wire worker is running,
+    in creation order. Fundable wires may proceed while larger wires continue waiting.
+    Waiting wires have no reservation or accounting posting. Funds are reserved when validation succeeds;
+    settlement and beneficiary credit remain separate stages.</p>
+<p class="text-secondary">Learning simulator: this queue covers customer account liquidity. Master-account and correspondent
+    liquidity, business calendars, priorities, and cutoff policies are separate controls.</p>
+<partial name="_WireTable" model="Model.Waiting" />
