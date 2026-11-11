@@ -11,7 +11,10 @@
             <td data-label="Rail">@wire.Rail<br><code>@(wire.TransferType == WireTransferType.FinancialInstitutionCreditTransfer ? "pacs.009" : "pacs.008")</code></td>
             <td data-label="Direction"><span class="direction @wire.Direction.ToString().ToLowerInvariant()">@wire.Direction</span></td>
             <td data-label="Parties"><strong>@wire.SenderName</strong><br><span class="text-secondary">to @wire.ReceiverName</span></td>
-            <td data-label="Status"><span class="status status-@wire.Status.ToString().ToLowerInvariant()">@wire.Status</span></td>
+            <td data-label="Status"><span class="status status-@wire.Status.ToString().ToLowerInvariant()">@wire.Status</span>
+                @if (wire.Direction == WireDirection.Incoming && wire.Rail == PaymentRail.Fedwire && wire.Status == WireStatus.Received)
+                { <div class="small">@(wire.Events.Any(x => x.EventType == "BeneficiaryException") ? "Beneficiary exception · review required" : "Settled · awaiting posting")</div> }
+            </td>
             <td data-label="Amount" class="text-end fw-semibold">@wire.Amount.ToString("C")</td>
             <td data-label="Details" class="text-end payment-row-action"><a asp-controller="Wires" asp-action="Details" asp-route-id="@wire.Id">Details</a></td>
         </tr>

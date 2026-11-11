@@ -128,7 +128,7 @@ public sealed class WirePreviewTests
     {
         var iso = new IsoMessageService();
         return new(factory, iso, new CbprPlusMessageService(iso),
-            new WireIsoMessageService(iso), new NonValueMessageWorkflowService(iso))
+            new WireIsoMessageService(iso), new NonValueMessageWorkflowService(iso), new IncomingWirePostingService(factory))
         {
             ControllerContext = new() { HttpContext = new DefaultHttpContext
             {

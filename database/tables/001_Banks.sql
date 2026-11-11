@@ -26,3 +26,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Banks
     CREATE UNIQUE INDEX IX_Banks_RoutingNumber ON dbo.Banks (RoutingNumber);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Banks') AND name = N'IX_Banks_Bic')
     CREATE UNIQUE INDEX IX_Banks_Bic ON dbo.Banks (Bic);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Banks') AND name = N'IX_Banks_FedParticipantId')
+    CREATE UNIQUE INDEX IX_Banks_FedParticipantId ON dbo.Banks(FedParticipantId);

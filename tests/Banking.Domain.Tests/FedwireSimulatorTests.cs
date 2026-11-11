@@ -112,7 +112,15 @@ public sealed class FedwireSimulatorTests
             var iso = new IsoMessageService();
             var wire = new WireTransfer { Amount = 25, SenderName = "Sender", ReceiverName = "Receiver",
                 BeneficiaryAccountNumber = "654321" };
-            var payment = Payment() with { CorrelationId = wire.CorrelationId,
+            wire.BankId = sender.Id;
+            wire.SenderBankId = sender.Id;
+            wire.ReceiverBankId = receiver.Id;
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.WireTransfers.Add(wire);
+                await db.SaveChangesAsync();
+            }
+            var payment = Payment() with { WireId = wire.Id, CorrelationId = wire.CorrelationId,
                 SenderBankId = sender.Id, ReceiverBankId = receiver.Id,
                 XmlPayload = iso.CreatePacs008(wire, sender, receiver, "123456", "654321") };
             var service = new FedwireSettlementService(factory, iso);
@@ -128,8 +136,16 @@ public sealed class FedwireSimulatorTests
             var receipts = await verification.BalanceReceipts.ToListAsync();
             Assert.Equal(2, receipts.Count);
             Assert.Equal(0m, receipts.Sum(x => x.Delta));
-            var rejected = await service.SettleAsync(payment with { CorrelationId = Guid.NewGuid(),
-                Scenario = ProcessingScenario.FedRejects }, default);
+            var rejectedWire = new WireTransfer { BankId = sender.Id, SenderBankId = sender.Id,
+                ReceiverBankId = receiver.Id, Amount = 25, SenderName = "Sender", ReceiverName = "Receiver",
+                BeneficiaryAccountNumber = "654321" };
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.WireTransfers.Add(rejectedWire);
+                await db.SaveChangesAsync();
+            }
+            var rejected = await service.SettleAsync(payment with { WireId = rejectedWire.Id,
+                CorrelationId = rejectedWire.CorrelationId, Scenario = ProcessingScenario.FedRejects }, default);
             Assert.Equal("RJCT", rejected.StatusCode);
             Assert.All(await verification.Banks.AsNoTracking().Select(x => x.MasterAccountBalance).ToListAsync(),
                 balance => Assert.Equal(75m, balance));

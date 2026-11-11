@@ -19,6 +19,8 @@ public static class ServiceRegistration
         services.AddSingleton<MessageReliabilityStore>();
         services.AddSingleton<OutboxDispatcher>();
         services.AddSingleton<PaymentReconciliationService>();
+        services.AddSingleton<IncomingWirePostingService>();
+        services.AddSingleton<BankNetworkReconciliationService>();
         services.AddSingleton<AchBatchProcessor>();
         services.AddSingleton<BankOperationalJobService>();
         services.AddSingleton<BankReportBuilder>();

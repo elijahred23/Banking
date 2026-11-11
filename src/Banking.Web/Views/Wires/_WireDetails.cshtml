@@ -15,6 +15,21 @@
     <span class="status status-@wire.Status.ToString().ToLowerInvariant() status-large">@wire.Status</span>
 </div>
 
+@if (wire.Direction == WireDirection.Incoming && wire.Rail == PaymentRail.Fedwire && wire.Status == WireStatus.Received)
+{
+    <section class="surface section mb-4">
+        <h2 class="h5">Settled · awaiting beneficiary posting</h2>
+        <p>Simulated network settlement is final. Review the beneficiary account and original ISO message before posting. An unknown account remains in this review queue.</p>
+        @if (User.IsInRole(BankSecurity.Operations))
+        {
+            <form asp-action="PostIncoming" method="post">
+                <input type="hidden" name="id" value="@wire.Id" />
+                <button class="btn btn-primary" type="submit">Post beneficiary credit</button>
+            </form>
+        }
+    </section>
+}
+
 <section class="surface learning-debrief mb-4">
     <div><div class="eyebrow">LEARNING DEBRIEF</div><h2 class="h4">@Model.Debrief.Outcome</h2><p>@Model.Debrief.Explanation</p><small>@Model.Debrief.ProductionNote</small></div>
     <div><strong>Verify with evidence</strong><ul>@foreach (var item in Model.Debrief.Checkpoints) { <li>@item</li> }</ul><a asp-controller="Learning" asp-action="Index">Continue learning</a></div>
@@ -27,14 +42,8 @@
         <h2 class="h5">Payment approval required</h2>
         <p class="text-secondary">Created by <strong>@(wire.CreatedBy ?? "legacy user")</strong>. No ISO message has been sent and no funds have been held.</p>
         @if (User.IsInRole(BankSecurity.PaymentApprover)
-            && (User.HasAllPermissions()
-                || !string.Equals(wire.CreatedBy, User.Identity?.Name, StringComparison.OrdinalIgnoreCase)))
+            && !string.Equals(wire.CreatedBy, User.Identity?.Name, StringComparison.OrdinalIgnoreCase))
         {
-            @if (User.HasAllPermissions()
-                && string.Equals(wire.CreatedBy, User.Identity?.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                <div class="alert alert-info">Lab override: this persona can release its own payment. Real dual-control workflows require a different approver.</div>
-            }
             <div class="d-flex flex-wrap gap-2">
                 <form asp-action="DecideApproval" method="post">
                     <input type="hidden" name="id" value="@wire.Id" />

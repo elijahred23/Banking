@@ -14,7 +14,8 @@ namespace Banking.Web.Controllers;
 [Authorize]
 public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactory,
     IIsoMessageService iso, ICbprPlusMessageService cbpr,
-    IWireIsoMessageService wireMessages, INonValueMessageWorkflowService nonValueMessages) : Controller
+    IWireIsoMessageService wireMessages, INonValueMessageWorkflowService nonValueMessages,
+    IncomingWirePostingService incomingPosting) : Controller
 {
     public async Task<IActionResult> Index(WireDirection? direction, CancellationToken token)
     {
@@ -22,9 +23,29 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
         var query = db.WireTransfers.Where(x => x.BankId == bankId);
         if (direction is not null) query = query.Where(x => x.Direction == direction);
-        var wires = await query.OrderByDescending(x => x.CreatedDate).AsNoTracking().ToListAsync(token);
+        var wires = await query.Include(x => x.Events).AsSplitQuery().OrderByDescending(x => x.CreatedDate).AsNoTracking().ToListAsync(token);
         var bank = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
         return View(new WireIndexViewModel(bank, direction, wires));
+    }
+
+    [HttpGet, Authorize(Roles = BankSecurity.Operations)]
+    public async Task<IActionResult> NetworkReconciliation(CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        return View(await new BankNetworkReconciliationService(dbFactory).BuildAsync(bankId, token));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = BankSecurity.Operations)]
+    public async Task<IActionResult> PostIncoming(Guid id, CancellationToken token)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(token);
+        var bankId = await ActiveBank.ResolveAsync(HttpContext, db, token);
+        if (!await db.WireTransfers.AnyAsync(x => x.Id == id && x.BankId == bankId
+            && x.Direction == WireDirection.Incoming, token)) return NotFound();
+        var error = await incomingPosting.PostAsync(bankId, id, User.Identity!.Name!, token);
+        TempData[error is null ? "Notice" : "Error"] = error ?? "Beneficiary credit posted. Network settlement is final.";
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     [HttpGet]
@@ -42,25 +63,11 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .AsNoTracking()
             .ToListAsync(token);
 
-        var destinations = await db.Accounts
-            .Where(x => x.Customer.BankId != bankId)
-            .OrderBy(x => x.Customer.Bank.Name)
-            .ThenBy(x => x.Customer.Name)
-            .Select(x => new
-            {
-                BankName = x.Customer.Bank.Name,
-                CustomerName = x.Customer.Name,
-                x.AccountNumber,
-                x.Customer.Bank.RoutingNumber,
-                x.Customer.Bank.Bic,
-                x.Customer.Bank.CountryCode,
-                x.Customer.Bank.FedNowEnabled,
-                x.Customer.Bank.FedNowReceiveEnabled,
-                x.Customer.Bank.FedNowOnline,
-                x.Customer.Bank.SwiftEnabled
-            })
-            .AsNoTracking()
-            .ToListAsync(token);
+        var destinations = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
+            .Select(x => new { BankName = x.Name, CustomerName = "Provided by beneficiary",
+                AccountNumber = "Enter beneficiary instructions", x.RoutingNumber, x.Bic, x.CountryCode,
+                x.FedNowEnabled, x.FedNowReceiveEnabled, x.FedNowOnline, x.SwiftEnabled })
+            .AsNoTracking().ToListAsync(token);
 
         var domestic = destinations.Where(x => x.CountryCode == bank.CountryCode)
             .Select(x => new WireInstructionDestinationViewModel(x.BankName, x.CustomerName, x.AccountNumber,
@@ -193,17 +200,13 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 return RedirectToAction(nameof(MessageWorkflows));
             }
 
-            var creditorAccount = await db.Accounts.Include(x => x.Customer)
-                .SingleOrDefaultAsync(x => x.Customer.BankId == exchange.BankId
-                    && x.AccountNumber == creditorAccountNumber, token);
             wire = new WireTransfer
             {
                 BankId = bankId, SenderBankId = bankId, ReceiverBankId = exchange.BankId,
-                FromAccountId = debtorAccount.Id, ToAccountId = creditorAccount?.Id,
+                FromAccountId = debtorAccount.Id,
                 Direction = WireDirection.Outgoing, Status = WireStatus.Created,
                 Amount = exchange.Amount!.Value, SenderName = debtorAccount.Customer.Name,
-                ReceiverName = creditorAccount?.Customer.Name
-                    ?? ReadPaymentParty(request.XmlPayload, "Cdtr"),
+                ReceiverName = ReadPaymentParty(request.XmlPayload, "Cdtr"),
                 BeneficiaryAccountNumber = creditorAccountNumber,
                 Scenario = ProcessingScenario.Standard, Rail = exchange.Rail,
                 TransferType = WireTransferType.CustomerCreditTransfer,
@@ -410,13 +413,10 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                 ? new string(model.BeneficiaryAccountNumber!.Where(char.IsLetterOrDigit).ToArray())
                     .ToUpperInvariant()
                 : model.BeneficiaryAccountNumber!.Trim();
-        var receiverAccount = isInstitutionTransfer ? null
-            : await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
-                x.Customer.BankId == model.ReceiverBankId && x.AccountNumber == beneficiaryAccount, token);
         var wire = new WireTransfer
         {
             BankId = bankId, SenderBankId = bankId, ReceiverBankId = model.ReceiverBankId,
-            FromAccountId = account?.Id, ToAccountId = receiverAccount?.Id,
+            FromAccountId = account?.Id,
             Direction = WireDirection.Outgoing, Status = WireStatus.PendingApproval, Amount = model.Amount,
             SenderName = isInstitutionTransfer ? senderBank.Name : account!.Customer.Name,
             ReceiverName = isInstitutionTransfer ? receiverBank!.Name : model.ReceiverName!.Trim(),
@@ -463,7 +463,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         }
         var isSelfApproval = string.Equals(wire.CreatedBy, User.Identity!.Name,
             StringComparison.OrdinalIgnoreCase);
-        if (!User.HasAllPermissions() && isSelfApproval)
+        if (isSelfApproval)
         {
             TempData["Error"] = "The payment creator cannot approve their own payment.";
             return RedirectToAction(nameof(Details), new { id });
@@ -479,9 +479,7 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             WireTransferId = wire.Id,
             EventType = approve ? "Approved" : "ApprovalRejected",
             Description = approve
-                ? User.HasAllPermissions() && isSelfApproval
-                    ? $"Payment released by {User.Identity.Name} using the lab all-permissions override."
-                    : $"Payment released by {User.Identity.Name} under dual control."
+                ? $"Payment released by {User.Identity.Name} under dual control."
                 : $"Payment rejected by {User.Identity.Name}: {NormalizeDecisionReason(reason)}"
         });
         try
@@ -1034,12 +1032,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Select(x => new SelectListItem(x == PaymentRail.SwiftCbprPlus
                 ? "SWIFT international wire (CBPR+)" : x.ToString(), ((int)x).ToString())).ToList();
         var sender = await db.Banks.AsNoTracking().SingleAsync(x => x.Id == bankId, token);
-        var destinations = await db.Accounts.Where(x => x.Customer.BankId != bankId)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new WireDestinationChoice(x.Customer.BankId, x.Customer.Bank.Name,
-                x.Customer.Name, x.AccountNumber, x.Customer.Bank.CountryCode,
-                x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowReceiveEnabled && x.Customer.Bank.FedNowOnline,
-                x.Customer.Bank.SwiftEnabled))
+        var destinations = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
+            .Select(x => new WireDestinationChoice(x.Id, x.Name, "Beneficiary supplied separately", "", x.CountryCode,
+                x.FedNowEnabled && x.FedNowReceiveEnabled && x.FedNowOnline, x.SwiftEnabled))
             .AsNoTracking().ToListAsync(token);
         model.SenderBankName = sender.Name;
         model.SenderMasterAccountBalance = sender.MasterAccountBalance;
@@ -1099,11 +1094,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             .Include(x => x.Bank).Include(x => x.CounterpartyBank).Include(x => x.Messages)
             .OrderByDescending(x => x.CreatedDate).AsSplitQuery().AsNoTracking()
             .Take(30).ToListAsync(token);
-        var debtorAccounts = await db.Accounts.Where(x => x.Customer.BankId != bankId)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new WorkflowDebtorChoice(x.Customer.BankId, x.Customer.Bank.Name,
-                x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance,
-                x.Customer.Bank.FedNowEnabled && x.Customer.Bank.FedNowReceiveEnabled && x.Customer.Bank.FedNowOnline))
+        var debtorAccounts = await db.Banks.Where(x => x.Id != bankId).OrderBy(x => x.Name)
+            .Select(x => new WorkflowDebtorChoice(x.Id, x.Name, "Debtor supplied separately", "", 0m,
+                x.FedNowEnabled && x.FedNowReceiveEnabled && x.FedNowOnline))
             .AsNoTracking().ToListAsync(token);
         return new MessageWorkflowsViewModel
         {
@@ -1125,8 +1118,6 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
                     ? PaymentRail.FedNow : PaymentRail.Fedwire;
             return WireOption($"{x.CustomerName} · {x.BankName}", $"{x.AccountNumber} · recommended {rail}",
                 (nameof(CreateWireViewModel.ReceiverBankId), x.BankId.ToString()),
-                (nameof(CreateWireViewModel.ReceiverName), x.CustomerName),
-                (nameof(CreateWireViewModel.BeneficiaryAccountNumber), x.AccountNumber),
                 (nameof(CreateWireViewModel.Rail), Convert.ToInt32(rail).ToString()));
         }).ToList();
         var accountOptions = accounts.Select(x => WireOption($"{x.CustomerName} · {x.AccountNumber}",
@@ -1141,9 +1132,9 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
             [nameof(CreateWireViewModel.TransferType)] = WireEnumChoices<WireTransferType>(nameof(CreateWireViewModel.TransferType), "Payment types", "Customer transfers use an account; institution transfers use master-account liquidity."),
             [nameof(CreateWireViewModel.Rail)] = WireEnumChoices<PaymentRail>(nameof(CreateWireViewModel.Rail), "Supported wire rails", "Fedwire and FedNow are domestic; SWIFT CBPR+ is international.", x => x is PaymentRail.Fedwire or PaymentRail.FedNow or PaymentRail.SwiftCbprPlus),
             [nameof(CreateWireViewModel.FromAccountId)] = WireChoice("Funded source accounts", "Only accounts owned by the active bank are accepted.", accountOptions),
-            [nameof(CreateWireViewModel.ReceiverBankId)] = WireChoice("Database beneficiaries", "Selecting a beneficiary fills bank, name, account, and recommended rail.", beneficiaryOptions),
-            [nameof(CreateWireViewModel.ReceiverName)] = WireChoice("Database beneficiaries", "Selecting a beneficiary fills all receiving fields.", beneficiaryOptions),
-            [nameof(CreateWireViewModel.BeneficiaryAccountNumber)] = WireChoice("Database beneficiaries", "Domestic accounts and stored international IBANs are listed.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.ReceiverBankId)] = WireChoice("Network participants", "Selecting a participant fills its bank and recommended rail; enter the beneficiary instructions separately.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.ReceiverName)] = WireChoice("Network participants", "Enter the beneficiary name supplied with the payment instructions.", beneficiaryOptions),
+            [nameof(CreateWireViewModel.BeneficiaryAccountNumber)] = WireChoice("Network participants", "Enter the account or IBAN supplied by the beneficiary.", beneficiaryOptions),
             [nameof(CreateWireViewModel.Amount)] = WireChoice("Available source balances", "Customer transfers cannot exceed the selected account's available balance.",
                 accounts.Where(x => x.AvailableBalance > 0).Select(x => WireOption($"{Math.Min(10_000m, x.AvailableBalance):C} from {x.CustomerName}",
                     $"{x.AvailableBalance:C} available", (nameof(CreateWireViewModel.FromAccountId), x.Id.ToString()),
@@ -1158,8 +1149,8 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         var creditorOptions = accounts.Select(x => WireOption($"{x.CustomerName} · {x.AccountNumber}",
             $"{x.AvailableBalance:C} available", ("rfp-account", x.Id.ToString()))).ToList();
         var debtorOptions = debtors.Select(x => WireOption($"{x.CustomerName} · {x.BankName}",
-            $"{x.AccountNumber} · {x.AvailableBalance:C} available",
-            ("rfp-bank", x.BankId.ToString()), ("rfp-name", x.CustomerName), ("rfp-debtor-account", x.AccountNumber),
+            "Enter debtor name and account separately",
+            ("rfp-bank", x.BankId.ToString()),
             ("rfp-rail", sender.FedNowRequestForPaymentEnabled && sender.FedNowOnline && x.FedNowAvailable
                 ? PaymentRail.FedNow.ToString() : PaymentRail.Fedwire.ToString()))).ToList();
         var remittances = exchanges.Where(x => x.Type == MessageExchangeType.RequestForPayment)
@@ -1171,12 +1162,12 @@ public sealed class WiresController(IDbContextFactory<BankingDbContext> dbFactor
         return new()
         {
             ["rfp-account"] = WireChoice("Creditor accounts", "Accounts owned by the active bank.", creditorOptions),
-            ["rfp-bank"] = WireChoice("Database debtors", "Selecting a customer fills debtor bank, name, account, and an available rail.", debtorOptions),
-            ["rfp-name"] = WireChoice("Database debtors", "Selecting a customer fills all debtor fields.", debtorOptions),
-            ["rfp-debtor-account"] = WireChoice("Database debtors", "Stored debtor accounts and balances are shown.", debtorOptions),
+            ["rfp-bank"] = WireChoice("Database debtors", "Select a debtor bank and enter its customer instructions separately.", debtorOptions),
+            ["rfp-name"] = WireChoice("Database debtors", "Enter the debtor name supplied with the request instructions.", debtorOptions),
+            ["rfp-debtor-account"] = WireChoice("Database debtors", "Enter debtor instructions supplied by the counterparty.", debtorOptions),
             ["rfp-amount"] = WireChoice("Debtor available balances", "Choose a conservative sample amount tied to a stored debtor account.", debtors.Where(x => x.AvailableBalance > 0)
                 .Select(x => WireOption($"{Math.Min(1_000m, x.AvailableBalance):C} from {x.CustomerName}", $"{x.AvailableBalance:C} available",
-                    ("rfp-bank", x.BankId.ToString()), ("rfp-name", x.CustomerName), ("rfp-debtor-account", x.AccountNumber),
+                    ("rfp-bank", x.BankId.ToString()),
                     ("rfp-amount", Math.Min(1_000m, x.AvailableBalance).ToString("0.00")))).ToList()),
             ["rfp-rail"] = WireChoice("Request rails", "FedNow is selected only for online database participants.",
                 [WireOption("Fedwire", null, ("rfp-rail", "Fedwire")), WireOption("FedNow", null, ("rfp-rail", "FedNow"))]),

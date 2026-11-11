@@ -10,3 +10,8 @@
     <a asp-action="Index" asp-route-direction="Incoming" class="@(Model.Direction == WireDirection.Incoming ? "is-selected" : "")" aria-current="@(Model.Direction == WireDirection.Incoming ? "page" : null)">Incoming</a>
 </nav>
 <partial name="_WireTable" model="Model.Wires" />
+
+@if (User.IsInRole(BankSecurity.Operations))
+{
+    <a class="btn btn-outline-primary mt-3" asp-action="NetworkReconciliation">Reconcile bank with simulated network</a>
+}

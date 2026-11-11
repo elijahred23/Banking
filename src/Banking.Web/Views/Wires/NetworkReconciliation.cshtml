@@ -1,0 +1,16 @@
+@model IReadOnlyList<Banking.Infrastructure.BankNetworkReconciliationRow>
+@{ ViewData["Title"] = "Bank network reconciliation"; }
+<h1>Bank network reconciliation</h1>
+<p>Simulated final Fedwire settlements involving your active bank, compared with your bank's delivery, posting, and journals. Missing journals require review; beneficiary posting may still be pending. Returns retain their original settlement and may add separate journals.</p>
+<div class="table-responsive">
+<table class="table">
+    <thead><tr><th>Correlation</th><th>Direction</th><th>Amount</th><th>Settlement reference</th><th>Delivery</th><th>Posting</th><th>Accounting</th></tr></thead>
+    <tbody>
+    @foreach (var item in Model)
+    {
+        <tr><td>@item.CorrelationId</td><td>@item.Direction</td><td>@item.Amount.ToString("C")</td><td>@item.SettlementReference</td><td>@item.Delivery</td><td>@item.Posting</td><td>@item.Accounting</td></tr>
+    }
+    </tbody>
+</table>
+</div>
+<a asp-action="Index" asp-route-direction="Incoming">Incoming worklist</a>

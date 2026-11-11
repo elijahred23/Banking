@@ -6,7 +6,7 @@
         && User.IsInRole(BankSecurity.PaymentApprover)
         && User.IsInRole(BankSecurity.ComplianceOfficer)
         && User.IsInRole(BankSecurity.Operations);
-    var activeRoleKey = hasAllPermissions ? "all"
+    var activeRoleKey = User.IsInRole(BankSecurity.NetworkOperator) ? "network" : hasAllPermissions ? "all"
         : User.IsInRole(BankSecurity.PaymentCreator) ? "maker"
         : User.IsInRole(BankSecurity.PaymentApprover) ? "approver"
         : User.IsInRole(BankSecurity.ComplianceOfficer) ? "compliance"
@@ -86,6 +86,7 @@
                                         <option value="maker" selected="@(activeRoleKey == "maker")">Maker — creates payments</option>
                                         <option value="approver" selected="@(activeRoleKey == "approver")">Approver — approves payments</option>
                                         <option value="compliance" selected="@(activeRoleKey == "compliance")">Compliance — reviews screening</option>
+                                        <option value="network" selected="@(activeRoleKey == "network")">Network operator — participant and settlement oversight</option>
                                         <option value="operations" selected="@(activeRoleKey == "operations")">Operations — monitors processing</option>
                                     </select>
                                 </div>

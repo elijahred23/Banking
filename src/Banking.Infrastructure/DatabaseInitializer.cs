@@ -36,11 +36,33 @@ internal static class DatabaseInitializer
         }
         if (seed)
         {
+            await EnsureNetworkBanksAsync(db, cancellationToken);
             await EnsureInternationalBanksAsync(db, cancellationToken);
             await EnsureCorrespondentRoutesAsync(db, cancellationToken);
             await TrafficPopulation.SeedAsync(factory, cancellationToken);
             await PayrollRosterSeeder.SeedAsync(factory, cancellationToken);
         }
+    }
+
+    private static async Task EnsureNetworkBanksAsync(BankingDbContext db, CancellationToken token)
+    {
+        // Explicitly synthetic identities; never replace existing participants or balances.
+        var desired = new[] {
+            ("Central Oklahoma Bank", "990000001", "LABBANKA", "COBAUS44XXX", 5_000_000m),
+            ("First Prairie Bank", "990000002", "LABBANKB", "FPBAUS44XXX", 3_000_000m),
+            ("Red River Network Bank", "990000003", "LABBANKC", "RRNBUS44XXX", 2_500_000m),
+            ("Heartland Trust Bank", "990000004", "LABBANKD", "HTBAUS44XXX", 7_000_000m),
+            ("Community Savings Bank", "990000005", "LABBANKE", "CSBAUS44XXX", 1_500_000m)
+        };
+        foreach (var (name, routing, participant, bic, balance) in desired)
+        {
+            if (await db.Banks.AnyAsync(x => x.RoutingNumber == routing, token)) continue;
+            var bank = Bank(name, routing, participant, balance,
+                ($"Synthetic customer {participant[^1]}", $"{routing}01", 100_000m));
+            bank.Bic = bic;
+            db.Banks.Add(bank);
+        }
+        await db.SaveChangesAsync(token);
     }
 
     private static async Task EnsureInternationalBanksAsync(BankingDbContext db,

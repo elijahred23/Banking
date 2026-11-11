@@ -9,6 +9,7 @@ internal static class BankSecurity
     public const string PaymentCreator = "PaymentCreator";
     public const string PaymentApprover = "PaymentApprover";
     public const string ComplianceOfficer = "ComplianceOfficer";
+    public const string NetworkOperator = "NetworkOperator";
     public const string Operations = "Operations";
 
     public static Guid BankId(this ClaimsPrincipal user) =>

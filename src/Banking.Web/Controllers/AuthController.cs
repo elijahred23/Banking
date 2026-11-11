@@ -36,7 +36,7 @@ public sealed class AuthController(IConfiguration configuration,
         }
         var principal = CreatePrincipal(roleKey, roles, bank.Id, bank.Name, bank.RoutingNumber);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-        return LocalRedirect(Url.IsLocalUrl(model.ReturnUrl) ? model.ReturnUrl! : "/");
+        return LocalRedirect(Url.IsLocalUrl(model.ReturnUrl) ? model.ReturnUrl! : roleKey == "network" ? "/Network" : "/");
     }
 
     [Authorize, HttpPost, ValidateAntiForgeryToken]
@@ -94,6 +94,7 @@ public sealed class AuthController(IConfiguration configuration,
         "approver" => [BankSecurity.PaymentApprover],
         "compliance" => [BankSecurity.ComplianceOfficer],
         "operations" => [BankSecurity.Operations],
+        "network" => [BankSecurity.NetworkOperator],
         _ => null
     };
 
@@ -104,6 +105,7 @@ public sealed class AuthController(IConfiguration configuration,
         "approver" => "Approver",
         "compliance" => "Compliance",
         "operations" => "Operations",
+        "network" => "Network operator",
         _ => roleKey
     };
 

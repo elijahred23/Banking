@@ -82,9 +82,13 @@ public sealed class BankingDbContext(DbContextOptions<BankingDbContext> options)
         modelBuilder.Entity<Account>().Property(x => x.HeldBalance).IsConcurrencyToken();
         modelBuilder.Entity<WireTransfer>().Property(x => x.Amount).HasPrecision(19, 4);
         modelBuilder.Entity<Bank>().HasIndex(x => x.RoutingNumber).IsUnique();
+        modelBuilder.Entity<Bank>().HasIndex(x => x.FedParticipantId).IsUnique();
         modelBuilder.Entity<Bank>().HasIndex(x => x.Bic).IsUnique();
         modelBuilder.Entity<Account>().HasIndex(x => x.AccountNumber).IsUnique();
         modelBuilder.Entity<WireTransfer>().HasIndex(x => x.CorrelationId);
+        modelBuilder.Entity<WireTransfer>().HasIndex(x => new { x.BankId, x.CorrelationId })
+            .HasDatabaseName("UX_WireTransfers_IncomingSettlement").IsUnique()
+            .HasFilter("[Direction] = N'Incoming'");
         modelBuilder.Entity<WireTransfer>().HasIndex(x => new { x.BankId, x.CustomerReference })
             .IsUnique().HasFilter("[CustomerReference] IS NOT NULL");
         modelBuilder.Entity<FedSettlement>().HasIndex(x => x.CorrelationId).IsUnique();

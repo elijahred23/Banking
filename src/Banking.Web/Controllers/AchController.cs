@@ -40,14 +40,10 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             .AsNoTracking()
             .ToListAsync(token);
 
-        var destinations = await db.Accounts
-            .Where(x => x.Customer.BankId != bankId && x.Customer.Bank.CountryCode == bank.CountryCode)
-            .OrderBy(x => x.Customer.Bank.Name)
-            .ThenBy(x => x.Customer.Name)
-            .Select(x => new AchInstructionDestinationViewModel(
-                x.Customer.Bank.Name, x.Customer.Name, x.AccountNumber, x.Customer.Bank.RoutingNumber))
-            .AsNoTracking()
-            .ToListAsync(token);
+        var destinations = await db.Banks.Where(x => x.Id != bankId && x.CountryCode == bank.CountryCode)
+            .OrderBy(x => x.Name).Select(x => new AchInstructionDestinationViewModel(
+                x.Name, "Supplied by receiver", "Enter receiver instructions", x.RoutingNumber))
+            .AsNoTracking().ToListAsync(token);
 
         return View(new AchInstructionsViewModel(bank, sourceAccounts, destinations));
     }
@@ -507,11 +503,10 @@ public sealed class AchController(IDbContextFactory<BankingDbContext> dbFactory,
             .OrderBy(x => x.Customer.Name).ThenBy(x => x.AccountNumber)
             .Select(x => new AchAccountChoice(x.Id, x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
             .AsNoTracking().ToListAsync(token);
-        var receivers = await db.Accounts.Where(x => x.Customer.BankId != bankId
-                && x.Customer.Bank.CountryCode == country && x.AccountNumber.Length <= 17)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new AchReceiverChoice(x.Customer.Bank.Name, x.Customer.Name,
-                x.Customer.Bank.RoutingNumber, x.AccountNumber))
+        var receivers = await db.AchEntries.Where(x => x.OriginatingBankId == bankId)
+            .OrderByDescending(x => x.CreatedDate).Take(50)
+            .Select(x => new AchReceiverChoice("Previously instructed participant", x.ReceiverName,
+                x.ReceivingRoutingNumber, x.ReceivingAccountNumber))
             .AsNoTracking().ToListAsync(token);
         var history = await db.AchEntries.Where(x => x.OriginatingBankId == bankId)
             .OrderByDescending(x => x.CreatedDate).Take(50)

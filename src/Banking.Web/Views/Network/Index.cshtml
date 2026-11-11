@@ -1,0 +1,16 @@
+@model NetworkOverviewViewModel
+@{ ViewData["Title"] = "Simulated payment network"; }
+<h1>Simulated payment network</h1>
+<p>Privileged network view. These are learning-only participants and settlements, without customer accounts or internal bank notes.</p>
+<a class="btn btn-primary mb-3" asp-action="Provision">Provision synthetic bank</a>
+<h2>Participants</h2>
+<div class="table-responsive"><table class="table">
+<thead><tr><th>Bank</th><th>Synthetic routing</th><th>Participant</th><th>Master balance</th></tr></thead>
+<tbody>@foreach (var bank in Model.Banks) { <tr><td>@bank.Name</td><td>@bank.RoutingNumber</td><td>@bank.ParticipantId</td><td>@bank.Balance.ToString("C")</td></tr> }</tbody>
+</table></div>
+<h2>Recent Fedwire settlement history</h2>
+<p>At most 200 instructions. Settlement is independent of delivery and beneficiary posting.</p>
+<div class="table-responsive"><table class="table">
+<thead><tr><th>Correlation</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Status</th><th>IMAD</th><th>OMAD</th></tr></thead>
+<tbody>@foreach (var item in Model.Settlements) { <tr><td>@item.CorrelationId</td><td>@item.Sender</td><td>@item.Receiver</td><td>@item.Amount.ToString("C")</td><td>@item.Status</td><td>@item.Imad</td><td>@item.Omad</td></tr> }</tbody>
+</table></div>

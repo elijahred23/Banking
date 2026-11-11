@@ -145,3 +145,9 @@ No schema change is required. Operational effects and their run evidence JSON co
 atomically under the existing lease token; a recovered worker retains the saved
 snapshot. Case deduplication uses serializable bank/type/reference lookups over the
 existing bank-scoped case indexes; resolved cases are retained rather than reopened.
+
+### Independent incoming Fedwire posting
+
+`202611111800_incoming_wire_uniqueness.sql` enforces one incoming wire per receiving bank and settlement correlation. Startup applies the same index. Existing duplicate incoming correlations must be investigated before upgrading; the upgrade does not delete financial records. Incoming `Received` Fedwire customer payments now await Operations posting from wire details. Existing completed payments remain unchanged. Settlement atomically creates outbox status and delivery records; the Web outbox publisher must run to recover unpublished deliveries. Immediate simulator responses can also arrive, and consumers must tolerate both copies.
+
+`202611111801_network_participant_identity.sql` adds unique simulated Fed participant identities. The Network operator provisioning workflow uses the existing Banks/Customers/Accounts schema; no separate bank database or duplicate payment tables are introduced. See `../MULTI_BANK_NETWORK.md` for operator steps and recovery requirements.

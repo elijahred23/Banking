@@ -49,11 +49,9 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
             .OrderBy(x => x.Customer.Name).Select(x => new CheckInstructionAccountViewModel(
                 x.Customer.Name, x.AccountNumber, x.Balance - x.HeldBalance))
             .AsNoTracking().ToListAsync(token);
-        var payingAccounts = await db.Accounts.Where(x => x.Customer.BankId != bankId
-                && x.Customer.Bank.CountryCode == bank.CountryCode)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new CheckInstructionDestinationViewModel(x.Customer.Bank.Name,
-                x.Customer.Name, x.Customer.Bank.RoutingNumber, x.AccountNumber))
+        var payingAccounts = await db.Banks.Where(x => x.Id != bankId && x.CountryCode == bank.CountryCode)
+            .OrderBy(x => x.Name).Select(x => new CheckInstructionDestinationViewModel(x.Name,
+                "Supplied on check", x.RoutingNumber, "Enter account from check"))
             .AsNoTracking().ToListAsync(token);
         return View(new CheckInstructionsViewModel(bank, depositingAccounts, payingAccounts));
     }
@@ -183,12 +181,8 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
                 x.AccountNumber, x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
             .AsNoTracking().ToListAsync(token);
         var country = await db.Banks.Where(x => x.Id == bankId).Select(x => x.CountryCode).SingleAsync(token);
-        var paying = await db.Accounts.Where(x => x.Customer.BankId != bankId
-                && x.Customer.Bank.CountryCode == country && x.Balance - x.HeldBalance > 0)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new CheckAccountChoice(x.Id, x.Customer.Name, x.AccountNumber,
-                x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
-            .AsNoTracking().ToListAsync(token);
+        // A deposited check supplies its MICR instructions; other banks' customer directories are private.
+        var paying = new List<CheckAccountChoice>();
         var history = await db.CheckDeposits.Where(x => x.DepositoryBankId == bankId)
             .OrderByDescending(x => x.CreatedDate).Take(20)
             .Select(x => new CheckHistoryChoice(x.DepositorName, x.RawMicrLine, x.Amount, x.CheckNumber))
@@ -203,12 +197,8 @@ public sealed class CheckController(IDbContextFactory<BankingDbContext> dbFactor
         Guid bankId, BankingDbContext db, CancellationToken token)
     {
         var country = await db.Banks.Where(x => x.Id == bankId).Select(x => x.CountryCode).SingleAsync(token);
-        var paying = await db.Accounts.Where(x => x.Customer.BankId != bankId
-                && x.Customer.Bank.CountryCode == country && x.Balance - x.HeldBalance > 0)
-            .OrderBy(x => x.Customer.Bank.Name).ThenBy(x => x.Customer.Name)
-            .Select(x => new CheckAccountChoice(x.Id, x.Customer.Name, x.AccountNumber,
-                x.Balance - x.HeldBalance, x.Customer.Bank.RoutingNumber))
-            .AsNoTracking().ToListAsync(token);
+        // A deposited check supplies its MICR instructions; other banks' customer directories are private.
+        var paying = new List<CheckAccountChoice>();
         var history = await db.CheckDeposits.Where(x => x.DepositoryBankId == bankId)
             .OrderByDescending(x => x.CreatedDate).Take(20)
             .Select(x => new CheckHistoryChoice(x.DepositorName, x.RawMicrLine, x.Amount, x.CheckNumber))

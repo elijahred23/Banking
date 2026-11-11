@@ -22,6 +22,11 @@ public sealed class LabSchemaUpgradeRunner
 
     private static Task<int> ApplyLabSchemaUpgradeAsync(BankingDbContext db, CancellationToken token) =>
         db.Database.ExecuteSqlRawAsync("""
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.WireTransfers') AND name = N'UX_WireTransfers_IncomingSettlement')
+                CREATE UNIQUE INDEX UX_WireTransfers_IncomingSettlement ON dbo.WireTransfers(BankId, CorrelationId) WHERE Direction = N'Incoming';
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Banks') AND name = N'IX_Banks_FedParticipantId')
+                CREATE UNIQUE INDEX IX_Banks_FedParticipantId ON dbo.Banks(FedParticipantId);
             IF COL_LENGTH(N'dbo.Accounts', N'HeldBalance') IS NULL
                 ALTER TABLE dbo.Accounts ADD HeldBalance decimal(19,4) NOT NULL
                     CONSTRAINT DF_Accounts_HeldBalance DEFAULT (0);

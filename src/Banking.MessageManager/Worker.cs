@@ -263,9 +263,17 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var wire = await db.WireTransfers.Include(x => x.IsoMessages).Include(x => x.Events)
             .AsSplitQuery().SingleOrDefaultAsync(x => x.Id == message.WireId, token);
+        if (wire is not null && wire.Rail != PaymentRail.SwiftCbprPlus && (wire.BankId != message.SenderBankId || wire.SenderBankId != message.SenderBankId
+            || wire.ReceiverBankId != message.ReceiverBankId || wire.CorrelationId != message.CorrelationId
+            || wire.Amount != message.Amount || wire.Rail != message.Rail))
+            throw new InvalidOperationException("Status does not match the original payment.");
         if (wire is null || wire.IsoMessages.Any(x => x.MessageType == "pacs.002"
             && x.XmlPayload == message.XmlPayload)) return;
         if (wire.Status is WireStatus.Settled or WireStatus.Rejected) return;
+        if (wire.Rail == PaymentRail.Fedwire && message.StatusCode is "ACSC" or "RJCT"
+            && !await db.FedSettlements.AnyAsync(x => x.CorrelationId == wire.CorrelationId
+                && x.StatusCode == message.StatusCode, token))
+            throw new InvalidOperationException("Final status requires a matching durable network settlement.");
         wire.Imad = message.Imad;
         wire.Omad = message.Omad;
         db.IsoMessages.Add(new IsoMessage { WireTransferId = wire.Id, MessageType = "pacs.002",
@@ -381,8 +389,17 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
     {
         await using var db = await dbFactory.CreateDbContextAsync(token);
         var outgoing = await db.WireTransfers.AsNoTracking().SingleAsync(x => x.Id == message.WireId, token);
+        if (outgoing.Direction != WireDirection.Outgoing || outgoing.BankId != outgoing.SenderBankId)
+            throw new InvalidOperationException("Delivery must reference an originating bank payment.");
         if (outgoing.Rail == PaymentRail.SwiftCbprPlus
             && message.ReceiverBankId != outgoing.ReceiverBankId) return;
+        if (message.CorrelationId != outgoing.CorrelationId || message.Amount != outgoing.Amount
+            || message.Rail != outgoing.Rail || (outgoing.Rail != PaymentRail.SwiftCbprPlus
+                && (message.ReceiverBankId != outgoing.ReceiverBankId || message.SenderBankId != outgoing.SenderBankId)))
+            throw new InvalidOperationException("Delivery does not match the original payment.");
+        if (outgoing.Rail == PaymentRail.Fedwire && !await db.FedSettlements.AnyAsync(x =>
+            x.CorrelationId == message.CorrelationId && x.StatusCode == "ACSC", token))
+            throw new InvalidOperationException("Incoming Fedwire delivery requires final settlement.");
         if (await db.WireTransfers.AnyAsync(x => x.BankId == message.ReceiverBankId
             && x.CorrelationId == message.CorrelationId && x.Direction == WireDirection.Incoming, token)) return;
         var incoming = new WireTransfer
@@ -413,7 +430,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             var account = await db.Accounts.Include(x => x.Customer).FirstOrDefaultAsync(x =>
                 x.Customer.BankId == message.ReceiverBankId
                 && x.AccountNumber == outgoing.BeneficiaryAccountNumber, token);
-            if (account is not null)
+            if (account is not null && outgoing.Rail != PaymentRail.Fedwire)
             {
                 incoming.ToAccountId = account.Id;
                 account.Balance += incoming.Amount;
@@ -424,6 +441,8 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
                 incoming.Events.Add(Event(Guid.Empty, "Completed", "Incoming wire processing completed."));
             }
         }
+        db.OutboxMessages.Add(Outbox.Message(Queues.WireIncomingReceived,
+            new { incoming.Id, incoming.CorrelationId }, incoming.BankId));
         db.WireTransfers.Add(incoming);
         outgoing = await db.WireTransfers.SingleAsync(x => x.Id == message.WireId, token);
         db.WireEvents.Add(Event(outgoing.Id, "Delivered",
@@ -432,7 +451,7 @@ public sealed class Worker(IMessageBus bus, IDbContextFactory<BankingDbContext> 
             db.WireEvents.Add(Event(outgoing.Id, PaymentEventTypes.BeneficiaryBankReceived,
                 "The beneficiary bank received the routed payment instruction."));
         await db.SaveChangesAsync(token);
-        await bus.PublishAsync(Queues.WireIncomingReceived, new { incoming.Id, incoming.CorrelationId }, token);
+
         logger.LogInformation("Created incoming wire {WireId} for correlation {CorrelationId}", incoming.Id,
             incoming.CorrelationId);
     }

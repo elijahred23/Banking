@@ -1,0 +1,13 @@
+@model ProvisionBankViewModel
+@{ ViewData["Title"] = "Provision synthetic bank"; }
+<h1>Provision synthetic bank</h1>
+<p>Creates a learning-only US participant, master balance, and synthetic customer deposit account. Operators use the existing bank/persona login; this does not create production credentials.</p>
+<form method="post" asp-action="Provision">
+    <div asp-validation-summary="All" class="text-danger"></div>
+    <div class="mb-3"><label asp-for="Name" class="form-label"></label><input asp-for="Name" class="form-control" /></div>
+    <div class="mb-3"><label asp-for="RoutingNumber" class="form-label">Synthetic routing identifier</label><input asp-for="RoutingNumber" class="form-control" /></div>
+    <div class="mb-3"><label asp-for="ParticipantId" class="form-label">Participant identity</label><input asp-for="ParticipantId" class="form-control" /></div>
+    <div class="mb-3"><label asp-for="Bic" class="form-label">Synthetic BIC</label><input asp-for="Bic" class="form-control" /></div>
+    <div class="mb-3"><label asp-for="MasterBalance" class="form-label">Starting master balance</label><input asp-for="MasterBalance" class="form-control" /></div>
+    <button type="submit" class="btn btn-primary">Create lab participant</button>
+</form>
